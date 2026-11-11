@@ -4,7 +4,7 @@ Date: 2026-11-11 · Machine: Windows 11, Claude Code CLI 2.1.319, Orca 1.4.255,
 Claude desktop 5.1231.0 (CLI 2.1.321), VS Code extension (CLI 2.1.322), OpenBot 0.1.0 (CLI 2.1.322).
 
 Details: [claude-hooks.md](claude-hooks.md) · Evidence: [payloads/](payloads/), [evidence/](evidence/)
-· Rules: [hosts.yaml](../../hosts.yaml) · Decisions: [ADRs](../adr/)
+· Rules: [hosts.yaml](../../src/ronda/hosts.yaml) · Decisions: [ADRs](../adr/)
 
 ## Answers to the PRD open questions
 
