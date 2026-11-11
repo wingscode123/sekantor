@@ -38,6 +38,7 @@ and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; who
 - [Dogfooding M1](docs/dogfooding.md)
 - [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
 - [Phone notifications, Telegram, webhooks, tmux](docs/channels.md)
+- [Writing a pos](docs/writing-a-pos.md) and the [threat model](docs/threat-model.md)
 - [Brand](brand/BRAND.md) and [design system](design.md)
 - [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
 
