@@ -24,13 +24,15 @@ uv run ronda doctor
 ```
 
 Start Claude Code in that project and its card appears in the inbox. `uv run ronda status` shows the
-same list in the terminal; `uv run ronda uninstall claude` removes only Ronda's hooks.
+same list in the terminal; `uv run ronda stats` reports lost events and time spent waiting for you;
+`uv run ronda uninstall claude` removes only Ronda's hooks.
 
 ## Docs
 
 - [Product requirements](docs/PRD.md)
 - [M0 spike summary](docs/spike/summary.md) and [Claude Code hooks findings](docs/spike/claude-hooks.md)
 - [Architecture decisions](docs/adr/)
+- [Dogfooding M1](docs/dogfooding.md)
 - [Brand](brand/BRAND.md) and [design system](design.md)
 - [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
 

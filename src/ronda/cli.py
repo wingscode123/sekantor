@@ -113,6 +113,54 @@ def status(as_json: bool = typer.Option(False, "--json", help="Print raw JSON.")
             typer.echo(f"{_ago(s['status_since']):>4}  {s['source']} in {host}  {cwd} {branch}  {summary}")
 
 
+def _span(td) -> str:
+    s = int(td.total_seconds())
+    return f"{s // 3600}h {s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m {s % 60:02d}s"
+
+
+@app.command()
+def stats(
+    since: str = typer.Option("24h", help="Window to look back over: 90m, 24h, 7d."),
+    show_lost: bool = typer.Option(False, "--lost", help="List every lost event."),
+):
+    """Dogfooding numbers: lost events, hook errors, and how long agents waited for you."""
+    from ronda.stats import compute, parse_since
+
+    try:
+        window = parse_since(since)
+    except ValueError as e:
+        typer.secho(str(e), fg="red")
+        raise typer.Exit(2)
+    now = datetime.now(timezone.utc)
+    st = compute(config.home(), now - window, now)
+    typer.secho(f"Last {since}", bold=True)
+    lost = len(st.lost)
+    color = "green" if lost == 0 else "red"
+    typer.secho(f"  events sent by hooks   {st.attempted}", nl=False)
+    typer.echo(f"   stored by the hub {st.stored}   ", nl=False)
+    typer.secho(f"lost {lost}", fg=color)
+    if st.lost_hub_down:
+        typer.echo(f"  not delivered while the hub was down: {len(st.lost_hub_down)} (expected: agents fell back to their own prompts)")
+    if st.hook_errors:
+        typer.secho("  hook errors", fg="yellow")
+        for msg, n in st.hook_errors.most_common():
+            typer.echo(f"    {n:>5}  {msg}")
+    else:
+        typer.secho("  hook errors            0", fg="green")
+    hosts = ", ".join(f"{h} {n}" for h, n in st.by_host.most_common()) or "none"
+    typer.echo(f"  sessions               {st.sessions} ({hosts})")
+    typer.echo(f"  waited for approval    {_span(st.waiting['waiting_approval'])}")
+    typer.echo(f"  waited for a reply     {_span(st.waiting['waiting_input'])}")
+    if st.longest_wait_session:
+        typer.echo(f"  longest single wait    {_span(st.longest_wait)} ({st.longest_wait_session})")
+    if show_lost and st.lost:
+        typer.secho("  lost events", fg="red")
+        for x in st.lost:
+            typer.echo(f"    {x.ts}  {x.session_id}  {x.label}  {x.event_id}")
+    if lost:
+        raise typer.Exit(1)
+
+
 def _scope(project: bool, global_: bool) -> str:
     if project and global_:
         typer.secho("Pick one of --project or --global.", fg="red")
