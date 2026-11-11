@@ -8,7 +8,8 @@ Ronda watches Claude Code (terminal, VS Code, Claude desktop), Orca, OpenBot and
 tmux, and sorts them by who needs you: waiting for approval, waiting for input, error, running, done.
 Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local token, and sends no telemetry.
 
-**Status:** pre-alpha. M0 (spike), M1 (core inbox) and M2 (approve, deny, reply, notifications, audit) are done.
+**Status:** pre-alpha. M0 (spike), M1 (core inbox), M2 (approve, deny, reply, notifications, audit) and
+M3 (Telegram, webhooks incl. ntfy, tmux pos) are done.
 Public beta planned for 25 January 2027.
 
 ## Try it from source
@@ -36,6 +37,7 @@ and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; who
 - [Architecture decisions](docs/adr/)
 - [Dogfooding M1](docs/dogfooding.md)
 - [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
+- [Phone notifications, Telegram, webhooks, tmux](docs/channels.md)
 - [Brand](brand/BRAND.md) and [design system](design.md)
 - [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
 

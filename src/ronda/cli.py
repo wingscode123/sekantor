@@ -28,6 +28,8 @@ pair_app = typer.Typer(no_args_is_help=True, help="Connect a remote channel (Tel
 unpair_app = typer.Typer(no_args_is_help=True, help="Disconnect a remote channel.")
 app.add_typer(pair_app, name="pair")
 app.add_typer(unpair_app, name="unpair")
+pos_app = typer.Typer(no_args_is_help=True, help="Run a pos (platform adapter) by hand.")
+app.add_typer(pos_app, name="pos")
 
 GROUPS = [("Needs you", {"waiting_approval", "waiting_input", "error"}), ("Running", {"running"}),
           ("Done", {"done", "ended"})]
@@ -80,6 +82,7 @@ def up(
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the inbox in a browser."),
     notify: bool = typer.Option(None, "--notify/--no-notify", help="Desktop notifications (default: config.toml, on)."),
     relay: bool = typer.Option(True, "--relay/--no-relay", help="Start the relay when Telegram or webhooks are set up."),
+    tmux: bool = typer.Option(True, "--tmux/--no-tmux", help="Watch CLI agents in tmux panes when tmux is installed."),
 ):
     """Start the hub and the web inbox on 127.0.0.1."""
     import uvicorn
@@ -105,12 +108,31 @@ def up(
         settings.notify = notify
     typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
                f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
-    child = _start_relay(port) if relay else None
+    children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None) if c]
     try:
         uvicorn.run(create_app(port=port, token=token, settings=settings), host=config.HOST, port=port, log_level="warning")
     finally:
-        if child and child.poll() is None:
-            child.terminate()
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+
+
+def _start_tmux(port: int):
+    import shutil
+
+    if not shutil.which("tmux"):
+        return None
+    typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "tmux"], env=env)
+
+
+@pos_app.command("tmux")
+def pos_tmux(interval: float = typer.Option(2.0, help="Seconds between scans.")):
+    """Watch codex, opencode, gemini and aider in tmux panes; answer them with send-keys (runs with `ronda up`)."""
+    from ronda.pos.tmux.pos import main as tmux_main
+
+    tmux_main(interval)
 
 
 def _start_relay(port: int):
