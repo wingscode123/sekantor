@@ -87,3 +87,12 @@ def test_cli_refusal_and_unknown(hub):
     r = runner.invoke(app, ["reply", SID, "hello"])
     assert r.exit_code == 1 and "not waiting for a reply" in r.output
     assert runner.invoke(app, ["deny", "zzz"]).exit_code == 2
+
+
+def test_cli_snooze_and_unsnooze(hub):
+    _ask(hub)
+    r = runner.invoke(app, ["snooze", "ab", "--minutes", "15"])
+    assert r.exit_code == 0, r.output
+    assert hub.session().snoozed_until is not None
+    assert runner.invoke(app, ["unsnooze", "ab"]).exit_code == 0
+    assert hub.session().snoozed_until is None

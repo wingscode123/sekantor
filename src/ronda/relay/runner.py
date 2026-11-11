@@ -12,9 +12,22 @@ from ronda.relay.telegram import TelegramApi, TelegramChannel, TelegramError, lo
 from ronda.relay.webhook import WebhookChannel, parse
 
 
+def snoozed(s: dict) -> bool:
+    from datetime import datetime, timezone
+
+    until = s.get("snoozed_until")
+    if not until:
+        return False
+    try:
+        return datetime.fromisoformat(until) > datetime.now(timezone.utc)
+    except ValueError:
+        return False
+
+
 class Relay:
-    def __init__(self, channels: list):
+    def __init__(self, channels: list, quiet=lambda: False):
         self.channels = channels
+        self.quiet = quiet
         self.state: dict[str, dict] = {}
 
     async def handle(self, msg: dict) -> None:
@@ -25,9 +38,10 @@ class Relay:
             s = msg["session"]
             prev = self.state.get(s["session_id"])
             self.state[s["session_id"]] = s
+            announce = not snoozed(s) and not self.quiet()  # FR-15, FR-33
             for ch in self.channels:
                 try:
-                    await ch.on_change(prev, s)
+                    await ch.on_change(prev, s, announce)
                 except Exception as e:
                     log.warning("%s: %s", ch.name, type(e).__name__)
 
@@ -91,7 +105,7 @@ async def run(home: Path | None = None, hub_url: str | None = None) -> None:
     if not channels:
         raise SystemExit("Nothing to relay: run `ronda pair telegram` or add [[webhooks]] to config.toml.")
     log.info("relay: %s", ", ".join(ch.name for ch in channels))
-    relay = Relay(channels)
+    relay = Relay(channels, quiet=settings.quiet)
 
     async def follow():
         async for msg in hub.stream():

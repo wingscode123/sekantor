@@ -420,6 +420,28 @@ def reply(session: str = typer.Argument(..., help="Session id or a unique prefix
 
 
 @app.command()
+def snooze(session: str = typer.Argument(..., help="Session id or a unique prefix."),
+           minutes: int = typer.Option(60, help="How long, in minutes."),
+           forever: bool = typer.Option(False, "--forever", help="Until you unmute it.")):
+    """Stop notifications for one session or agent for a while (FR-15). It stays in the inbox."""
+    s = _find_session(session)
+    path = f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/snooze"
+    res = _api(path, method="POST", body={"minutes": None if forever else minutes})
+    if "_status" in res:
+        typer.secho(str(res.get("detail") or res), fg="red")
+        raise typer.Exit(1)
+    typer.secho(f"Snoozed {s['session_id']} until {'you unmute it' if forever else res['snoozed_until'][:16]}", fg="green")
+
+
+@app.command()
+def unsnooze(session: str = typer.Argument(..., help="Session id or a unique prefix.")):
+    """Turn notifications back on for a session."""
+    s = _find_session(session)
+    _api(f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/snooze", method="DELETE")
+    typer.secho(f"Unmuted {s['session_id']}", fg="green")
+
+
+@app.command()
 def audit(limit: int = typer.Option(30, help="How many actions to show.")):
     """Every approve, deny and reply sent through Ronda (FR-24), newest first."""
     try:

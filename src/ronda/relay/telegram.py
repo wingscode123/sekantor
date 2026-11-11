@@ -123,12 +123,12 @@ class TelegramChannel:
 
     # -- hub side --------------------------------------------------------------------
 
-    async def on_change(self, prev: dict | None, s: dict) -> None:
+    async def on_change(self, prev: dict | None, s: dict, announce: bool = True) -> None:
         current = pending_request_id(s)
         for key, o in list(self.open.items()):
             if o.session_id == s["session_id"] and o.request_id != current:
                 await self._close(key, "Answered elsewhere." if s["status"] != "ended" else "Session ended.")
-        if should_notify(prev, s):
+        if announce and should_notify(prev, s):
             await self._announce(s)
 
     def _text(self, s: dict) -> tuple[str, str | None, bool]:

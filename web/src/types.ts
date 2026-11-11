@@ -16,6 +16,8 @@ export interface Session {
   capabilities: string[];
   pid?: number | null;
   needs_you: boolean;
+  snoozed_until?: string | null;
+  open_label?: string | null;
 }
 
 export interface Action {

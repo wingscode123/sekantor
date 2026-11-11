@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from ronda import __version__
 from ronda.config import risky_match
@@ -26,8 +27,15 @@ REPLY_TYPES = ("reply",)
 
 
 def session_json(s: SessionState) -> dict[str, Any]:
+    from ronda.hub.opener import plan
+
     d = s.model_dump(mode="json", exclude={"status_ts"})
     d["needs_you"] = s.needs_you
+    try:
+        p = plan(s)
+    except Exception:
+        p = None
+    d["open_label"] = p.label if p else None  # FR-14
     return d
 
 
@@ -166,6 +174,60 @@ async def next_action(
         if remaining <= 0:
             return {"action": None, "reason": "timeout"}
         await st.waiters.wait(session_id, remaining)
+
+
+# --- FR-15 snooze, FR-14 open in source ------------------------------------------
+
+FOREVER = timedelta(days=36500)
+
+
+class SnoozeIn(BaseModel):
+    minutes: int | None = Field(default=60, ge=1, le=60 * 24 * 7)  # None: until unmuted
+
+
+@router.post("/sessions/{session_id}/snooze")
+async def snooze(request: Request, session_id: str, body: SnoozeIn):
+    st = request.app.state
+    s = await run_in_threadpool(st.store.session, session_id)
+    if s is None:
+        raise HTTPException(404, detail="no such session")
+    now = datetime.now(timezone.utc)
+    s.snoozed_until = now + (timedelta(minutes=body.minutes) if body.minutes else FOREVER)
+    await run_in_threadpool(st.store.put_session, s)
+    st.broadcaster.publish({"type": "session", "session": session_json(s)})
+    return {"snoozed_until": s.snoozed_until.isoformat()}
+
+
+@router.delete("/sessions/{session_id}/snooze")
+async def unsnooze(request: Request, session_id: str):
+    st = request.app.state
+    s = await run_in_threadpool(st.store.session, session_id)
+    if s is None:
+        raise HTTPException(404, detail="no such session")
+    s.snoozed_until = None
+    await run_in_threadpool(st.store.put_session, s)
+    st.broadcaster.publish({"type": "session", "session": session_json(s)})
+    return {"snoozed_until": None}
+
+
+@router.post("/sessions/{session_id}/open")
+async def open_in_source(request: Request, session_id: str):
+    """Bring the app where the session runs to the front. Only for this computer, never from Telegram."""
+    from ronda.hub import opener
+
+    if request.headers.get("x-ronda-channel") == "telegram":
+        raise HTTPException(403, detail="opening apps is only for this computer")
+    s = await run_in_threadpool(request.app.state.store.session, session_id)
+    if s is None:
+        raise HTTPException(404, detail="no such session")
+    p = opener.plan(s)
+    if p is None:
+        return _refuse(409, "cannot_open", "There is no known way to open where this session runs.")
+    try:
+        await run_in_threadpool(request.app.state.opener_run, p)
+    except OSError as e:
+        return _refuse(409, "open_failed", f"Could not open it ({type(e).__name__}).")
+    return {"opened": p.label}
 
 
 @router.get("/sessions/{session_id}/actions")

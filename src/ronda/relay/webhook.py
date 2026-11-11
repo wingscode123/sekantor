@@ -106,8 +106,8 @@ class WebhookChannel:
         self.sleep = sleep
         self.tasks: set[asyncio.Task] = set()
 
-    async def on_change(self, prev: dict | None, s: dict) -> None:
-        if not should_notify(prev, s):
+    async def on_change(self, prev: dict | None, s: dict, announce: bool = True) -> None:
+        if not announce or not should_notify(prev, s):
             return
         for hook in self.hooks:
             if s["status"] in hook.statuses:

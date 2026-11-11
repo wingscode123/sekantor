@@ -29,6 +29,12 @@ You get a message when an agent needs you, with Approve/Deny buttons. Reply to a
 an agent that finished its turn. `/status` lists who needs you. Only the paired chat is answered.
 Risky commands show Deny only. `uv run ronda unpair telegram` forgets the bot.
 
+## Quiet hours and snooze
+
+Add `quiet_hours = "22:00-07:00"` to `~/.ronda/config.toml` (local time) for no desktop, Telegram or
+webhook notifications in that window. To mute one agent for a while, use Snooze on its card (30 min,
+2 h, 8 h, or until you unmute it) or `uv run ronda snooze <session> --minutes 120`.
+
 ## Other webhooks
 
 `format = "json"` (default, `{"type": "session.status", ...}`), `"text"`, `"slack"` (incoming

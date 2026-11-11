@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { ApprovalControls, ReplyForm } from "./Actions";
 import { Timeline } from "./Timeline";
+import { SessionMenu, isSnoozed } from "./SessionMenu";
 import type { Action, Connection, Session } from "./types";
 import { useInbox, useNow } from "./useInbox";
 
@@ -67,6 +68,7 @@ function Card({ s, now, action }: { s: Session; now: number; action?: Action }) 
       </p>
       {s.status === "waiting_approval" && <ApprovalControls s={s} action={action} />}
       {s.status === "waiting_input" && <ReplyForm s={s} action={action} />}
+      <SessionMenu s={s} now={now} />
       <Timeline sessionId={s.session_id} />
     </article>
   );
@@ -82,7 +84,7 @@ function Table({ rows, now, label }: { rows: Session[]; now: number; label: stri
         {rows.map((s) => (
           <tr key={s.session_id}>
             <td><span className={`status status--${STATUS_CLASS[s.status]}`}>{STATUS_TEXT[s.status]}</span></td>
-            <th scope="row"><Source s={s} /><Timeline sessionId={s.session_id} /></th>
+            <th scope="row"><Source s={s} /><SessionMenu s={s} now={now} /><Timeline sessionId={s.session_id} /></th>
             <td>
               <code title={s.workspace.cwd ?? undefined}>{project(s.workspace.cwd)}</code>{" "}
               {s.workspace.branch && <code className="list__branch">{s.workspace.branch}</code>}
@@ -114,9 +116,11 @@ const HUB_TEXT: Record<Connection, string> = {
 export default function App() {
   const { sessions, connection, loaded, actions } = useInbox();
   const now = useNow(1000);
-  const needs = sessions.filter((s) => NEEDS.has(s.status));
-  const running = sessions.filter((s) => s.status === "running");
-  const done = sessions.filter((s) => s.status === "done" || s.status === "ended");
+  const awake = sessions.filter((s) => !isSnoozed(s, now) || s.status === "ended");
+  const needs = awake.filter((s) => NEEDS.has(s.status));
+  const running = awake.filter((s) => s.status === "running");
+  const snoozed = sessions.filter((s) => isSnoozed(s, now) && s.status !== "ended");
+  const done = awake.filter((s) => s.status === "done" || s.status === "ended");
 
   useEffect(() => {
     document.title = needs.length ? `(${needs.length}) Ronda` : "Ronda";
@@ -168,6 +172,9 @@ export default function App() {
         </Group>
         {running.length > 0 && (
           <Group id="g-running" title="Running" count={running.length}><Table rows={running} now={now} label="For" /></Group>
+        )}
+        {snoozed.length > 0 && (
+          <Group id="g-snoozed" title="Snoozed" count={snoozed.length}><Table rows={snoozed} now={now} label="For" /></Group>
         )}
         {done.length > 0 && (
           <Group id="g-done" title="Done" count={done.length}><Table rows={done} now={now} label="Ago" /></Group>
