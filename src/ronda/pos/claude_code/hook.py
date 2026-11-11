@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 import sys
 import threading
+import socket
 import time
-import urllib.request
 
 HARD_TIMEOUT_S = 2.0
 HTTP_TIMEOUT_S = 1.0  # Windows takes ~2 s to refuse a closed loopback port; stay under the watchdog
@@ -50,56 +51,100 @@ def _token() -> str | None:
         return None
 
 
-def build_event(payload: dict, env: dict[str, str]) -> dict | None:
+def _pid(env: dict[str, str]) -> int | None:
+    try:
+        pid = int(env.get("CLAUDE_PID", ""))
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
+    try:
+        from ronda.pos.claude_code.fingerprint import classify, collect, load_rules
+
+        chain, exe, cmdline = collect(env, payload.get("cwd"), _pid(env), deep)
+        return classify(load_rules(), env, chain, exe, payload.get("cwd"), cmdline)
+    except Exception as e:  # a broken rules file must not lose the event
+        _log(f"fingerprint failed: {type(e).__name__}: {e}")
+        return None
+
+
+def build_event(payload: dict, env: dict[str, str], deep: bool = False) -> dict | None:
     from ronda.pos.claude_code.translate import translate
 
     event = translate(payload)
     if event is None:
         return None
-    try:
-        pid = int(env.get("CLAUDE_PID", ""))
-    except ValueError:
-        pid = None
-    if pid and pid > 0:
+    pid = _pid(env)
+    if pid:
         event["process"] = {"pid": pid}
-    try:
-        from ronda.pos.claude_code.fingerprint import classify, collect, load_rules
-
-        deep = payload.get("hook_event_name") == "SessionStart"
-        chain, exe, cmdline = collect(env, payload.get("cwd"), pid, deep)
-        host = classify(load_rules(), env, chain, exe, payload.get("cwd"), cmdline)
-        if host:
-            event["host"] = host
-    except Exception as e:  # a broken rules file must not lose the event
-        _log(f"fingerprint failed: {type(e).__name__}: {e}")
+    host = _host(payload, env, deep)
+    if host:
+        event["host"] = host
     return event
 
 
+def host_update(event: dict, payload: dict, env: dict[str, str]) -> dict | None:
+    """After SessionStart: the parent chain and agent exe (slow on Windows) as a follow-up event."""
+    from ronda.pos.claude_code.translate import new_event_id
+
+    host = _host(payload, env, deep=True)
+    if not host or (event.get("host") and host["confidence"] <= event["host"]["confidence"]):
+        return None
+    return {k: event[k] for k in ("v", "source", "session_id", "agent", "workspace") if k in event} | {
+        "event_id": new_event_id(), "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "message", "host": host,
+    }
+
+
+def _hub_addr() -> tuple[str, int]:
+    url = _hub_url().split("://", 1)[-1].split("/", 1)[0]
+    host, _, port = url.rpartition(":")
+    return (host or url), int(port or 80)
+
+
 def post(event: dict, timeout: float) -> None:
+    """POST to the loopback hub over a plain socket: urllib pulls in http.client and email (slow imports)."""
     token = _token()
     if not token:
         _log("no token: run `ronda up` once")
         return
-    req = urllib.request.Request(
-        _hub_url() + "/v1/events",
-        data=json.dumps(event).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        resp.read()
+    host, port = _hub_addr()
+    body = json.dumps(event).encode("utf-8")
+    lines = [
+        "POST /v1/events HTTP/1.1",
+        f"Host: {host}:{port}",
+        f"Authorization: Bearer {token}",
+        "Content-Type: application/json",
+        f"Content-Length: {len(body)}",
+        "Connection: close",
+        "",
+        "",
+    ]
+    head = "\r\n".join(lines).encode("ascii")
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        sock.settimeout(timeout)
+        sock.sendall(head + body)
+        status = sock.recv(32)
+    if not status.startswith(b"HTTP/1.1 2"):
+        raise RuntimeError(status.split(b"\r\n", 1)[0].decode("latin-1", "replace"))
 
 
 def run(stdin: bytes, env: dict[str, str]) -> None:
     payload = json.loads(stdin.decode("utf-8"))
     if not isinstance(payload, dict):
         return
-    event = build_event(payload, env)
+    event = build_event(payload, env)  # env-only fingerprint: fast, so the card shows at once
     if event is None:
         return
     timeout = SESSION_END_HTTP_TIMEOUT_S if event.get("type") == "session_ended" else HTTP_TIMEOUT_S
     try:
         post(event, timeout)
+        if event.get("type") == "session_started":
+            update = host_update(event, payload, env)
+            if update:
+                post(update, timeout)
     except Exception as e:
         _log(f"{payload.get('hook_event_name')}: hub unreachable ({type(e).__name__})")
 

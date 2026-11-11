@@ -26,10 +26,30 @@ def rules_path() -> Path:
 
 
 def load_rules(path: Path | None = None) -> dict:
-    import yaml  # lazy: only paid when a hook classifies
+    """The rules, from a JSON cache next to the token when it is fresh (yaml is a slow import)."""
+    import json
 
-    with open(path or rules_path(), encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    src = Path(path or rules_path())
+    cache = Path(os.environ.get("RONDA_HOME") or Path.home() / ".ronda") / "hosts.cache.json"
+    key = f"{src.resolve()}|{src.stat().st_mtime_ns}"
+    try:
+        cached = json.loads(cache.read_text(encoding="utf-8"))
+        if cached.get("key") == key:
+            return cached["rules"]
+    except (OSError, ValueError):
+        pass
+    import yaml
+
+    with open(src, encoding="utf-8") as f:
+        rules = yaml.safe_load(f)
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_name(cache.name + f".{os.getpid()}")
+        tmp.write_text(json.dumps({"key": key, "rules": rules}), encoding="utf-8")
+        os.replace(tmp, cache)
+    except OSError:
+        pass
+    return rules
 
 
 def _env_get(env: dict[str, str], name: str) -> str | None:
