@@ -19,3 +19,8 @@ below 0.5 falls back to `terminal` / `unknown`. Matched signal ids become `host.
 - Rules for macOS/Linux terminals and Cursor/JetBrains are unverified guesses (`verified: []`).
 - The host answers "which app do I open?", not "which transport can act?" (tmux inside Orca
   is labelled Orca). Transport/capabilities stay with the pos.
+
+## Location (M1)
+The rules ship inside the package as `src/ronda/hosts.yaml`. A user file at `~/.ronda/hosts.yaml`
+(or `RONDA_HOSTS`) replaces it. Classification runs in `ronda-hook`, which sends the result as the
+event's `host`; the hub keeps the most confident host per session.

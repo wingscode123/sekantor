@@ -1,0 +1,103 @@
+"""The hub: FastAPI app, auth, static web UI and the FR-07 sweep."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+import psutil
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
+from ronda import config
+from ronda.hub.api import router, session_json
+from ronda.hub.auth import TokenAuthMiddleware, ensure_token
+from ronda.hub.store import Store
+from ronda.hub.status import sweep
+from ronda.hub.stream import Broadcaster
+
+SWEEP_EVERY_S = 30
+PRUNE_EVERY_S = 3600
+
+NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Ronda</title>
+<body style="background:#14162B;color:#ECEEF7;font:16px system-ui;padding:40px">
+<p>The Ronda hub is running, but the web UI is not built.</p>
+<p>Run <code>npm ci &amp;&amp; npm run build</code> in <code>web/</code>, then reload.</p></body>"""
+
+
+def web_dist() -> Path | None:
+    candidates = [os.environ.get("RONDA_WEB_DIST"),
+                  Path(__file__).parent / "static",
+                  Path(__file__).resolve().parents[3] / "web" / "dist"]
+    for c in candidates:
+        if c and (Path(c) / "index.html").is_file():
+            return Path(c)
+    return None
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        return psutil.pid_exists(pid)
+    except Exception:
+        return True  # unsure: do not end a session we cannot check
+
+
+def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
+    ended = 0
+    for s in store.sessions():
+        out = sweep(s, now, pid_alive)
+        if out is not None:
+            store.put_session(out)
+            broadcaster.publish({"type": "session", "session": session_json(out)})
+            ended += 1
+    return ended
+
+
+def create_app(home: Path | None = None, port: int | None = None, token: str | None = None) -> FastAPI:
+    home = home or config.home()
+    port = port or config.port()
+    token = token or ensure_token(home / "token")
+    store = Store(home / "ronda.db")
+    broadcaster = Broadcaster()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async def loop():
+            ticks = 0
+            while True:
+                await asyncio.sleep(SWEEP_EVERY_S)
+                ticks += 1
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(run_sweep, store, broadcaster)
+                    if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
+                        await asyncio.to_thread(store.prune)
+        await asyncio.to_thread(store.prune)
+        task = asyncio.create_task(loop())
+        try:
+            yield
+        finally:
+            task.cancel()
+            store.close()
+
+    app = FastAPI(title="Ronda hub", version="1", docs_url=None, redoc_url=None, openapi_url=None,
+                  lifespan=lifespan)
+    app.state.store = store
+    app.state.broadcaster = broadcaster
+    app.include_router(router)
+
+    dist = web_dist()
+    if dist:
+        app.mount("/", StaticFiles(directory=dist, html=True), name="web")
+    else:
+        @app.get("/", include_in_schema=False)
+        async def not_built():
+            return HTMLResponse(NOT_BUILT)
+
+    app.add_middleware(TokenAuthMiddleware, token=token, port=port)
+    return app

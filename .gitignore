@@ -13,3 +13,4 @@ probe*.json
 .claude/settings.local.json
 docs/spike/payloads/raw/
 site/.hallmark/
+*.ronda-backup-*

@@ -8,8 +8,23 @@ Ronda watches Claude Code (terminal, VS Code, Claude desktop), Orca, OpenBot and
 tmux, and sorts them by who needs you: waiting for approval, waiting for input, error, running, done.
 Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local token, and sends no telemetry.
 
-**Status:** pre-alpha. M0 (spike) is done; M1 (core, read-only inbox) is in progress.
+**Status:** pre-alpha. M0 (spike) and M1 (core, read-only inbox) are done; approve and reply land in M2.
 Public beta planned for 25 January 2027.
+
+## Try it from source
+
+Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and Node 18+ (for the web UI build).
+
+```sh
+uv sync
+(cd web && npm ci && npm run build)   # builds the inbox into src/ronda/hub/static
+uv run ronda up                       # hub on 127.0.0.1:7878, opens the inbox with a one-time link
+uv run ronda install claude --project # in the project you want watched (or --global; backs up first)
+uv run ronda doctor
+```
+
+Start Claude Code in that project and its card appears in the inbox. `uv run ronda status` shows the
+same list in the terminal; `uv run ronda uninstall claude` removes only Ronda's hooks.
 
 ## Docs
 

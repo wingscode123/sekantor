@@ -28,3 +28,17 @@ Options considered:
 - In `-p` mode async hooks still running at teardown are killed; a lost event there is acceptable.
 - `CLAUDE_PID` (set by Claude Code in the hook env) gives the agent PID for FR-07 liveness checks
   without walking the process tree.
+
+## M1 measurements (Windows 11, machine under heavy load)
+
+- Bare `python -c pass`: 540-840 ms during the test run (normally 40-60 ms); `ronda-hook` adds
+  about 100 ms on top of the interpreter start.
+- Removed from the hot path after profiling: `urllib.request` (pulls in `http.client` and `email`;
+  replaced by a plain socket POST to loopback) and `yaml` (rules cached as JSON in
+  `~/.ronda/hosts.cache.json`, keyed on the rules file's path and mtime).
+- SessionStart posts first with the env-only fingerprint, then sends a follow-up event with the
+  parent-chain fingerprint, so the card appears without waiting for psutil.
+- End to end (`scripts/e2e_claude.py`, a real `claude -p` session): hook timestamp to WebSocket
+  arrival 16-51 ms; worst 83 ms in earlier runs. Status sequence
+  waiting_input -> running -> waiting_input -> ended.
+- Because every hook except SessionEnd is `async: true`, Claude Code does not wait for any of this.

@@ -4,13 +4,13 @@ Date: 2026-11-11 · Machine: Windows 11, Claude Code CLI 2.1.319, Orca 1.4.255,
 Claude desktop 5.1231.0 (CLI 2.1.321), VS Code extension (CLI 2.1.322), OpenBot 0.1.0 (CLI 2.1.322).
 
 Details: [claude-hooks.md](claude-hooks.md) · Evidence: [payloads/](payloads/), [evidence/](evidence/)
-· Rules: [hosts.yaml](../../hosts.yaml) · Decisions: [ADRs](../adr/)
+· Rules: [hosts.yaml](../../src/ronda/hosts.yaml) · Decisions: [ADRs](../adr/)
 
 ## Answers to the PRD open questions
 
 | # | Question | Answer | Confidence | Evidence |
 | --- | --- | --- | --- | --- |
-| 1 | Which OpenBot, and does it have a local API to inject messages? | Installed: **OpenBot 0.1.0** (`CLAUDE_AGENT_SDK_CLIENT_APP=openbot/0.1.0`), which drives the Claude Code CLI over the SDK stdio protocol (`--input-format stream-json --permission-prompt-tool=stdio`), one process per agent in `~/OpenBot/Agents/agent-<uuid>`. Which upstream project (nightly-labs vs meetopenbot) and whether it has a local message API is **not answered** by this spike. | medium | `evidence/probe-*.json` |
+| 1 | Which OpenBot, and does it have a local API to inject messages? | **nightly-labs/openbot** 0.67.1 (uninstall registry `URLInfoAbout`, `resources/app-update.yml` owner `nightly-labs`). Agents run the Claude Code CLI over SDK stdio (`CLAUDE_AGENT_SDK_CLIENT_APP=openbot/0.1.0`), one process per agent in `~/OpenBot/Agents/agent-<uuid>`. **Yes, a local API exists:** the bundled `resources/cli/openbot-cli.mjs` uses the "Local scripts API" (per-agent opt-in; URL and token in `%APPDATA%/OpenBot/automation`): `GET /v1/agents`, `POST /v1/agents/{id}/messages`, delivery status incl. "the agent waits for a person". The token files were not read. | high | install metadata, CLI source header |
 | 1b | Do Ronda's hooks reach OpenBot sessions? | **Not via `~/.claude/settings.json`.** OpenBot passes `--setting-sources=project,local`, so only `.claude/settings*.json` inside each agent dir load. | high | probe cmdline |
 | 2 | Do hooks in `~/.claude/settings.json` fire for Claude Code desktop? | **Yes.** Desktop spawns the CLI with `--setting-sources=user,project,local`; we captured SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SubagentStop, SessionEnd from a desktop session (project-level settings; user-level loads by the same flag). Also true for the VS Code extension. | high (project-level observed, user-level inferred from flag + docs) | `payloads/claude-desktop/`, `payloads/claude-vscode/` |
 | 3 | Does the Orca CLI expose agent status and input? | **Partly.** `orca terminal list/read/send/wait --for tui-idle` gives read + input for agents running in Orca *terminals*. Orca *chat* sessions (SDK) are not exposed beyond `orca search`. Orca already gets status by installing its **own Claude Code hooks** (`~/.orca/agent-hooks/orca-agent-hook.exe` on 16 events, env `ORCA_AGENT_HOOK_PORT`, transport `raw-json-v1`). Ronda's hooks see Orca sessions anyway, so the Orca pos is only needed for non-Claude agents in Orca. | medium (CLI `--help` only, commands not exercised) | `orca --help`, user settings (read-only) |
@@ -47,6 +47,5 @@ Details: [claude-hooks.md](claude-hooks.md) · Evidence: [payloads/](payloads/),
 - Interactive approval flow in a terminal with `--permission-mode default` (A ran in auto mode, so
   no prompt appeared): `PermissionRequest` → `Notification/permission_prompt` → `PostToolUse`
   ordering. Not blocking M1 (headless capture shows `PermissionRequest`), needed before M2.
-- OpenBot upstream identity and local API (question 1).
 - Plain terminal (Windows Terminal) fingerprint: the "terminal" test ran inside an Orca terminal.
 - macOS/Linux probes for the unverified `hosts.yaml` rules.
