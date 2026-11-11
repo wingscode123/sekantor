@@ -62,3 +62,27 @@ def test_prune_retention(tmp_path):
     assert st.prune(now=T0 + timedelta(days=8)) == 1
     assert st.events("claude:a") == []
     assert len(st.events("claude:b")) == 1
+
+
+# --- actions / audit (ADR-0010) -------------------------------------------------
+
+def test_action_lifecycle(tmp_path):
+    st = Store(tmp_path / "r.db")
+    a = st.add_action("claude:a", "approve", "p1", None, "web", "me")
+    assert a["outcome"] == "pending" and a["channel"] == "web"
+    assert st.take_action("claude:a", "p2", ("approve", "deny")) is None  # other request
+    got = st.take_action("claude:a", "p1", ("approve", "deny"))
+    assert got["id"] == a["id"] and got["outcome"] == "delivered"
+    assert st.take_action("claude:a", "p1", ("approve", "deny")) is None  # delivered once
+
+
+def test_newer_answer_supersedes_and_stale_expire(tmp_path):
+    st = Store(tmp_path / "r.db")
+    first = st.add_action("claude:a", "approve", "p1", None, "web", "me")
+    st.add_action("claude:a", "deny", "p1", None, "cli", "me")
+    st.add_action("claude:a", "reply", "s1", "hi", "web", "me")
+    assert st.expire_actions("claude:a", keep_request_id="p1") == 1  # the reply to s1
+    outcomes = {x["id"]: x["outcome"] for x in st.actions("claude:a")}
+    assert outcomes[first["id"]] == "superseded"
+    assert st.take_action("claude:a", "p1", ("approve", "deny"))["type"] == "deny"
+    assert [x["type"] for x in st.actions()] == ["reply", "deny", "approve"]

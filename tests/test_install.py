@@ -24,10 +24,16 @@ def test_install_keeps_other_hooks_and_settings(tmp_path):
     assert data["hooks"]["TeammateIdle"] == [{"hooks": [ORCA]}]
     assert set(inst.EVENTS) <= set(data["hooks"])
     assert r.backup and json.loads(r.backup.read_text())["theme"] == "dark"
-    ours = data["hooks"]["Stop"][1]["hooks"][0]
+    ours = data["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert ours == {"type": "command", "command": EXE.as_posix(), "args": [], "async": True, "timeout": 10}
     end = data["hooks"]["SessionEnd"][0]["hooks"][0]
     assert "async" not in end and end["timeout"] == 2
+    perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
+    assert "async" not in perm and perm["timeout"] == 600 + inst.MARGIN_S and perm["args"] == ["--wait"]
+    stop = data["hooks"]["Stop"][1]["hooks"][0]
+    assert stop["async"] is True and stop["asyncRewake"] is True and stop["timeout"] == 1800 + inst.MARGIN_S
+    assert stop["args"] == ["--wait"]
+    assert inst.inspect(p).current_shape
 
 
 def test_install_is_idempotent(tmp_path):
@@ -74,3 +80,11 @@ def test_missing_file_is_created(tmp_path):
 def test_windows_exe_name_is_ours():
     assert inst.is_ours({"command": r"C:\venv\Scripts\ronda-hook.exe"})
     assert not inst.is_ours(ORCA)
+
+
+def test_old_m1_install_is_flagged(tmp_path):
+    p = settings(tmp_path, {"hooks": {
+        "PermissionRequest": [{"hooks": [{"type": "command", "command": EXE.as_posix(), "args": [], "async": True}]}],
+        "Stop": [{"hooks": [{"type": "command", "command": EXE.as_posix(), "args": [], "async": True}]}],
+    }})
+    assert not inst.inspect(p).current_shape

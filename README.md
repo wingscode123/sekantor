@@ -8,7 +8,7 @@ Ronda watches Claude Code (terminal, VS Code, Claude desktop), Orca, OpenBot and
 tmux, and sorts them by who needs you: waiting for approval, waiting for input, error, running, done.
 Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local token, and sends no telemetry.
 
-**Status:** pre-alpha. M0 (spike) and M1 (core, read-only inbox) are done; approve and reply land in M2.
+**Status:** pre-alpha. M0 (spike), M1 (core inbox) and M2 (approve, deny, reply, notifications, audit) are done.
 Public beta planned for 25 January 2027.
 
 ## Try it from source
@@ -24,13 +24,18 @@ uv run ronda doctor
 ```
 
 Start Claude Code in that project and its card appears in the inbox. `uv run ronda status` shows the
-same list in the terminal; `uv run ronda uninstall claude` removes only Ronda's hooks.
+same list in the terminal. Approve, deny or reply from the inbox, or with `uv run ronda approve|deny <session>`
+and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; whoever answers first wins).
+`uv run ronda audit` lists every action. `uv run ronda stats` reports lost events and time spent waiting for you;
+`uv run ronda uninstall claude` removes only Ronda's hooks.
 
 ## Docs
 
 - [Product requirements](docs/PRD.md)
 - [M0 spike summary](docs/spike/summary.md) and [Claude Code hooks findings](docs/spike/claude-hooks.md)
 - [Architecture decisions](docs/adr/)
+- [Dogfooding M1](docs/dogfooding.md)
+- [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
 - [Brand](brand/BRAND.md) and [design system](design.md)
 - [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
 

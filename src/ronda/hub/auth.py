@@ -82,6 +82,7 @@ class TokenAuthMiddleware:
         auth = h.get("authorization", "")
         bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else None
         if self._ok(bearer):
+            scope["ronda_auth"] = "bearer"
             return await self.app(scope, receive, send)
 
         cookie = SimpleCookie(h.get("cookie", ""))
@@ -91,6 +92,7 @@ class TokenAuthMiddleware:
             if scope["type"] == "websocket" or method not in SAFE_METHODS:
                 if h.get("origin") not in self.origins:
                     return await self._deny(scope, send, 403, "Cross-origin request refused")
+            scope["ronda_auth"] = "cookie"
             return await self.app(scope, receive, send)
 
         # One-time login link: /?token=... sets the cookie and drops the token from the URL.

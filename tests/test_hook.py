@@ -12,11 +12,14 @@ from pathlib import Path
 import pytest
 import uvicorn
 
+from ronda.pos.claude_code import hook
 from ronda.pos.claude_code.fingerprint import classify, load_rules
 from ronda.pos.claude_code.translate import git_branch, translate
 from ronda.schema import Event
 
 ROOT = Path(__file__).resolve().parents[1]
+# The watchdog bounds the hook itself; interpreter start-up on a loaded CI runner or Windows box comes on top.
+STARTUP_SLACK_S = 2.0
 PAYLOADS = ROOT / "docs" / "spike" / "payloads"
 EVIDENCE = ROOT / "docs" / "spike" / "evidence"
 
@@ -50,7 +53,8 @@ def test_translate_real_payloads(rel, type_, status):
 
 def test_permission_request_carries_the_command():
     ev = translate(payload("cli-headless/10_PermissionRequest.json")["stdin"])
-    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt"}
+    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt",
+                             "id": ev["event_id"]}
     assert ev["summary"] == "Wants to run: echo ronda-spike > spike-tmp.txt"
 
 
@@ -146,7 +150,7 @@ def home(tmp_path):
 def test_hub_down_exits_zero_fast_and_silent(home):
     p, dt = run_hook(home, free_port(), START)
     assert p.returncode == 0 and p.stdout == b""
-    assert dt < 2.5
+    assert dt < hook.HARD_TIMEOUT_S + STARTUP_SLACK_S
     assert "hub unreachable" in (home / "hook.log").read_text()
 
 
@@ -159,7 +163,7 @@ def test_hub_hanging_is_cut_by_watchdog(home):
     finally:
         srv.close()
     assert p.returncode == 0 and p.stdout == b""
-    assert dt < 3.0
+    assert dt < hook.HARD_TIMEOUT_S + STARTUP_SLACK_S
 
 
 @pytest.mark.parametrize("stdin", [b"", b"not json", b"[1,2]", json.dumps({"hook_event_name": "SubagentStop", "session_id": "x"}).encode()])

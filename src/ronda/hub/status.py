@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ronda.schema import Agent, Capability, Event, Host, Request, Status, Workspace
 
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
+WAITING = {Status.waiting_approval, Status.waiting_input}
 
 # FR-10: waiting_approval > waiting_input > error > running > done (ended last, as history).
 PRIORITY = {
@@ -25,6 +26,7 @@ PRIORITY = {
 }
 
 SILENCE_TIMEOUT = timedelta(minutes=10)
+ENDED_GRACE = timedelta(seconds=15)
 
 
 class SessionState(BaseModel):
@@ -72,7 +74,7 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             workspace=_merge_workspace(Workspace(), event.workspace),
             host=event.host,
             summary=event.summary,
-            request=event.request if status is Status.waiting_approval else None,
+            request=event.request if status in WAITING else None,
             capabilities=list(event.capabilities),
             pid=event.process.pid if event.process else None,
         )
@@ -87,8 +89,6 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     s.workspace = _merge_workspace(s.workspace, event.workspace)
     if event.host is not None and (s.host is None or event.host.confidence >= s.host.confidence):
         s.host = event.host
-    if event.capabilities:
-        s.capabilities = list(event.capabilities)
     if event.process is not None and newer:
         s.pid = event.process.pid
 
@@ -98,12 +98,17 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     if event.summary:
         s.summary = event.summary
 
-    # `ended` is terminal; only a new session_started (resume) revives it.
+    # `ended` is terminal; a new session_started (resume) revives it, and so does a status event well
+    # after the end (the restart's SessionStart was missed, e.g. while the hub was down). Events within
+    # the grace period are stragglers from before the end (async hooks).
     if s.status is Status.ended and event.type != "session_started":
-        return s
+        revived = event.status is not None and s.ended_at is not None and event.ts - s.ended_at > ENDED_GRACE
+        if not revived:
+            return s
 
     if event.status is not None:
-        if event.status is not s.status:
+        changed = event.status is not s.status
+        if changed:
             s.status = event.status
             s.status_since = event.ts
         s.status_ts = event.ts
@@ -111,11 +116,23 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             s.ended_at = event.ts
         else:
             s.ended_at = None
-        if s.status is Status.waiting_approval:
-            s.request = event.request or s.request
+        if s.status in WAITING:
+            if event.request is None:
+                # A repeat of the same wait (the idle or permission notification) keeps the request.
+                if changed:
+                    s.request, s.capabilities = None, list(event.capabilities)
+            elif (not changed and s.request is not None and s.capabilities and not event.capabilities
+                  and _same_ask(s.request, event.request)):
+                pass  # the same question from a hook that cannot act (an older install): keep ours
+            else:
+                s.request, s.capabilities = event.request, list(event.capabilities)
         else:
-            s.request = None
+            s.request, s.capabilities = None, list(event.capabilities)
     return s
+
+
+def _same_ask(a: Request, b: Request) -> bool:
+    return (a.kind, a.tool, a.input) == (b.kind, b.tool, b.input)
 
 
 def sort_key(s: SessionState) -> tuple:

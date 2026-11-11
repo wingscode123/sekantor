@@ -173,3 +173,67 @@ def test_sweep(silent_s, pid, alive, ended):
 def test_sweep_leaves_ended_alone():
     s = run(ev(Status.ended, at=0, type="session_ended"))
     assert sweep(s, T0 + timedelta(hours=1), pid_alive=lambda p: False) is None
+
+
+# --- M2: pending requests carry an id (ADR-0008) ------------------------------
+
+def test_reply_request_kept_while_waiting_for_input():
+    s = run(ev(Status.running, at=0), ev(Status.waiting_input, at=5, request={"kind": "input", "id": "stop-1"}))
+    assert s.request.kind == "input" and s.request.id == "stop-1"
+    s = apply(s, ev(Status.waiting_input, at=60, type="message"))  # idle_prompt: same wait, same request
+    assert s.request.id == "stop-1"
+    s = apply(s, ev(Status.running, at=70))
+    assert s.request is None
+
+
+def test_new_approval_replaces_request():
+    s = run(
+        ev(Status.waiting_approval, at=0, request={"kind": "tool", "tool": "Bash", "input": "ls", "id": "p1"}),
+        ev(Status.running, at=2),
+        ev(Status.waiting_approval, at=4, request={"kind": "tool", "tool": "Bash", "input": "rm x", "id": "p2"}),
+    )
+    assert s.request.id == "p2"
+
+
+def test_permission_prompt_notification_keeps_request():
+    s = run(
+        ev(Status.waiting_approval, at=0, request={"kind": "tool", "tool": "Bash", "input": "ls", "id": "p1"}),
+        ev(Status.waiting_approval, at=6),
+    )
+    assert s.request.id == "p1"
+
+
+# --- capabilities belong to the pending request ---------------------------------
+
+def _ask(at, rid, caps, cmd="npm test"):
+    return ev(Status.waiting_approval, at=at, capabilities=caps,
+              request={"kind": "tool", "tool": "Bash", "input": cmd, "id": rid})
+
+
+def test_capabilities_follow_the_request():
+    s = run(ev(Status.waiting_input, at=0, capabilities=["reply"], request={"kind": "input", "id": "s1"}),
+            ev(Status.running, at=5))
+    assert s.capabilities == []
+    s = apply(s, _ask(6, "p1", ["approve", "deny"]))
+    assert s.capabilities == ["approve", "deny"]
+
+
+def test_duplicate_ask_from_a_hook_that_cannot_act_is_ignored():
+    # capable hook first, then the same question from an older install without capabilities
+    s = run(_ask(0, "p-new", ["approve", "deny"]), _ask(1, "p-old", []))
+    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
+    # the other order: the capable one replaces the incapable one
+    s = run(_ask(0, "p-old", []), _ask(1, "p-new", ["approve", "deny"]))
+    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
+
+
+def test_a_different_question_replaces_even_without_capabilities():
+    s = run(_ask(0, "p1", ["approve", "deny"]), _ask(1, "p2", [], cmd="rm x"))
+    assert s.request.id == "p2" and s.capabilities == []
+
+
+def test_events_well_after_end_revive_a_session_whose_restart_was_missed():
+    # Orca/desktop restart the CLI: SessionEnd, then SessionStart(resume). If the hub missed the
+    # SessionStart, later events from the live process must still bring the session back.
+    s = run(ev(Status.running, at=0), ev(Status.ended, at=10, type="session_ended"), ev(Status.running, at=40))
+    assert s.status is Status.running and s.ended_at is None
