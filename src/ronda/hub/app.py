@@ -16,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 
 from ronda import config
 from ronda.hub.api import router, session_json
+from ronda.hub.notify import Notifier
+from ronda.hub.waiters import Waiters
 from ronda.hub.auth import TokenAuthMiddleware, ensure_token
 from ronda.hub.store import Store
 from ronda.hub.status import sweep
@@ -47,24 +49,32 @@ def pid_alive(pid: int) -> bool:
         return True  # unsure: do not end a session we cannot check
 
 
-def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = None) -> int:
+def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = None,
+              on_change=None) -> int:
     now = now or datetime.now(timezone.utc)
     ended = 0
     for s in store.sessions():
         out = sweep(s, now, pid_alive)
         if out is not None:
             store.put_session(out)
+            store.expire_actions(out.session_id, None)
+            if on_change:
+                on_change(out.session_id)
             broadcaster.publish({"type": "session", "session": session_json(out)})
             ended += 1
     return ended
 
 
-def create_app(home: Path | None = None, port: int | None = None, token: str | None = None) -> FastAPI:
+def create_app(home: Path | None = None, port: int | None = None, token: str | None = None,
+               settings: config.Settings | None = None, notifier: Notifier | None = None) -> FastAPI:
     home = home or config.home()
     port = port or config.port()
     token = token or ensure_token(home / "token")
+    settings = settings or config.settings(home)
     store = Store(home / "ronda.db")
     broadcaster = Broadcaster()
+    waiters = Waiters()
+    notifier = notifier or Notifier(enabled=settings.notify)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -74,7 +84,9 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
                 with contextlib.suppress(Exception):
-                    await asyncio.to_thread(run_sweep, store, broadcaster)
+                    loop_ = asyncio.get_running_loop()
+                    await asyncio.to_thread(run_sweep, store, broadcaster, None,
+                                            lambda sid: loop_.call_soon_threadsafe(waiters.notify, sid))
                     if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
                         await asyncio.to_thread(store.prune)
         await asyncio.to_thread(store.prune)
@@ -89,6 +101,9 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                   lifespan=lifespan)
     app.state.store = store
     app.state.broadcaster = broadcaster
+    app.state.waiters = waiters
+    app.state.notifier = notifier
+    app.state.settings = settings
     app.include_router(router)
 
     dist = web_dist()

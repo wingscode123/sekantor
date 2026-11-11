@@ -173,3 +173,31 @@ def test_sweep(silent_s, pid, alive, ended):
 def test_sweep_leaves_ended_alone():
     s = run(ev(Status.ended, at=0, type="session_ended"))
     assert sweep(s, T0 + timedelta(hours=1), pid_alive=lambda p: False) is None
+
+
+# --- M2: pending requests carry an id (ADR-0008) ------------------------------
+
+def test_reply_request_kept_while_waiting_for_input():
+    s = run(ev(Status.running, at=0), ev(Status.waiting_input, at=5, request={"kind": "input", "id": "stop-1"}))
+    assert s.request.kind == "input" and s.request.id == "stop-1"
+    s = apply(s, ev(Status.waiting_input, at=60, type="message"))  # idle_prompt: same wait, same request
+    assert s.request.id == "stop-1"
+    s = apply(s, ev(Status.running, at=70))
+    assert s.request is None
+
+
+def test_new_approval_replaces_request():
+    s = run(
+        ev(Status.waiting_approval, at=0, request={"kind": "tool", "tool": "Bash", "input": "ls", "id": "p1"}),
+        ev(Status.running, at=2),
+        ev(Status.waiting_approval, at=4, request={"kind": "tool", "tool": "Bash", "input": "rm x", "id": "p2"}),
+    )
+    assert s.request.id == "p2"
+
+
+def test_permission_prompt_notification_keeps_request():
+    s = run(
+        ev(Status.waiting_approval, at=0, request={"kind": "tool", "tool": "Bash", "input": "ls", "id": "p1"}),
+        ev(Status.waiting_approval, at=6),
+    )
+    assert s.request.id == "p1"

@@ -15,6 +15,7 @@ from ronda.hub.status import SessionState, apply
 from ronda.schema import Event, Status
 
 RETENTION = timedelta(days=7)
+AUDIT_RETENTION = timedelta(days=90)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -32,6 +33,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at TEXT NOT NULL,
     body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    request_id TEXT,
+    type TEXT NOT NULL,
+    text TEXT,
+    channel TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    outcome TEXT NOT NULL DEFAULT 'pending',
+    outcome_at TEXT
+);
+CREATE INDEX IF NOT EXISTS actions_pending ON actions(session_id, outcome);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
@@ -89,12 +103,63 @@ class Store:
         cutoff = ((now or _now()) - RETENTION).isoformat()
         with self._lock:
             n = self._db.execute("DELETE FROM events WHERE received_at < ?", (cutoff,)).rowcount
+            audit_cutoff = ((now or _now()) - AUDIT_RETENTION).isoformat()
+            self._db.execute("DELETE FROM actions WHERE created_at < ?", (audit_cutoff,))
             self._db.execute(
                 "DELETE FROM sessions WHERE status = ? AND updated_at < ? "
                 "AND session_id NOT IN (SELECT DISTINCT session_id FROM events)",
                 (Status.ended.value, cutoff),
             )
             return n
+
+    # --- actions (the audit log, ADR-0010) ------------------------------------
+
+    def add_action(self, session_id: str, type: str, request_id: str | None, text: str | None,
+                   channel: str, actor: str) -> dict:
+        now = _now().isoformat()
+        with self._lock:
+            # A newer answer to the same request replaces an undelivered older one.
+            self._db.execute(
+                "UPDATE actions SET outcome='superseded', outcome_at=? WHERE session_id=? AND outcome='pending' "
+                "AND request_id IS ?", (now, session_id, request_id))
+            cur = self._db.execute(
+                "INSERT INTO actions(session_id, request_id, type, text, channel, actor, created_at) VALUES (?,?,?,?,?,?,?)",
+                (session_id, request_id, type, text, channel, actor, now))
+            return self._action(cur.lastrowid)
+
+    def take_action(self, session_id: str, request_id: str, types: tuple[str, ...]) -> dict | None:
+        """Hand the oldest pending action for this request to a hook, marking it delivered."""
+        now = _now().isoformat()
+        marks = ",".join("?" * len(types))
+        with self._lock:
+            row = self._db.execute(
+                f"SELECT id FROM actions WHERE session_id=? AND request_id=? AND outcome='pending' AND type IN ({marks}) "
+                "ORDER BY id LIMIT 1", (session_id, request_id, *types)).fetchone()
+            if not row:
+                return None
+            self._db.execute("UPDATE actions SET outcome='delivered', outcome_at=? WHERE id=?", (now, row[0]))
+            return self._action(row[0])
+
+    def expire_actions(self, session_id: str, keep_request_id: str | None) -> int:
+        """Pending actions for any other request can no longer be delivered."""
+        with self._lock:
+            return self._db.execute(
+                "UPDATE actions SET outcome='expired', outcome_at=? WHERE session_id=? AND outcome='pending' "
+                "AND request_id IS NOT ?", (_now().isoformat(), session_id, keep_request_id)).rowcount
+
+    def actions(self, session_id: str | None = None, limit: int = 100) -> list[dict]:
+        with self._lock:
+            if session_id:
+                rows = self._db.execute("SELECT id FROM actions WHERE session_id=? ORDER BY id DESC LIMIT ?",
+                                        (session_id, limit)).fetchall()
+            else:
+                rows = self._db.execute("SELECT id FROM actions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [self._action(r[0]) for r in rows]
+
+    def _action(self, action_id: int) -> dict:
+        cols = ("id", "session_id", "request_id", "type", "text", "channel", "actor", "created_at", "outcome", "outcome_at")
+        row = self._db.execute(f"SELECT {','.join(cols)} FROM actions WHERE id=?", (action_id,)).fetchone()
+        return dict(zip(cols, row))
 
     # --- reads ----------------------------------------------------------------
 

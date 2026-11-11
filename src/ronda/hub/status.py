@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ronda.schema import Agent, Capability, Event, Host, Request, Status, Workspace
 
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
+WAITING = {Status.waiting_approval, Status.waiting_input}
 
 # FR-10: waiting_approval > waiting_input > error > running > done (ended last, as history).
 PRIORITY = {
@@ -72,7 +73,7 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             workspace=_merge_workspace(Workspace(), event.workspace),
             host=event.host,
             summary=event.summary,
-            request=event.request if status is Status.waiting_approval else None,
+            request=event.request if status in WAITING else None,
             capabilities=list(event.capabilities),
             pid=event.process.pid if event.process else None,
         )
@@ -103,7 +104,8 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
         return s
 
     if event.status is not None:
-        if event.status is not s.status:
+        changed = event.status is not s.status
+        if changed:
             s.status = event.status
             s.status_since = event.ts
         s.status_ts = event.ts
@@ -111,8 +113,10 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             s.ended_at = event.ts
         else:
             s.ended_at = None
-        if s.status is Status.waiting_approval:
-            s.request = event.request or s.request
+        if s.status in WAITING:
+            # A new request replaces the old one; a repeat of the same wait (e.g. the idle or
+            # permission notification) keeps it.
+            s.request = event.request or (None if changed else s.request)
         else:
             s.request = None
     return s

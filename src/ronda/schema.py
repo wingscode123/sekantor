@@ -53,6 +53,20 @@ class Request(_Model):
     kind: Literal["tool", "input", "question"] = "tool"
     tool: str | None = None
     input: str | None = Field(default=None, max_length=4000)
+    # ADR-0008: the id actions answer (the asking event's event_id). Optional.
+    id: str | None = Field(default=None, max_length=128)
+
+
+ActionType = Literal["approve", "deny", "reply"]
+
+
+class ActionIn(_Model):
+    """POST /v1/sessions/{id}/actions"""
+
+    type: ActionType
+    request_id: str | None = Field(default=None, max_length=128)
+    text: str | None = Field(default=None, max_length=4000)
+    confirm: bool = False  # second confirmation for risky commands
 
 
 class Process(_Model):
