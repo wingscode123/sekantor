@@ -76,6 +76,7 @@ def start_hook(home, port, payload, wait=True, **env_extra):
                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p.stdin.write(json.dumps({"session_id": "abc", "cwd": str(home), **payload}).encode())
     p.stdin.close()
+    p.stdin = None  # communicate() must not flush the closed pipe (POSIX)
     return p
 
 
