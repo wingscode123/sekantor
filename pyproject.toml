@@ -1,0 +1,26 @@
+[project]
+name = "ronda"
+version = "0.1.0"
+description = "One inbox for every AI coding agent on your machine. See who's waiting, approve, and reply from one place."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+ronda = "ronda.cli:main"
+ronda-hook = "ronda.pos.claude_code.hook:main"
+
+[dependency-groups]
+dev = [
+    "psutil>=7.2.2",
+    "pytest>=9.2.0",
+    "pyyaml>=6.0.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
