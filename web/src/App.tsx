@@ -39,7 +39,7 @@ function Source({ s }: { s: Session }) {
   const hostTitle = s.host ? `Host: ${host}, confidence ${s.host.confidence}, via ${s.host.via.join(", ")}` : undefined;
   return (
     <>
-      <span className="card__source">{SOURCES[s.source] ?? s.source}</span>
+      <span className="card__source">{s.source === "openbot" && s.agent?.name ? s.agent.name : SOURCES[s.source] ?? s.source}</span>
       {host && <>{" "}<span className="card__host" title={hostTitle}>in {host}</span></>}
     </>
   );
