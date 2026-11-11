@@ -82,8 +82,9 @@ def send_native(title: str, body: str) -> None:
 
 class Notifier:
     def __init__(self, enabled: bool = True, sender: Callable[[str, str], None] | None = None,
-                 min_gap_s: float = MIN_GAP_S):
+                 min_gap_s: float = MIN_GAP_S, quiet: Callable[[], bool] = lambda: False):
         self.enabled = enabled
+        self.quiet = quiet
         self.sender = sender
         self.min_gap_s = min_gap_s
         self._last: dict[str, float] = {}
@@ -91,6 +92,10 @@ class Notifier:
 
     def maybe(self, prev: SessionState | None, new: SessionState) -> bool:
         if not self.enabled or not should_notify(prev.status if prev else None, new.status):
+            return False
+        from datetime import datetime, timezone
+
+        if new.snoozed(datetime.now(timezone.utc)) or self.quiet():  # FR-15, FR-33
             return False
         now = time.monotonic()
         with self._lock:

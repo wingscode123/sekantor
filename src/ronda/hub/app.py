@@ -74,7 +74,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     store = Store(home / "ronda.db")
     broadcaster = Broadcaster()
     waiters = Waiters()
-    notifier = notifier or Notifier(enabled=settings.notify)
+    notifier = notifier or Notifier(enabled=settings.notify, quiet=settings.quiet)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -105,6 +105,9 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()
+    from ronda.hub import opener as _opener
+
+    app.state.opener_run = _opener.run  # tests replace it
     app.include_router(router)
 
     dist = web_dist()

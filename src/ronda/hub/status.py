@@ -45,6 +45,10 @@ class SessionState(BaseModel):
     request: Request | None = None
     capabilities: list[Capability] = []
     pid: int | None = None
+    snoozed_until: datetime | None = None  # FR-15: no notifications until then
+
+    def snoozed(self, now: datetime) -> bool:
+        return self.snoozed_until is not None and self.snoozed_until > now
 
     @property
     def needs_you(self) -> bool:

@@ -60,12 +60,41 @@ DEFAULT_REPLY_ENTRYPOINTS = ["cli", "sdk-ts"]
 
 class Settings:
     def __init__(self, approval_wait_s: int = 600, reply_wait_s: int = 1800, notify: bool = True,
-                 risky: list[str] | None = None, reply_entrypoints: list[str] | None = None):
+                 risky: list[str] | None = None, reply_entrypoints: list[str] | None = None,
+                 quiet_hours: str | None = None):
         self.approval_wait_s = max(0, min(int(approval_wait_s), 3600))
         self.reply_wait_s = max(0, min(int(reply_wait_s), 86400))
         self.notify = bool(notify)
         self.risky = list(risky) if risky is not None else list(DEFAULT_RISKY)
         self.reply_entrypoints = [str(e) for e in reply_entrypoints] if reply_entrypoints is not None             else list(DEFAULT_REPLY_ENTRYPOINTS)
+        self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
+
+    def quiet(self, now=None) -> bool:
+        return in_quiet_hours(self.quiet_hours, now)
+
+
+def parse_quiet_hours(spec: str | None) -> tuple[int, int] | None:
+    """'22:00-07:00' -> (1320, 420) in minutes after midnight, local time. Bad or empty -> None."""
+    import re
+
+    m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*", spec or "")
+    if not m:
+        return None
+    h1, m1, h2, m2 = (int(x) for x in m.groups())
+    if h1 > 23 or h2 > 23 or m1 > 59 or m2 > 59 or (h1, m1) == (h2, m2):
+        return None
+    return h1 * 60 + m1, h2 * 60 + m2
+
+
+def in_quiet_hours(window: tuple[int, int] | None, now=None) -> bool:
+    if not window:
+        return False
+    from datetime import datetime
+
+    t = (now or datetime.now()).astimezone()
+    minute = t.hour * 60 + t.minute
+    start, end = window
+    return start <= minute < end if start < end else (minute >= start or minute < end)
 
 
 def config_path(base: Path | None = None) -> Path:
@@ -88,6 +117,7 @@ def settings(base: Path | None = None) -> Settings:
             notify=data.get("notify", True),
             risky=data.get("risky_commands"),
             reply_entrypoints=data.get("reply_entrypoints"),
+            quiet_hours=data.get("quiet_hours"),
         )
     except (TypeError, ValueError):
         return Settings()
