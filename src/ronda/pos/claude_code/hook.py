@@ -38,6 +38,25 @@ def _log(message: str) -> None:
         pass
 
 
+SENT_MAX = 2 * 1024 * 1024
+
+
+def _record_sent(event: dict) -> None:
+    """One line per event the hook tries to deliver; `ronda stats` compares it with what the hub stored."""
+    try:
+        path = os.path.join(_home(), "sent.log")
+        if os.path.exists(path) and os.path.getsize(path) > SENT_MAX:
+            os.replace(path, path + ".1")
+        line = f"{event.get('ts')} {event.get('event_id')} {event.get('session_id')} {event.get('status') or event.get('type')}\n"
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, line.encode("utf-8"))  # one write per line: safe with hooks running in parallel
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
 def _hub_url() -> str:
     port = os.environ.get("RONDA_PORT", "7878")
     return os.environ.get("RONDA_URL") or f"http://127.0.0.1:{port}"
@@ -110,6 +129,7 @@ def post(event: dict, timeout: float) -> None:
     if not token:
         _log("no token: run `ronda up` once")
         return
+    _record_sent(event)
     host, port = _hub_addr()
     body = json.dumps(event).encode("utf-8")
     lines = [
