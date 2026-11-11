@@ -9,6 +9,8 @@ terminal access. The defaults are built for that:
   shows its own prompt. Ronda never auto-approves.
 - No telemetry and no outbound network calls from the hub.
 
+The full threat model, with residual risks, is in [docs/threat-model.md](docs/threat-model.md).
+
 ## Reporting a vulnerability
 
 Ronda is pre-alpha and not yet public. Until a security contact is published here, please report

@@ -83,6 +83,7 @@ def up(
     notify: bool = typer.Option(None, "--notify/--no-notify", help="Desktop notifications (default: config.toml, on)."),
     relay: bool = typer.Option(True, "--relay/--no-relay", help="Start the relay when Telegram or webhooks are set up."),
     tmux: bool = typer.Option(True, "--tmux/--no-tmux", help="Watch CLI agents in tmux panes when tmux is installed."),
+    openbot: bool = typer.Option(True, "--openbot/--no-openbot", help="Watch OpenBot agents when OpenBot is installed."),
 ):
     """Start the hub and the web inbox on 127.0.0.1."""
     import uvicorn
@@ -96,21 +97,23 @@ def up(
             typer.secho(f"Port {port} is already in use. Is Ronda already up? Try `ronda status`.", fg="red")
             raise typer.Exit(1)
     token = ensure_token(config.token_path())
-    url = f"http://{config.HOST}:{port}/?token={token}"
+    settings = config.settings()
+    if notify is not None:
+        settings.notify = notify
+    hub_app = create_app(port=port, token=token, settings=settings)
+    url = f"http://{config.HOST}:{port}/?login={hub_app.state.login_codes.issue()}"
     typer.secho(f"Ronda hub on http://{config.HOST}:{port}", bold=True)
-    typer.echo(f"Open the inbox: {url}")
+    typer.echo(f"Open the inbox: {url}  (one-time link, 10 minutes; `ronda open` makes a new one)")
     if not web_dist():
         typer.secho("Web UI not built: run `npm ci && npm run build` in web/. The API works meanwhile.", fg="yellow")
     if open_browser:
         webbrowser.open(url)
-    settings = config.settings()
-    if notify is not None:
-        settings.notify = notify
     typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
                f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
-    children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None) if c]
+    children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None,
+                            _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
-        uvicorn.run(create_app(port=port, token=token, settings=settings), host=config.HOST, port=port, log_level="warning")
+        uvicorn.run(hub_app, host=config.HOST, port=port, log_level="warning")
     finally:
         for child in children:
             if child.poll() is None:
@@ -125,6 +128,54 @@ def _start_tmux(port: int):
     typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
     env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
     return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "tmux"], env=env)
+
+
+def _start_orca(port: int):
+    """Opt-in (`orca_pos = true` in config.toml): the Orca CLI is heavy to poll, and Claude in Orca
+    already reports through its hooks."""
+    import tomllib
+
+    try:
+        with open(config.config_path(), "rb") as f:
+            wanted = bool(tomllib.load(f).get("orca_pos", False))
+    except (OSError, tomllib.TOMLDecodeError):
+        wanted = False
+    if not wanted:
+        return None
+    from ronda.pos.orca.pos import orca_cli
+
+    if not orca_cli():
+        typer.secho("orca_pos is on but the orca CLI was not found.", fg="yellow")
+        return None
+    typer.echo("Orca pos: non-Claude agents in Orca terminals (separate process)")
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "orca"], env=env)
+
+
+@pos_app.command("orca")
+def pos_orca(interval: float = typer.Option(10.0, help="Seconds between polls (the orca CLI is slow).")):
+    """Watch codex, opencode, gemini and aider in Orca terminals (opt-in: orca_pos = true)."""
+    from ronda.pos.orca.pos import main as orca_main
+
+    orca_main(interval)
+
+
+def _start_openbot(port: int):
+    from ronda.pos.openbot.pos import installed
+
+    if not installed():
+        return None
+    typer.echo("OpenBot pos: agents with Local scripts on (separate process)")
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "openbot"], env=env)
+
+
+@pos_app.command("openbot")
+def pos_openbot(interval: float = typer.Option(3.0, help="Seconds between polls.")):
+    """Watch OpenBot agents that have Local scripts on; answer their approvals and questions (runs with `ronda up`)."""
+    from ronda.pos.openbot.pos import main as openbot_main
+
+    openbot_main(interval)
 
 
 @pos_app.command("tmux")
@@ -206,6 +257,37 @@ def unpair_telegram():
         typer.secho(f"Removed {path}. Restart `ronda up` to stop the relay.", fg="green")
     else:
         typer.echo("Telegram is not paired.")
+
+
+@app.command("open")
+def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the link instead of opening it.")):
+    """Open the inbox in a browser with a fresh one-time login link."""
+    try:
+        res = _api("/v1/login-code", method="POST", body={})
+    except (urllib.error.URLError, OSError, RuntimeError) as e:
+        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
+        raise typer.Exit(1)
+    if "_status" in res:
+        typer.secho(f"The hub refused ({res['_status']}).", fg="red")
+        raise typer.Exit(1)
+    url = config.hub_url() + res["path"]
+    typer.echo(url)
+    if not print_only:
+        webbrowser.open(url)
+
+
+token_app = typer.Typer(no_args_is_help=True, help="Manage the local hub token.")
+app.add_typer(token_app, name="token")
+
+
+@token_app.command("rotate")
+def token_rotate():
+    """Replace ~/.ronda/token (if a login link or the token leaked). Restart `ronda up` afterwards."""
+    from ronda.hub.auth import rotate_token
+
+    rotate_token(config.token_path())
+    typer.secho(f"New token written to {config.token_path()} (owner only).", fg="green")
+    typer.echo("Restart `ronda up`; hooks pick up the new token by themselves.")
 
 
 @app.command()
@@ -466,6 +548,14 @@ def doctor():
 
     from ronda.relay.runner import configured, load_webhooks
     from ronda.relay.telegram import config_path as tg_path
+
+    from ronda.pos.openbot.pos import automation_dir, installed as openbot_installed
+
+    if openbot_installed():
+        on = (automation_dir() / "url").exists()
+        check(on, "OpenBot: Local scripts is on for at least one agent",
+              "OpenBot: no agent has Local scripts on, so Ronda cannot see OpenBot agents "
+              "(agent settings > Permissions > Local scripts)", warn=True)
 
     names = configured(config.home())
     _, hook_errors = load_webhooks(config.home())

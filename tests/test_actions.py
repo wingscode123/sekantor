@@ -162,7 +162,7 @@ def test_stale_actions_expire_in_audit(client):
 
 def test_web_channel_via_cookie(client):
     post(client, ask_approval(1))
-    client.get(f"/?token={TOKEN}", follow_redirects=False)
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
     r = client.post(f"/v1/sessions/{SID}/actions", json={"type": "deny"}, headers={"Origin": BASE})
     assert r.status_code == 202 and r.json()["action"]["channel"] == "web"
 
@@ -186,6 +186,7 @@ def test_action_is_broadcast(client):
     (Status.running, Status.error, True),
     (Status.waiting_input, Status.running, False),
     (Status.running, Status.ended, False),
+    (Status.done, Status.waiting_input, True),        # an idle OpenBot agent asks a question
 ])
 def test_should_notify(prev, new, expected):
     assert should_notify(prev, new) is expected

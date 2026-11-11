@@ -18,7 +18,7 @@ from ronda import config
 from ronda.hub.api import router, session_json
 from ronda.hub.notify import Notifier
 from ronda.hub.waiters import Waiters
-from ronda.hub.auth import TokenAuthMiddleware, ensure_token
+from ronda.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from ronda.hub.store import Store
 from ronda.hub.status import sweep
 from ronda.hub.stream import Broadcaster
@@ -104,6 +104,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.waiters = waiters
     app.state.notifier = notifier
     app.state.settings = settings
+    app.state.login_codes = LoginCodes()
     app.include_router(router)
 
     dist = web_dist()
@@ -114,5 +115,5 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
         async def not_built():
             return HTMLResponse(NOT_BUILT)
 
-    app.add_middleware(TokenAuthMiddleware, token=token, port=port)
+    app.add_middleware(TokenAuthMiddleware, token=token, port=port, login_codes=app.state.login_codes)
     return app

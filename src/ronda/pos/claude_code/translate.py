@@ -94,7 +94,12 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
         summary = {"resume": "Resumed", "clear": "Cleared", "fork": "Forked"}.get(source, "Session started")
     elif name == "UserPromptSubmit":
         status = "running"
-        summary = _clip(payload.get("prompt"), SUMMARY_MAX)
+        prompt = payload.get("prompt") or ""
+        if prompt.lstrip().startswith("<task-notification>"):
+            # A hook woke the agent (asyncRewake), e.g. a reply sent through Ronda
+            summary = "Continuing after your reply" if "Stop hook" in prompt else "Woken by a hook"
+        else:
+            summary = _clip(prompt, SUMMARY_MAX)
     elif name == "PreToolUse":
         status = "running"
         text = tool_input_text(tool, payload.get("tool_input"))

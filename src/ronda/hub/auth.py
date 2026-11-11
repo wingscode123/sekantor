@@ -2,8 +2,9 @@
 
 - The token lives in ~/.ronda/token, mode 600, created on first use.
 - Pos and the CLI send ``Authorization: Bearer <token>``.
-- The browser opens ``/?token=<token>`` once (printed by ``ronda up``); the hub sets an HttpOnly,
-  SameSite=Strict cookie and redirects to ``/``. Cookie requests that change state or open a
+- The browser opens ``/?login=<code>`` once (printed by ``ronda up`` or ``ronda open``): a one-time code,
+  valid 10 minutes, so the token itself never appears in a URL or browser history. The hub sets an
+  HttpOnly, SameSite=Strict cookie and redirects to ``/``. Cookie requests that change state or open a
   WebSocket must come from the hub's own origin.
 - The Host header must name the loopback address (DNS rebinding guard).
 """
@@ -16,6 +17,7 @@ import os
 import secrets
 import stat
 import sys
+import time
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -60,12 +62,43 @@ def _headers(scope) -> dict[str, str]:
     return {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
 
 
+def rotate_token(path: Path) -> str:
+    """Replace the token (mode 600). Running hubs keep the old one until restarted."""
+    if path.exists():
+        path.unlink()
+    return ensure_token(path)
+
+
+class LoginCodes:
+    """One-time codes for the browser login link, kept in memory only."""
+
+    TTL_S = 600.0
+
+    def __init__(self) -> None:
+        self._codes: dict[str, float] = {}
+
+    def _purge(self) -> None:
+        now = time.monotonic()
+        self._codes = {c: t for c, t in self._codes.items() if t > now}
+
+    def issue(self) -> str:
+        self._purge()
+        code = secrets.token_urlsafe(18)
+        self._codes[code] = time.monotonic() + self.TTL_S
+        return code
+
+    def redeem(self, code: str | None) -> bool:
+        self._purge()
+        return bool(code) and self._codes.pop(code, None) is not None
+
+
 class TokenAuthMiddleware:
     """Pure ASGI middleware so it covers http and websocket scopes alike."""
 
-    def __init__(self, app, token: str, port: int):
+    def __init__(self, app, token: str, port: int, login_codes: LoginCodes | None = None):
         self.app = app
         self.token = token
+        self.login_codes = login_codes or LoginCodes()
         self.hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
         self.origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
 
@@ -95,17 +128,17 @@ class TokenAuthMiddleware:
             scope["ronda_auth"] = "cookie"
             return await self.app(scope, receive, send)
 
-        # One-time login link: /?token=... sets the cookie and drops the token from the URL.
+        # One-time login link: /?login=<code> sets the cookie; the code is then spent.
         if scope["type"] == "http" and scope.get("path") == "/":
             q = parse_qs(scope.get("query_string", b"").decode())
-            if self._ok((q.get("token") or [None])[0]):
+            if self.login_codes.redeem((q.get("login") or [None])[0]):
                 await send({"type": "http.response.start", "status": 303, "headers": [
                     (b"location", b"/"),
                     (b"set-cookie", f"{COOKIE}={self.token}; HttpOnly; SameSite=Strict; Path=/".encode()),
                     (b"cache-control", b"no-store"),
                 ]})
                 return await send({"type": "http.response.body", "body": b""})
-        return await self._deny(scope, send, 401, "Missing or wrong token. Open the link printed by `ronda up`.")
+        return await self._deny(scope, send, 401, "Not signed in. Run `ronda open` for a fresh link.")
 
     async def _deny(self, scope, send, status: int, message: str):
         if scope["type"] == "websocket":

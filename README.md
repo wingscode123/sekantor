@@ -8,8 +8,9 @@ Ronda watches Claude Code (terminal, VS Code, Claude desktop), Orca, OpenBot and
 tmux, and sorts them by who needs you: waiting for approval, waiting for input, error, running, done.
 Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local token, and sends no telemetry.
 
-**Status:** pre-alpha. M0 (spike), M1 (core inbox), M2 (approve, deny, reply, notifications, audit) and
-M3 (Telegram, webhooks incl. ntfy, tmux pos) are done.
+**Status:** pre-alpha, feature-complete for 1.0 (M0 to M4). Watches Claude Code (terminal, VS Code,
+Claude desktop, Orca), OpenBot (Local scripts API), and codex/opencode/gemini/aider in tmux or Orca
+terminals. Approve, deny and reply from the inbox, the CLI, or Telegram; phone notifications via ntfy.
 Public beta planned for 25 January 2027.
 
 ## Try it from source
@@ -19,7 +20,7 @@ Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and Node 18+ (for the web U
 ```sh
 uv sync
 (cd web && npm ci && npm run build)   # builds the inbox into src/ronda/hub/static
-uv run ronda up                       # hub on 127.0.0.1:7878, opens the inbox with a one-time link
+uv run ronda up                       # hub on 127.0.0.1:7878, opens the inbox (one-time link; `ronda open` for another)
 uv run ronda install claude --project # in the project you want watched (or --global; backs up first)
 uv run ronda doctor
 ```
@@ -38,6 +39,8 @@ and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; who
 - [Dogfooding M1](docs/dogfooding.md)
 - [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
 - [Phone notifications, Telegram, webhooks, tmux](docs/channels.md)
+- [Writing a pos](docs/writing-a-pos.md) and the [threat model](docs/threat-model.md)
+- [Releasing](docs/release.md)
 - [Brand](brand/BRAND.md) and [design system](design.md)
 - [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
 

@@ -22,3 +22,8 @@ One pure ASGI middleware guards http and websocket scopes:
 ## Consequences
 - Opening `http://127.0.0.1:7878/` without the link shows a 401 that says to use `ronda up`.
 - No OpenAPI docs are served (they would need an exemption).
+
+## Update (M4)
+The login link no longer carries the token: `ronda up` and `ronda open` print `/?login=<code>`, a
+one-time code valid for 10 minutes, kept in the hub's memory (`POST /v1/login-code`, bearer only).
+`/?token=` is no longer accepted. `ronda token rotate` replaces the token.

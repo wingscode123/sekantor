@@ -53,13 +53,19 @@ DEFAULT_RISKY = [
 ]
 
 
+# Claude Code entrypoints where a reply through an asyncRewake Stop hook was verified to wake the agent
+# (docs/spike/m2-actions.md): a terminal, and an Orca chat (Agent SDK). Others can be added in config.toml.
+DEFAULT_REPLY_ENTRYPOINTS = ["cli", "sdk-ts"]
+
+
 class Settings:
     def __init__(self, approval_wait_s: int = 600, reply_wait_s: int = 1800, notify: bool = True,
-                 risky: list[str] | None = None):
+                 risky: list[str] | None = None, reply_entrypoints: list[str] | None = None):
         self.approval_wait_s = max(0, min(int(approval_wait_s), 3600))
         self.reply_wait_s = max(0, min(int(reply_wait_s), 86400))
         self.notify = bool(notify)
         self.risky = list(risky) if risky is not None else list(DEFAULT_RISKY)
+        self.reply_entrypoints = [str(e) for e in reply_entrypoints] if reply_entrypoints is not None             else list(DEFAULT_REPLY_ENTRYPOINTS)
 
 
 def config_path(base: Path | None = None) -> Path:
@@ -81,6 +87,7 @@ def settings(base: Path | None = None) -> Settings:
             reply_wait_s=data.get("reply_wait", 1800),
             notify=data.get("notify", True),
             risky=data.get("risky_commands"),
+            reply_entrypoints=data.get("reply_entrypoints"),
         )
     except (TypeError, ValueError):
         return Settings()
