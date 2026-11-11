@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { ApprovalControls, ReplyForm } from "./Actions";
+import { Timeline } from "./Timeline";
 import type { Action, Connection, Session } from "./types";
 import { useInbox, useNow } from "./useInbox";
 
@@ -66,6 +67,7 @@ function Card({ s, now, action }: { s: Session; now: number; action?: Action }) 
       </p>
       {s.status === "waiting_approval" && <ApprovalControls s={s} action={action} />}
       {s.status === "waiting_input" && <ReplyForm s={s} action={action} />}
+      <Timeline sessionId={s.session_id} />
     </article>
   );
 }
@@ -80,7 +82,7 @@ function Table({ rows, now, label }: { rows: Session[]; now: number; label: stri
         {rows.map((s) => (
           <tr key={s.session_id}>
             <td><span className={`status status--${STATUS_CLASS[s.status]}`}>{STATUS_TEXT[s.status]}</span></td>
-            <th scope="row"><Source s={s} /></th>
+            <th scope="row"><Source s={s} /><Timeline sessionId={s.session_id} /></th>
             <td>
               <code title={s.workspace.cwd ?? undefined}>{project(s.workspace.cwd)}</code>{" "}
               {s.workspace.branch && <code className="list__branch">{s.workspace.branch}</code>}

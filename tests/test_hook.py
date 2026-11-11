@@ -201,3 +201,9 @@ def test_hub_up_receives_event(home):
     finally:
         server.should_exit = True
         th.join(5)
+
+
+def test_rewake_prompt_gets_a_readable_summary():
+    ev = translate({"hook_event_name": "UserPromptSubmit", "session_id": "x",
+                    "prompt": "<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>"})
+    assert ev["summary"] == "Continuing after your reply" and ev["status"] == "running"
