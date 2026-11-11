@@ -110,7 +110,7 @@ def up(
     typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
                f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
     children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None,
-                            _start_openbot(port) if openbot else None) if c]
+                            _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
         uvicorn.run(create_app(port=port, token=token, settings=settings), host=config.HOST, port=port, log_level="warning")
     finally:
@@ -127,6 +127,36 @@ def _start_tmux(port: int):
     typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
     env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
     return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "tmux"], env=env)
+
+
+def _start_orca(port: int):
+    """Opt-in (`orca_pos = true` in config.toml): the Orca CLI is heavy to poll, and Claude in Orca
+    already reports through its hooks."""
+    import tomllib
+
+    try:
+        with open(config.config_path(), "rb") as f:
+            wanted = bool(tomllib.load(f).get("orca_pos", False))
+    except (OSError, tomllib.TOMLDecodeError):
+        wanted = False
+    if not wanted:
+        return None
+    from ronda.pos.orca.pos import orca_cli
+
+    if not orca_cli():
+        typer.secho("orca_pos is on but the orca CLI was not found.", fg="yellow")
+        return None
+    typer.echo("Orca pos: non-Claude agents in Orca terminals (separate process)")
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "orca"], env=env)
+
+
+@pos_app.command("orca")
+def pos_orca(interval: float = typer.Option(10.0, help="Seconds between polls (the orca CLI is slow).")):
+    """Watch codex, opencode, gemini and aider in Orca terminals (opt-in: orca_pos = true)."""
+    from ronda.pos.orca.pos import main as orca_main
+
+    orca_main(interval)
 
 
 def _start_openbot(port: int):

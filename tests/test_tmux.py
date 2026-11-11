@@ -92,7 +92,7 @@ class FakeHub:
 def make(clock):
     agents = {100: ("codex", 1001), 200: ("claude", 2001)}
     hub, tmux = FakeHub(), FakeTmux()
-    pos = TmuxPos(tmux, hub, RULES, find=lambda pid: agents.get(pid), clock=lambda: clock[0])
+    pos = TmuxPos(tmux, hub, RULES, find=lambda pane: agents.get(pane.pid), clock=lambda: clock[0])
     return pos, tmux, hub, agents
 
 
@@ -154,8 +154,6 @@ FAKE_AGENT = textwrap.dedent("""
 
 @pytest.mark.skipif(not shutil.which("tmux"), reason="tmux not installed")
 def test_real_tmux_pane(tmp_path):
-    from ronda.pos.tmux.pos import find_agent
-
     agent_dir = tmp_path / "bin"
     agent_dir.mkdir()
     script = agent_dir / "codex"  # named after an agent: found through the python process's cmdline
@@ -167,7 +165,7 @@ def test_real_tmux_pane(tmp_path):
                     f"{sys.executable} {script} {out}"], check=True)
     try:
         hub = FakeHub()
-        pos = TmuxPos(tmux, hub, RULES, find=find_agent)
+        pos = TmuxPos(tmux, hub, RULES)
         deadline = time.time() + 15
         while time.time() < deadline:
             pos.tick()

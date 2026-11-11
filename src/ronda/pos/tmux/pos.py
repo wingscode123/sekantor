@@ -90,29 +90,31 @@ class TmuxPos:
     capabilities = {"approve", "deny", "reply"}
 
     def __init__(self, tmux: Tmux, hub, rules: dict[str, Rules] | None = None,
-                 find: Callable[[int], tuple[str, int] | None] = find_agent, clock: Callable[[], float] = time.monotonic):
+                 find: Callable[[Pane], tuple[str, int] | None] | None = None, clock: Callable[[], float] = time.monotonic,
+                 host: dict = HOST, prefix: str = "tmux", real_pid: bool = True):
         self.tmux = tmux
         self.hub = hub
         self.rules = rules or load_rules()
-        self.find = find
+        self.find = find or (lambda pane: find_agent(pane.pid))
         self.clock = clock
+        self.host, self.prefix, self.real_pid = host, prefix, real_pid
         self.watches: dict[str, Watch] = {}  # session id -> watch
         self.panes: dict[str, Pane] = {}     # session id -> pane
 
-    @staticmethod
-    def session_id(pane: Pane, agent_pid: int) -> str:
-        return f"tmux:{pane.pane_id}:{agent_pid}"
+    def session_id(self, pane: Pane, agent_pid: int) -> str:
+        return f"{self.prefix}:{pane.pane_id}:{agent_pid}"
 
     def _event(self, sid: str, w: Watch, pane: Pane, **kw) -> dict:
         ev = {"v": 1, "event_id": new_event_id(), "ts": datetime.now(timezone.utc).isoformat(), "source": w.agent,
-              "session_id": sid, "agent": {"name": w.agent}, "host": HOST, "process": {"pid": w.agent_pid},
+              "session_id": sid, "agent": {"name": w.agent}, "host": self.host,
+              "process": {"pid": w.agent_pid} if self.real_pid else None,
               "workspace": {"cwd": pane.cwd, "branch": git_branch(pane.cwd)}, "type": "status_changed", **kw}
         return {k: v for k, v in ev.items() if v is not None}
 
     def discover(self) -> dict[str, tuple[Pane, str, int]]:
         found = {}
         for pane in self.tmux.panes():
-            hit = self.find(pane.pid)
+            hit = self.find(pane)
             if not hit:
                 continue
             agent, pid = hit
@@ -134,7 +136,7 @@ class TmuxPos:
             if w is None:
                 w = self.watches[sid] = Watch(agent=agent, agent_pid=pid, changed_at=now)
                 self.hub.post_event(self._event(sid, w, pane, type="session_started", status="running",
-                                                summary=f"{agent} in tmux {pane.session}:{pane.index}"))
+                                                summary=f"{agent} in {self.host['app']} {pane.session}"))
                 w.status = "running"
             screen = self.tmux.capture(pane.pane_id)
             if screen is None:
@@ -166,7 +168,7 @@ class TmuxPos:
         w, pane = self.watches.get(session_id), self.panes.get(session_id)
         if not w or not pane:
             return False
-        hit = self.find(pane.pid)
+        hit = self.find(pane)
         if not hit or hit[1] != w.agent_pid:
             log.warning("not sending to %s: the agent there changed", pane.pane_id)
             return False
