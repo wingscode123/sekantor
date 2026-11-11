@@ -14,12 +14,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-# ADR-0002. Everything async in M1 (read-only) except SessionEnd, whose budget is 1.5 s.
+# ADR-0002 / ADR-0008. Observe-only events run async; SessionEnd sync (1.5 s budget); PermissionRequest
+# sync so it can return a decision; Stop async with asyncRewake so a reply can wake the agent.
 EVENTS = [
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
     "PostToolUseFailure", "PermissionDenied", "Notification", "Stop", "StopFailure", "SessionEnd",
 ]
-SYNC_EVENTS = {"SessionEnd"}
+SYNC_EVENTS = {"SessionEnd", "PermissionRequest"}
+REWAKE_EVENTS = {"Stop"}
+MARGIN_S = 30
 HOOK_NAMES = {"ronda-hook", "ronda-hook.exe"}
 
 
@@ -47,10 +50,19 @@ def is_ours(handler: dict) -> bool:
     return Path(cmd.replace("\\", "/")).name.lower() in HOOK_NAMES
 
 
-def handler_for(event: str, exe: Path) -> dict:
+def handler_for(event: str, exe: Path, settings=None) -> dict:
+    from ronda.config import Settings
+
+    settings = settings or Settings()
     h = {"type": "command", "command": exe.as_posix(), "args": []}
-    if event in SYNC_EVENTS:
+    if event == "PermissionRequest":
+        h["timeout"] = max(10, settings.approval_wait_s + MARGIN_S)
+    elif event in SYNC_EVENTS:
         h["timeout"] = 2
+    elif event in REWAKE_EVENTS:
+        h["async"] = True
+        h["asyncRewake"] = True
+        h["timeout"] = max(10, settings.reply_wait_s + MARGIN_S)
     else:
         h["async"] = True
         h["timeout"] = 10
@@ -117,12 +129,12 @@ class Result:
     changed: int
 
 
-def install(path: Path, exe: Path) -> Result:
+def install(path: Path, exe: Path, settings=None) -> Result:
     data = _read(path)
     hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
     _strip_ours(hooks)
     for event in EVENTS:
-        hooks.setdefault(event, []).append({"hooks": [handler_for(event, exe)]})
+        hooks.setdefault(event, []).append({"hooks": [handler_for(event, exe, settings)]})
     data["hooks"] = hooks
     backup = _backup(path)
     _write(path, data)
@@ -151,6 +163,13 @@ class Installed:
     path: Path
     events: list[str] = field(default_factory=list)
     commands: set[str] = field(default_factory=set)
+    handlers: dict[str, dict] = field(default_factory=dict)
+
+    @property
+    def current_shape(self) -> bool:
+        """False for an install from before M2 (PermissionRequest async, Stop without asyncRewake)."""
+        perm, stop = self.handlers.get("PermissionRequest", {}), self.handlers.get("Stop", {})
+        return not perm.get("async") and bool(stop.get("asyncRewake"))
 
     @property
     def complete(self) -> bool:
@@ -173,4 +192,5 @@ def inspect(path: Path) -> Installed:
                 if isinstance(h, dict) and is_ours(h):
                     out.events.append(event)
                     out.commands.add(h["command"])
+                    out.handlers[event] = h
     return out

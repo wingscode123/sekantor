@@ -53,7 +53,8 @@ def test_translate_real_payloads(rel, type_, status):
 
 def test_permission_request_carries_the_command():
     ev = translate(payload("cli-headless/10_PermissionRequest.json")["stdin"])
-    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt"}
+    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt",
+                             "id": ev["event_id"]}
     assert ev["summary"] == "Wants to run: echo ronda-spike > spike-tmp.txt"
 
 

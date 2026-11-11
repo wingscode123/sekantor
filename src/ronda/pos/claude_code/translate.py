@@ -80,6 +80,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
     if not name or not sid:
         return None
 
+    event_id = new_event_id()
     status: str | None = None
     etype = "status_changed"
     summary: str | None = None
@@ -101,7 +102,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
     elif name == "PermissionRequest":
         status = "waiting_approval"
         text = tool_input_text(tool, payload.get("tool_input"))
-        request = {"kind": "tool", "tool": tool, "input": text}
+        request = {"kind": "tool", "tool": tool, "input": text, "id": event_id}
         summary = _clip(f"Wants to run: {text}" if text else f"Wants to use {tool}", SUMMARY_MAX)
     elif name in ("PostToolUse", "PostToolUseFailure", "PermissionDenied"):
         status = "running"
@@ -117,6 +118,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
     elif name == "Stop":
         status = "waiting_input"
         summary = _clip(payload.get("last_assistant_message"), SUMMARY_MAX)
+        request = {"kind": "input", "id": event_id}
     elif name == "StopFailure":
         status = "error"
         summary = _clip(f"Error: {payload.get('error') or 'unknown'}", SUMMARY_MAX)
@@ -130,7 +132,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
     cwd = payload.get("cwd")
     event = {
         "v": 1,
-        "event_id": new_event_id(),
+        "event_id": event_id,
         "ts": (now or datetime.now(timezone.utc)).isoformat(),
         "source": SOURCE,
         "session_id": f"claude:{sid}",

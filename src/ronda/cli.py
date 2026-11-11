@@ -182,7 +182,7 @@ def install_claude(
         typer.secho("ronda-hook not found next to this Python or on PATH.", fg="red")
         raise typer.Exit(1)
     try:
-        r = inst.install(path, exe)
+        r = inst.install(path, exe, config.settings())
     except (ValueError, OSError) as e:
         typer.secho(f"Not changed: {path} could not be read ({e}).", fg="red")
         raise typer.Exit(1)
@@ -261,6 +261,8 @@ def doctor():
         check(i.complete, f"All {len(inst.EVENTS)} hook events registered in {i.path.name}",
               f"Some hook events missing in {i.path}: run `ronda install claude` again")
         check(i.commands_exist, "Hook command exists", f"Hook command missing: {', '.join(i.commands)}")
+        check(i.current_shape, "Hooks can approve and reply (M2 shape)",
+              f"Hooks in {i.path} are from an older Ronda: run `ronda install claude` again")
 
     try:
         rules = load_rules()
