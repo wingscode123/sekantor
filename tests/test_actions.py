@@ -197,3 +197,12 @@ def test_notification_text_has_no_tool_input(client, sent_notes):
     time.sleep(0.2)
     assert sent_notes == [("Approval needed", "claude-code in Orca, shop".replace("claude-code", "Claude Code"))]
     assert "hunter2" not in repr(sent_notes)
+
+
+def test_risky_approve_never_from_telegram(client):
+    post(client, ask_approval(1, cmd="git push --force"))
+    r = client.post(f"/v1/sessions/{SID}/actions", headers={**AUTH, "X-Ronda-Channel": "telegram"},
+                    json={"type": "approve", "confirm": True})
+    assert r.status_code == 409 and r.json()["error"] == "risky_remote"
+    r = client.post(f"/v1/sessions/{SID}/actions", headers={**AUTH, "X-Ronda-Channel": "telegram"}, json={"type": "deny"})
+    assert r.status_code == 202 and r.json()["action"]["channel"] == "telegram"

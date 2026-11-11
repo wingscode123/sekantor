@@ -22,8 +22,11 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
+      - name: tmux (for the tmux pos test)
+        if: runner.os != 'Windows'
+        run: command -v tmux || (if [ "$RUNNER_OS" = "macOS" ]; then brew install tmux; else sudo apt-get update && sudo apt-get install -y tmux; fi)
       - run: uv sync --locked
-      - run: uv run pytest -q
+      - run: uv run pytest -q -rs
 
   web:
     name: web build
