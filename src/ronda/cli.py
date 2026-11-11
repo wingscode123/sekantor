@@ -126,8 +126,20 @@ def _start_relay(port: int):
 
 
 @app.command()
-def relay():
+def relay(test: bool = typer.Option(False, "--test", help="Send one sample notification to every channel and exit.")):
     """Forward 'needs you' moments to Telegram and webhooks, and take answers back (runs with `ronda up`)."""
+    if test:
+        import asyncio
+
+        from ronda.relay.runner import send_test
+
+        results = asyncio.run(send_test())
+        if not results:
+            typer.secho("Nothing to test: run `ronda pair telegram` or add [[webhooks]] to config.toml.", fg="yellow")
+            raise typer.Exit(1)
+        for name, ok in results:
+            typer.secho(f"  {'sent' if ok else 'FAILED'}  {name}", fg="green" if ok else "red")
+        raise typer.Exit(0 if all(ok for _, ok in results) else 1)
     from ronda.relay.runner import main as relay_main
 
     relay_main()

@@ -4,7 +4,7 @@ config.toml:
 
     [[webhooks]]
     url = "https://ntfy.sh/my-topic"
-    format = "text"                     # json (default), text (ntfy and the like), slack
+    format = "ntfy"                     # json (default), ntfy, text, slack
     statuses = ["waiting_approval", "waiting_input", "error"]   # the default
     secret = "..."                      # optional: X-Ronda-Signature: sha256=<hmac of the body>
 """
@@ -24,7 +24,7 @@ import httpx
 from ronda.relay.common import TITLES, log, redact, should_notify, who
 
 DEFAULT_STATUSES = ("waiting_approval", "waiting_input", "error")
-FORMATS = ("json", "text", "slack")
+FORMATS = ("json", "text", "ntfy", "slack")
 RETRIES = (0, 2, 8)  # seconds before each attempt
 
 
@@ -71,6 +71,8 @@ def body_for(hook: Webhook, s: dict) -> tuple[bytes, str]:
         else redact(s.get("summary"), 500)
     if hook.format == "text":
         return "\n".join(x for x in (f"{title}: {line}", detail) if x).encode(), "text/plain; charset=utf-8"
+    if hook.format == "ntfy":
+        return "\n".join(x for x in (line, detail) if x).encode(), "text/plain; charset=utf-8"
     if hook.format == "slack":
         return json.dumps({"text": "\n".join(x for x in (f"*{title}*: {line}", detail) if x)}).encode(), "application/json"
     payload = {
@@ -80,6 +82,19 @@ def body_for(hook: Webhook, s: dict) -> tuple[bytes, str]:
         "branch": (s.get("workspace") or {}).get("branch"), "detail": detail, "needs_you": s.get("needs_you"),
     }
     return json.dumps(payload).encode(), "application/json"
+
+
+NTFY_TAGS = {"waiting_approval": "warning", "waiting_input": "speech_balloon", "error": "rotating_light"}
+
+
+def ntfy_headers(hook: Webhook, s: dict) -> dict[str, str]:
+    """ntfy reads the title, priority and tags from headers (https://docs.ntfy.sh/publish/)."""
+    if hook.format != "ntfy":
+        return {}
+    status = s["status"]
+    return {"Title": TITLES.get(status, status),
+            "Priority": "high" if status in ("waiting_approval", "error") else "default",
+            "Tags": NTFY_TAGS.get(status, "bell")}
 
 
 class WebhookChannel:
@@ -102,7 +117,7 @@ class WebhookChannel:
 
     async def send(self, hook: Webhook, s: dict) -> bool:
         body, ctype = body_for(hook, s)
-        headers = {"Content-Type": ctype, "User-Agent": "ronda-relay"}
+        headers = {"Content-Type": ctype, "User-Agent": "ronda-relay", **ntfy_headers(hook, s)}
         if hook.secret:
             headers["X-Ronda-Signature"] = "sha256=" + hmac.new(hook.secret.encode(), body, hashlib.sha256).hexdigest()
         host = urlparse(hook.url).hostname

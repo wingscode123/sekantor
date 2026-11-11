@@ -321,3 +321,34 @@ def test_cli_pair_and_unpair(tmp_path, monkeypatch):
     assert load_config(tmp_path)["chats"] == [CHAT]
     r = CliRunner().invoke(app, ["unpair", "telegram"])
     assert r.exit_code == 0 and load_config(tmp_path) is None
+
+
+def test_ntfy_format_uses_headers():
+    from ronda.relay.webhook import ntfy_headers
+
+    hook = Webhook(url="https://ntfy.sh/t", format="ntfy")
+    body, ctype = body_for(hook, approval_session())
+    assert body.decode() == "Claude Code in Orca, shop (feat/x)\nnpm test" and ctype.startswith("text/plain")
+    assert ntfy_headers(hook, approval_session()) == {"Title": "Approval needed", "Priority": "high", "Tags": "warning"}
+    assert ntfy_headers(Webhook(url="https://x"), approval_session()) == {}
+
+
+def test_relay_test_command(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from ronda.cli import app
+    import ronda.relay.webhook as wh
+
+    monkeypatch.setenv("RONDA_HOME", str(tmp_path))
+    assert CliRunner().invoke(app, ["relay", "--test"]).exit_code == 1  # nothing configured
+    (tmp_path / "config.toml").write_text('[[webhooks]]\nurl = "https://ntfy.sh/ronda-test-topic"\nformat = "ntfy"\n')
+    seen = []
+    real = httpx.AsyncClient
+
+    def fake_client(*a, **kw):
+        return real(transport=httpx.MockTransport(lambda r: seen.append(r) or httpx.Response(200)))
+
+    monkeypatch.setattr(wh.httpx, "AsyncClient", fake_client)
+    r = CliRunner().invoke(app, ["relay", "--test"])
+    assert r.exit_code == 0 and "sent  webhook ntfy.sh" in r.output
+    assert seen[0].headers["Title"] == "Approval needed" and b"echo hello from Ronda" in seen[0].content

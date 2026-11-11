@@ -106,3 +106,31 @@ def main() -> None:
         asyncio.run(run())
     except KeyboardInterrupt:
         pass
+
+
+SAMPLE = {"session_id": "claude:ronda-test", "source": "claude-code", "status": "waiting_approval", "needs_you": True,
+          "host": {"app": "terminal", "confidence": 1.0}, "workspace": {"cwd": "ronda-test", "branch": None},
+          "capabilities": [], "request": {"kind": "tool", "tool": "Bash", "input": "echo hello from Ronda"}}
+
+
+async def send_test(home: Path | None = None) -> list[tuple[str, bool]]:
+    """Send one sample 'Approval needed' to every configured channel. Returns (channel, ok) pairs."""
+    from ronda.relay.webhook import WebhookChannel
+
+    home = home or config.home()
+    results: list[tuple[str, bool]] = []
+    hooks, _ = load_webhooks(home)
+    if hooks:
+        ch = WebhookChannel(hooks)
+        for hook in hooks:
+            results.append((f"webhook {hook.url.split('/')[2]}", await ch.send(hook, SAMPLE)))
+    tg = load_config(home)
+    if tg:
+        api = TelegramApi(tg["token"])
+        for chat in tg["chats"]:
+            try:
+                await api.call("sendMessage", chat_id=chat, text="Ronda test: the relay can reach you.")
+                results.append(("telegram", True))
+            except TelegramError:
+                results.append(("telegram", False))
+    return results
