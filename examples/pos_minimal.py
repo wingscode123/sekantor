@@ -21,10 +21,10 @@ TOKEN = (Path(os.environ.get("RONDA_HOME", Path.home() / ".ronda")) / "token").r
 SESSION = f"example:{uuid.uuid4().hex[:8]}"  # stable for one run of one agent; prefix = your pos
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, timeout=10):
     req = urllib.request.Request(HUB + path, method=method, data=json.dumps(body).encode() if body else None,
                                  headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read() or b"null")
 
 
@@ -41,7 +41,8 @@ def event(status, summary, type="status_changed", request=None, capabilities=())
 def next_action(request_id, kind="approval"):
     """Ask the hub for the answer to one request; wait up to 25 s per call."""
     q = urllib.parse.urlencode({"for": kind, "request_id": request_id, "wait": 25})
-    return call("GET", f"/v1/sessions/{urllib.parse.quote(SESSION, safe='')}/actions/next?{q}")
+    # the hub may hold the request for up to 25 s, so the client must wait longer than that
+    return call("GET", f"/v1/sessions/{urllib.parse.quote(SESSION, safe='')}/actions/next?{q}", timeout=35)
 
 
 def watch_agent():
