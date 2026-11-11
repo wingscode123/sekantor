@@ -1,7 +1,6 @@
 # Spike: Claude Code hooks API
 
-Status: **in progress** (headless + Orca captured; interactive terminal, Claude desktop and
-VS Code captures pending, see [Open items](#open-items)).
+Status: **done for M1** (interactive approval flow in a terminal still to capture before M2, see summary.md).
 
 - Date: 2026-11-11
 - Claude Code tested: CLI 2.1.319 (`~/.local/bin/claude.exe`), Orca-hosted 2.1.319 (`sdk-ts`),
@@ -33,7 +32,7 @@ VS Code captures pending, see [Open items](#open-items)).
 | "No decision" | exit 0 with empty stdout | docs |
 | Timeout unit / default | seconds; default **600 s** for command hooks (30 s for `UserPromptSubmit`); SessionEnd has a **1.5 s shared budget** | docs |
 | Timed-out hook | cancelled, output discarded, action proceeds (unless `onFailure: "block"`) | docs |
-| Do hooks fire in Claude desktop? | Docs say yes. Desktop spawns the CLI with `--setting-sources=user,project,local`. **Live capture pending.** | probe evidence |
+| Do hooks fire in Claude desktop / VS Code? | **Yes**, captured live. Desktop spawns the CLI with `--setting-sources=user,project,local`. | `payloads/claude-desktop/`, `payloads/claude-vscode/` |
 | Do user-level hooks fire in OpenBot? | **No.** OpenBot spawns the CLI with `--setting-sources=project,local`. | probe evidence |
 | Settings hot reload? | Yes, the file watcher picked up our new `settings.local.json` inside an already-running Orca session. | `payloads/orca/*` |
 
@@ -119,9 +118,10 @@ Stop continuation (reply):
 
   | Host | `CLAUDE_CODE_ENTRYPOINT` | `--setting-sources` | Ronda user-level hook fires? |
   | --- | --- | --- | --- |
-  | Terminal CLI | `cli` (expected; headless showed `sdk-cli`) | default (all) | yes |
+  | Terminal CLI (in an Orca terminal) | `cli` (headless `-p` shows `sdk-cli`) | default (all) | yes (captured) |
   | Orca 1.4.255 | `sdk-ts` | `user,project,local` | yes |
-  | Claude desktop 5.1231.0 | `claude-desktop` | `user,project,local` | yes (to confirm live) |
+  | Claude desktop 5.1231.0 | `claude-desktop` | `user,project,local` | yes (captured) |
+  | VS Code extension | `claude-vscode` | not passed (all) | yes (captured) |
   | OpenBot 0.1.0 | `openbot` | `project,local` | **no**, only via the agent dir's `.claude/` |
 
 - Windows: shell-form commands run in Git Bash (PowerShell if Git Bash is missing). Exec form
@@ -145,8 +145,7 @@ The capture script walks the full parent chain with psutil, which is slow on Win
 
 ## Open items
 
-1. Interactive terminal session: capture `Notification` (`permission_prompt`, `idle_prompt`)
-   and an approved `PermissionRequest` → `PostToolUse` sequence. **Needs the user.**
-2. Claude desktop: confirm hooks fire with a live capture. **Needs the user.**
-3. VS Code extension and a plain terminal: run `scripts/probe_hosts.py`. **Needs the user.**
-4. `CLAUDE_CODE_ENTRYPOINT` value for an interactive terminal session.
+1. Interactive approval in a terminal with `--permission-mode default`: the manual test ran in auto
+   mode, so no prompt appeared. Captured so far: `Notification`/`idle_prompt`
+   (`"Claude is waiting for your input"`, ~60 s after `Stop`). Needed before M2, not for M1.
+2. A plain terminal outside Orca (Windows Terminal) for its fingerprint.

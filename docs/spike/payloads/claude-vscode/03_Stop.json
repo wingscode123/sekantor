@@ -1,0 +1,138 @@
+{
+  "captured_at": "2026-11-11T03:19:42.529354+00:00",
+  "event_arg": "Stop",
+  "stdin": {
+    "session_id": "76ef5e1a-1b68-4be0-a6c9-12c9e93fa6ad",
+    "transcript_path": "~\\.claude\\projects\\d--Ronda\\76ef5e1a-1b68-4be0-a6c9-12c9e93fa6ad.jsonl",
+    "cwd": "d:\\Ronda",
+    "scratchpad_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\ee1ae98b8ffef949\\76ef5e1a-1b68-4be0-a6c9-12c9e93fa6ad\\scratchpad",
+    "prompt_id": "7c993bca-aeb1-4f2c-8c0c-3019fa6ed848",
+    "permission_mode": "default",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Halo! 👋 Ada yang bisa saya bantu di repo Ronda hari ini?",
+    "background_tasks": [],
+    "session_crons": []
+  },
+  "argv": [
+    "d:\\Ronda/scripts/spike/capture_hook.py",
+    "Stop"
+  ],
+  "cwd": "d:\\Ronda",
+  "pid": 31008,
+  "ppid": 50856,
+  "platform": "win32",
+  "python": "d:\\Ronda\\.venv\\Scripts\\python.exe",
+  "env": {
+    "CLAUDECODE": "1",
+    "CLAUDE_AGENT_SDK_VERSION": "0.3.322",
+    "CLAUDE_CODE_CHILD_SESSION": "1",
+    "CLAUDE_CODE_EMIT_STARTUP_TIMING": "1",
+    "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "true",
+    "CLAUDE_CODE_ENABLE_TASKS": "0",
+    "CLAUDE_CODE_ENTRYPOINT": "claude-vscode",
+    "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-684fa964d270b96963f0e5cabff0cc5f",
+    "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+    "CLAUDE_CODE_QUESTION_PREVIEW_FORMAT": "markdown",
+    "CLAUDE_CODE_SESSION_ATTENDED": "1",
+    "CLAUDE_CODE_SESSION_ID": "76ef5e1a-1b68-4be0-a6c9-12c9e93fa6ad",
+    "CLAUDE_CODE_STARTUP_FAILURE_RESULTS": "1",
+    "CLAUDE_EFFORT": "medium",
+    "CLAUDE_PID": "94976",
+    "CLAUDE_PROJECT_DIR": "d:\\Ronda",
+    "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+    "SESSIONNAME": "Console",
+    "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe",
+    "VSCODE_PID": "81888"
+  },
+  "parent_chain": [
+    {
+      "pid": 50856,
+      "name": "python.exe",
+      "exe": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+      "cmdline": [
+        "d:\\Ronda/.venv/Scripts/python.exe",
+        "d:\\Ronda/scripts/spike/capture_hook.py",
+        "Stop"
+      ]
+    },
+    {
+      "pid": 94976,
+      "name": "claude.exe",
+      "exe": "~\\.vscode\\extensions\\anthropic.claude-code-2.1.322-win32-x64\\resources\\native-binary\\claude.exe",
+      "cmdline": [
+        "c:\\Users\\<user>\\.vscode\\extensions\\anthropic.claude-code-2.1.322-win32-x64\\resources\\native-binary\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--max-thinking-tokens=31999",
+        "--permission-prompt-tool=stdio",
+        "--setting-sources=user,project,local",
+        "--permission-mode=default",
+        "--include-partial-messages",
+        "--debug",
+        "--debug-to-stderr",
+        "--enable-auth-status",
+        "--no-chrome",
+        "--replay-user-messages"
+      ]
+    },
+    {
+      "pid": 9696,
+      "name": "Code.exe",
+      "exe": "~\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      "cmdline": [
+        "~\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+        "--type=utility",
+        "--utility-sub-type=node.mojom.NodeService",
+        "--lang=en-US",
+        "--service-sandbox-type=none",
+        "--dns-result-order=ipv4first",
+        "--experimental-network-inspection",
+        "--inspect-port=0",
+        "--video-capture-use-gpu-memory-buffer",
+        "--user-data-dir=~\\AppData\\Roaming\\Code",
+        "--standard-schemes=vscode-webview,vscode-file",
+        "--enable-sandbox",
+        "--secure-schemes=vscode-webview,vscode-file,vscode-remote-resource,vscode-managed-remote-resource",
+        "--cors-schemes=vscode-webview,vscode-file,vscode-remote-resource,vscode-managed-remote-resource",
+        "--fetch-schemes=vscode-webview,vscode-file,vscode-remote-resource,vscode-managed-remote-resource",
+        "--service-worker-schemes=vscode-webview",
+        "--code-cache-schemes=vscode-webview,vscode-file",
+        "--field-trial-handle=2088,i,6078820705206082233,1247280064875602071,262144",
+        "--enable-features=DocumentPolicyIncludeJSCallStacksInCrashReports,EarlyEstablishGpuChannel,EstablishGpuChannelAsync,PdfUseShowSaveFilePicker,UpdateCompositorMemoryPolicyOnScreenChange",
+        "--disable-features=CalculateNativeWinOcclusion,DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,NetworkServiceSandbox,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation",
+        "--variations-seed-version",
+        "--pseudonymization-salt-handle=2100,i,13910549454692108476,13102263541323816647,4",
+        "--trace-process-track-uuid=3190708996619331833",
+        "--mojo-platform-channel-handle=4808",
+        "/prefetch:14"
+      ]
+    },
+    {
+      "pid": 81888,
+      "name": "Code.exe",
+      "exe": "~\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      "cmdline": [
+        "~\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+      ]
+    },
+    {
+      "pid": 100744,
+      "name": "explorer.exe",
+      "exe": "C:\\Windows\\explorer.exe",
+      "cmdline": [
+        "C:\\windows\\Explorer.EXE"
+      ]
+    }
+  ],
+  "timing_ms": {
+    "stdin_read": 1.9,
+    "total": 681.1
+  }
+}

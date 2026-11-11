@@ -1,0 +1,121 @@
+{
+  "captured_at": "2026-11-11T03:15:37.210357+00:00",
+  "event_arg": "PreToolUse",
+  "stdin": {
+    "session_id": "17afc7fa-e2dd-4dc3-8ecf-295a46a5c84a",
+    "transcript_path": "~\\.claude\\projects\\D--Ronda\\17afc7fa-e2dd-4dc3-8ecf-295a46a5c84a.jsonl",
+    "cwd": "D:\\Ronda",
+    "scratchpad_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\5d3a556d310a5a84\\17afc7fa-e2dd-4dc3-8ecf-295a46a5c84a\\scratchpad",
+    "prompt_id": "f4011389-06f0-4892-a72a-2f1fa52bd46e",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git status",
+      "description": "Show working tree status"
+    },
+    "tool_use_id": "toolu_019znRozNZtfpJKLZLXQGZqF"
+  },
+  "argv": [
+    "D:\\Ronda/scripts/spike/capture_hook.py",
+    "PreToolUse"
+  ],
+  "cwd": "D:\\Ronda",
+  "pid": 114792,
+  "ppid": 19648,
+  "platform": "win32",
+  "python": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
+    "CLAUDECODE": "1",
+    "CLAUDE_AGENT_SDK_MCP_NO_PREFIX": "0",
+    "CLAUDE_AGENT_SDK_VERSION": "0.3.321",
+    "CLAUDE_CODE_ACCOUNT_UUID": "<redacted>",
+    "CLAUDE_CODE_CHILD_SESSION": "1",
+    "CLAUDE_CODE_DESKTOP_APP_VERSION": "5.1231.0",
+    "CLAUDE_CODE_DESKTOP_MESSAGE_CARD": "1",
+    "CLAUDE_CODE_DISABLE_CRON": "",
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
+    "CLAUDE_CODE_EAGER_FLUSH": "1",
+    "CLAUDE_CODE_EMIT_STARTUP_TIMING": "1",
+    "CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES": "false",
+    "CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL": "true",
+    "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "true",
+    "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+    "CLAUDE_CODE_HOST_SESSION_ID": "local_390786fa-4192-4d63-8986-d056f836a6bf",
+    "CLAUDE_CODE_HOST_SHORT_TEMP_DIRS": "1",
+    "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-3433544153d2683b5203837c288eef81",
+    "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+    "CLAUDE_CODE_OAUTH_SCOPES": "<redacted>",
+    "CLAUDE_CODE_ORGANIZATION_UUID": "<redacted>",
+    "CLAUDE_CODE_REPORT_FINDINGS": "1",
+    "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH": "<redacted>",
+    "CLAUDE_CODE_SESSION_ATTENDED": "1",
+    "CLAUDE_CODE_SESSION_ID": "17afc7fa-e2dd-4dc3-8ecf-295a46a5c84a",
+    "CLAUDE_CODE_SIMPLE": "0",
+    "CLAUDE_CODE_STARTUP_FAILURE_RESULTS": "1",
+    "CLAUDE_CODE_TERMINAL_MCP_TOOLS": "mcp__ccd_turn__wrap_up",
+    "CLAUDE_CODE_USER_EMAIL": "<redacted>",
+    "CLAUDE_EFFORT": "medium",
+    "CLAUDE_PID": "79420",
+    "CLAUDE_PREVIEW_CLASSIFIER_FLOOR": "1",
+    "CLAUDE_PROJECT_DIR": "D:\\Ronda",
+    "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+    "SESSIONNAME": "Console",
+    "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe"
+  },
+  "parent_chain": [
+    {
+      "pid": 19648,
+      "name": "python.exe",
+      "exe": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+      "cmdline": [
+        "D:\\Ronda/.venv/Scripts/python.exe",
+        "D:\\Ronda/scripts/spike/capture_hook.py",
+        "PreToolUse"
+      ]
+    },
+    {
+      "pid": 79420,
+      "name": "claude.exe",
+      "exe": "~\\AppData\\Roaming\\Claude\\claude-code\\2.1.321\\d0e23af87588\\claude.exe",
+      "cmdline": [
+        "~\\AppData\\Roaming\\Claude\\claude-code\\2.1.321\\d0e23af87588\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--model=claude-opus-5-5",
+        "--permission-prompt-tool=stdio",
+        "--allowedTools=<omitted 1314 chars>",
+        "--disallowedTools=SubscribePR,mcp__ccd_session_mgmt__read_cloud_session",
+        "--setting-sources=user,project,local",
+        "--permission-mode=default",
+        "--include-partial-messages",
+        "--await-initialize",
+        "--thinking-display",
+        "omitted",
+        "--replay-user-messages",
+        "--await-claim",
+        "--settings",
+        "<omitted 1599 chars>"
+      ]
+    },
+    {
+      "pid": 89228,
+      "name": "claude.exe",
+      "exe": "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0\\claude.exe",
+      "cmdline": [
+        "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0\\claude.exe"
+      ]
+    }
+  ],
+  "timing_ms": {
+    "stdin_read": 0.1,
+    "total": 1001.4
+  }
+}
