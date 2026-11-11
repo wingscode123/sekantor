@@ -1,0 +1,417 @@
+{
+  "probe_version": 1,
+  "captured_at": "2026-11-11T03:04:37.719337+00:00",
+  "platform": {
+    "system": "Windows",
+    "release": "10",
+    "machine": "AMD64",
+    "python": "3.11.9",
+    "psutil": "7.2.2"
+  },
+  "agent_count": 6,
+  "agents": [
+    {
+      "pid": 31308,
+      "name": "claude.exe",
+      "exe": "~\\AppData\\Roaming\\OpenBot\\provider-runtimes\\claude\\win32-x64\\2.1.322\\bin\\claude.exe",
+      "cmdline": [
+        "~\\AppData\\Roaming\\OpenBot\\provider-runtimes\\claude\\win32-x64\\2.1.322\\bin\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--effort=medium",
+        "--model=default",
+        "--permission-prompt-tool=stdio",
+        "--resume=a7352ae1-4e76-444a-a033-110b29e2d997",
+        "--disallowedTools=<omitted 239 chars>",
+        "--setting-sources=project,local",
+        "--strict-mcp-config",
+        "--permission-mode=default",
+        "--include-partial-messages",
+        "--add-dir=~\\OpenBot\\Agents\\agent-e879b2f3-db1c-4ae9-a136-5407d6ebbf3f",
+        "--add-dir=~\\OpenBot\\Shared",
+        "--system-prompt-snapshot",
+        "off",
+        "--mcp-config",
+        "<omitted 150 chars>",
+        "--settings",
+        "<omitted 600 chars>"
+      ],
+      "cwd": "~\\OpenBot\\Agents\\agent-e879b2f3-db1c-4ae9-a136-5407d6ebbf3f",
+      "started": "2026-11-11T02:43:16.317075+00:00",
+      "env": {
+        "CLAUDE_AGENT_SDK_CLIENT_APP": "openbot/0.1.0",
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.309",
+        "CLAUDE_CODE_ARTIFACT": "0",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "openbot",
+        "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-7e0486bd8c2de789509e4f32a104873b",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE": "1",
+        "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+        "OPENBOT_AGENT_PROCESS": "1",
+        "SESSIONNAME": "Console",
+        "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe"
+      },
+      "agent": "claude",
+      "parent_chain": [
+        {
+          "pid": 117560,
+          "name": "OpenBot.exe",
+          "exe": "~\\AppData\\Local\\Programs\\OpenBot\\OpenBot.exe",
+          "cmdline": [
+            "~\\AppData\\Local\\Programs\\OpenBot\\OpenBot.exe",
+            "--updated"
+          ],
+          "cwd": "~\\AppData\\Local\\Programs\\OpenBot",
+          "started": "2026-11-11T01:34:17.837425+00:00"
+        },
+        {
+          "pid": 100744,
+          "name": "explorer.exe",
+          "exe": "C:\\Windows\\explorer.exe",
+          "cmdline": [
+            "C:\\windows\\Explorer.EXE"
+          ],
+          "cwd": "C:\\windows\\System32",
+          "started": "2026-11-11T01:23:52.225296+00:00"
+        }
+      ],
+      "nested_in_agent": false
+    },
+    {
+      "pid": 34084,
+      "name": "claude.exe",
+      "exe": "~\\AppData\\Roaming\\OpenBot\\provider-runtimes\\claude\\win32-x64\\2.1.322\\bin\\claude.exe",
+      "cmdline": [
+        "~\\AppData\\Roaming\\OpenBot\\provider-runtimes\\claude\\win32-x64\\2.1.322\\bin\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--effort=high",
+        "--model=sonnet",
+        "--permission-prompt-tool=stdio",
+        "--resume=43f7bab8-4ccc-4d22-880a-b0730b8ac278",
+        "--disallowedTools=<omitted 239 chars>",
+        "--setting-sources=project,local",
+        "--strict-mcp-config",
+        "--permission-mode=default",
+        "--include-partial-messages",
+        "--add-dir=~\\OpenBot\\Agents\\agent-35f2e7b6-cc5b-491e-80bc-e8d3d23f2ef2",
+        "--add-dir=~\\OpenBot\\Shared",
+        "--system-prompt-snapshot",
+        "off",
+        "--mcp-config",
+        "<omitted 150 chars>",
+        "--settings",
+        "<omitted 600 chars>"
+      ],
+      "cwd": "~\\OpenBot\\Agents\\agent-35f2e7b6-cc5b-491e-80bc-e8d3d23f2ef2",
+      "started": "2026-11-11T01:39:18.754386+00:00",
+      "env": {
+        "CLAUDE_AGENT_SDK_CLIENT_APP": "openbot/0.1.0",
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.309",
+        "CLAUDE_CODE_ARTIFACT": "0",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "openbot",
+        "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-10bf1b0c8cefd26c6b915cd9d1efc282",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE": "1",
+        "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+        "OPENBOT_AGENT_PROCESS": "1",
+        "SESSIONNAME": "Console",
+        "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe"
+      },
+      "agent": "claude",
+      "parent_chain": [
+        {
+          "pid": 117560,
+          "name": "OpenBot.exe",
+          "exe": "~\\AppData\\Local\\Programs\\OpenBot\\OpenBot.exe",
+          "cmdline": [
+            "~\\AppData\\Local\\Programs\\OpenBot\\OpenBot.exe",
+            "--updated"
+          ],
+          "cwd": "~\\AppData\\Local\\Programs\\OpenBot",
+          "started": "2026-11-11T01:34:17.837425+00:00"
+        },
+        {
+          "pid": 100744,
+          "name": "explorer.exe",
+          "exe": "C:\\Windows\\explorer.exe",
+          "cmdline": [
+            "C:\\windows\\Explorer.EXE"
+          ],
+          "cwd": "C:\\windows\\System32",
+          "started": "2026-11-11T01:23:52.225296+00:00"
+        }
+      ],
+      "nested_in_agent": false
+    },
+    {
+      "pid": 69104,
+      "name": "claude.exe",
+      "exe": "~\\AppData\\Roaming\\Claude\\claude-code\\2.1.321\\d0e23af87588\\claude.exe",
+      "cmdline": [
+        "~\\AppData\\Roaming\\Claude\\claude-code\\2.1.321\\d0e23af87588\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--effort=high",
+        "--model=claude-opus-5-5",
+        "--permission-prompt-tool=stdio",
+        "--resume=80034a1c-b1a2-46b2-a5e1-8f550fed9d5d",
+        "--allowedTools=<omitted 1314 chars>",
+        "--disallowedTools=SubscribePR,mcp__ccd_session_mgmt__read_cloud_session",
+        "--setting-sources=user,project,local",
+        "--permission-mode=auto",
+        "--include-partial-messages",
+        "--await-initialize",
+        "--thinking-display",
+        "omitted",
+        "--replay-user-messages",
+        "--settings",
+        "<omitted 1600 chars>"
+      ],
+      "cwd": "D:\\project-b",
+      "started": "2026-11-11T02:48:38.197098+00:00",
+      "env": {
+        "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
+        "CLAUDE_AGENT_SDK_MCP_NO_PREFIX": "0",
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.321",
+        "CLAUDE_CODE_ACCOUNT_UUID": "<redacted>",
+        "CLAUDE_CODE_AUTOUPDATER_DISABLED_BY_HOST": "1",
+        "CLAUDE_CODE_DESKTOP_APP_VERSION": "5.1231.0",
+        "CLAUDE_CODE_DESKTOP_MESSAGE_CARD": "1",
+        "CLAUDE_CODE_DISABLE_CRON": "",
+        "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
+        "CLAUDE_CODE_EAGER_FLUSH": "1",
+        "CLAUDE_CODE_EMIT_STARTUP_TIMING": "1",
+        "CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES": "false",
+        "CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL": "true",
+        "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "true",
+        "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+        "CLAUDE_CODE_HOST_GUARDS_ARTIFACTS_MCP": "1",
+        "CLAUDE_CODE_HOST_SESSION_ID": "local_b4e73a90-e8dd-4d26-958b-81bb4857ae93",
+        "CLAUDE_CODE_HOST_SHORT_TEMP_DIRS": "1",
+        "CLAUDE_CODE_MCP_APPS_HOST": "1",
+        "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-a5513eedab02a970eefd319204b0117b",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+        "CLAUDE_CODE_OAUTH_SCOPES": "<redacted>",
+        "CLAUDE_CODE_OAUTH_TOKEN": "<redacted>",
+        "CLAUDE_CODE_ORGANIZATION_UUID": "<redacted>",
+        "CLAUDE_CODE_PLUGIN_ATTRIBUTION": "{\"~\\\\AppData\\\\Roaming\\\\Claude\\\\rpm\\\\b02f9ea6\\\\628f4970\\\\plugin_01J1ZUJcofzWJxiajSBsZ8US\":{\"server_plugin_id\":\"plugin_01J1ZUJcofzWJxiajSBsZ8US\",\"marketplace_name\":\"knowledge-work-plugins\",\"installation_preference\":\"available\"},\"~\\\\AppData\\\\Roaming\\\\Claude\\\\rpm\\\\b02f9ea6\\\\628f4970\\\\plugin_01XXJmxLXPEhPMmnxmrgntNw\":{\"server_plugin_id\":\"plugin_01XXJmxLXPEhPMmnxmrgntNw\",\"marketplace_name\":\"knowledge-work-plugins\",\"installation_preference\":\"available\"},\"~\\\\AppData\\\\Roaming\\\\Claude\\\\rpm\\\\b02f9ea6\\\\628f4970\\\\plugin_01AYHYqVLaZRH2Vi6aHgDwEw\":{\"server_plugin_id\":\"plugin_01AYHYqVLaZRH2Vi6aHgDwEw\",\"marketplace_name\":\"knowledge-work-plugins\",\"installation_preference\":\"available\"},\"~\\\\AppData\\\\Roaming\\\\Claude\\\\rpm\\\\b02f9ea6\\\\628f4970\\\\plugin_01VUWKAs3gYLNqeKbDtxv1Xs\":{\"server_plugin_id\":\"plugin_01VUWKAs3gYLNqeKbDtxv1Xs\",\"marketplace_name\":\"knowledge-work-plugins\",\"installation_preference\":\"available\"},\"~\\\\AppData\\\\Roaming\\\\Claude\\\\rpm\\\\b02f9ea6\\\\628f4970\\\\plugin_01FTLa86dhbVJ3HB1LdHdhN7\":{\"server_plugin_id\":\"plugin_01FTLa86dhbVJ3HB1LdHdhN7\",\"marketplace_name\":\"knowledge-work-plugins\",\"installation_preference\":\"available\"},\"~\\\\AppData\\\\Roaming\\\\Claude\\\\rpm\\\\b02f9ea6\\\\628f4970\\\\plugin_01JETPTMWTgidsotmEhVkQTG\":{\"server_plugin_id\":\"plugin_01JETPTMWTgidsotmEhVkQTG\",\"marketplace_name\":\"anthropic-plugin-directory\",\"installation_preference\":\"available\"}}",
+        "CLAUDE_CODE_RATE_LIMIT_TIER": "<redacted>",
+        "CLAUDE_CODE_REPORT_FINDINGS": "1",
+        "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH": "<redacted>",
+        "CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH": "<redacted>",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE": "1",
+        "CLAUDE_CODE_SESSION_NAME": "<session name>",
+        "CLAUDE_CODE_SIMPLE": "0",
+        "CLAUDE_CODE_SKILL_ATTRIBUTION": "{\"~\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\628f4970-54de-4729-9ea4-13ed80604f39\\\\b02f9ea6-cf1a-43c3-aa92-7c9d62e87dad\\\\skills\\\\teams-ui\":{\"skill_id\":\"skill_018ZpUZqgLD33FEZxFKppWi3\",\"server_plugin_id\":\"plugin_01D95qCVKYRzB5yVaZFHcWQ8\"}}",
+        "CLAUDE_CODE_STARTUP_FAILURE_RESULTS": "1",
+        "CLAUDE_CODE_SUBSCRIPTION_TYPE": "<redacted>",
+        "CLAUDE_CODE_TERMINAL_MCP_TOOLS": "mcp__ccd_turn__wrap_up",
+        "CLAUDE_CODE_USER_EMAIL": "<redacted>",
+        "CLAUDE_PREVIEW_CLASSIFIER_FLOOR": "1",
+        "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+        "SESSIONNAME": "Console",
+        "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe"
+      },
+      "agent": "claude",
+      "parent_chain": [
+        {
+          "pid": 89228,
+          "name": "claude.exe",
+          "exe": "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0\\claude.exe",
+          "cmdline": [
+            "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0\\claude.exe"
+          ],
+          "cwd": "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0",
+          "started": "2026-11-11T01:37:01.820992+00:00"
+        }
+      ],
+      "nested_in_agent": true
+    },
+    {
+      "pid": 69420,
+      "name": "claude.exe",
+      "exe": "~\\.local\\bin\\claude.exe",
+      "cmdline": [
+        "~\\.local\\bin\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--model=opus",
+        "--permission-prompt-tool=stdio",
+        "--setting-sources=user,project,local",
+        "--permission-mode=auto",
+        "--include-partial-messages",
+        "--add-dir=~\\AppData\\Roaming\\orca\\agent-session-attachments",
+        "--add-dir=~\\AppData\\Roaming\\orca\\chat-scratch\\0d87fb3dbccd389ca94fee9418702c3c",
+        "--plugin-dir=~\\AppData\\Local\\Programs\\orca\\resources\\native-chat-visuals",
+        "--session-id=dd126da7-5dfb-4fb1-ba0e-c42bb2fa2668",
+        "--replay-user-messages",
+        "--thinking-display",
+        "summarized",
+        "--settings",
+        "{\"fastMode\":false}"
+      ],
+      "cwd": "D:\\Ronda",
+      "started": "2026-11-11T02:57:40.509667+00:00",
+      "env": {
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.318",
+        "CLAUDE_CODE_ARTIFACT": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+        "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-a664ad65d71ed93b2215505580ac02da",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE": "1",
+        "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+        "ORCA_AGENT_SESSION_ID": "claude_1054c161_1ccc_4a8c_a4ce_1a81681da93c",
+        "ORCA_AGENT_SESSION_SPAWN_TOKEN": "<redacted>",
+        "ORCA_APP_VERSION": "1.4.255",
+        "ORCA_CHAT_SCRATCH_DIR": "~\\AppData\\Roaming\\orca\\chat-scratch\\0d87fb3dbccd389ca94fee9418702c3c",
+        "ORCA_CLAUDE_PROFILE_POINTER": "~\\AppData\\Roaming\\orca\\claude-profiles\\selected-host",
+        "ORCA_CLI_COMMAND": "~\\AppData\\Local\\Programs\\orca\\resources\\bin\\orca.exe",
+        "ORCA_ENVIRONMENT": "",
+        "ORCA_PAIRING_CODE": "",
+        "ORCA_REMOTE_PAIRING": "",
+        "ORCA_STRUCTURED_SESSION": "1",
+        "ORCA_USER_DATA_PATH": "~\\AppData\\Roaming\\orca",
+        "ORCA_WSL_HOSTS_GATE_STATE": "closed",
+        "SESSIONNAME": "Console",
+        "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe"
+      },
+      "agent": "claude",
+      "parent_chain": [
+        {
+          "pid": 58044,
+          "name": "Orca.exe",
+          "exe": "~\\AppData\\Local\\Programs\\orca\\Orca.exe",
+          "cmdline": [
+            "~\\AppData\\Local\\Programs\\orca\\Orca.exe"
+          ],
+          "cwd": "~\\AppData\\Local\\Programs\\orca",
+          "started": "2026-11-11T01:28:00.560018+00:00"
+        },
+        {
+          "pid": 100744,
+          "name": "explorer.exe",
+          "exe": "C:\\Windows\\explorer.exe",
+          "cmdline": [
+            "C:\\windows\\Explorer.EXE"
+          ],
+          "cwd": "C:\\windows\\System32",
+          "started": "2026-11-11T01:23:52.225296+00:00"
+        }
+      ],
+      "nested_in_agent": false
+    },
+    {
+      "pid": 86636,
+      "name": "claude.exe",
+      "exe": "~\\.local\\bin\\claude.exe",
+      "cmdline": [
+        "~\\.local\\bin\\claude.exe",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--model=opus",
+        "--permission-prompt-tool=stdio",
+        "--resume=0db9b33f-6099-45f8-84f1-d8af6451d8b1",
+        "--setting-sources=user,project,local",
+        "--include-partial-messages",
+        "--add-dir=~\\AppData\\Roaming\\orca\\agent-session-attachments",
+        "--add-dir=~\\AppData\\Roaming\\orca\\chat-scratch\\62d9823b3d4580506a2fe2f68d5ff7b1",
+        "--plugin-dir=~\\AppData\\Local\\Programs\\orca\\resources\\native-chat-visuals",
+        "--replay-user-messages",
+        "--dangerously-skip-permissions",
+        "--thinking-display",
+        "summarized",
+        "--settings",
+        "{\"fastMode\":false}"
+      ],
+      "cwd": "D:\\project-a",
+      "started": "2026-11-11T01:31:43.060797+00:00",
+      "env": {
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.318",
+        "CLAUDE_CODE_ARTIFACT": "1",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+        "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-1661232cacef70b289333635af77ef2b",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE": "1",
+        "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+        "ORCA_AGENT_SESSION_ID": "claude_89709e67_002c_4953_87e9_30281e6d4a83",
+        "ORCA_AGENT_SESSION_SPAWN_TOKEN": "<redacted>",
+        "ORCA_APP_VERSION": "1.4.255",
+        "ORCA_CHAT_SCRATCH_DIR": "~\\AppData\\Roaming\\orca\\chat-scratch\\62d9823b3d4580506a2fe2f68d5ff7b1",
+        "ORCA_CLAUDE_PROFILE_POINTER": "~\\AppData\\Roaming\\orca\\claude-profiles\\selected-host",
+        "ORCA_CLI_COMMAND": "~\\AppData\\Local\\Programs\\orca\\resources\\bin\\orca.exe",
+        "ORCA_ENVIRONMENT": "",
+        "ORCA_PAIRING_CODE": "",
+        "ORCA_REMOTE_PAIRING": "",
+        "ORCA_STRUCTURED_SESSION": "1",
+        "ORCA_USER_DATA_PATH": "~\\AppData\\Roaming\\orca",
+        "ORCA_WSL_HOSTS_GATE_STATE": "closed",
+        "SESSIONNAME": "Console",
+        "SHELL": "~\\AppData\\Local\\Programs\\Git\\bin\\bash.exe"
+      },
+      "agent": "claude",
+      "parent_chain": [
+        {
+          "pid": 58044,
+          "name": "Orca.exe",
+          "exe": "~\\AppData\\Local\\Programs\\orca\\Orca.exe",
+          "cmdline": [
+            "~\\AppData\\Local\\Programs\\orca\\Orca.exe"
+          ],
+          "cwd": "~\\AppData\\Local\\Programs\\orca",
+          "started": "2026-11-11T01:28:00.560018+00:00"
+        },
+        {
+          "pid": 100744,
+          "name": "explorer.exe",
+          "exe": "C:\\Windows\\explorer.exe",
+          "cmdline": [
+            "C:\\windows\\Explorer.EXE"
+          ],
+          "cwd": "C:\\windows\\System32",
+          "started": "2026-11-11T01:23:52.225296+00:00"
+        }
+      ],
+      "nested_in_agent": false
+    },
+    {
+      "pid": 89228,
+      "name": "claude.exe",
+      "exe": "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0\\claude.exe",
+      "cmdline": [
+        "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0\\claude.exe"
+      ],
+      "cwd": "~\\AppData\\Local\\AnthropicClaude\\app-5.1231.0",
+      "started": "2026-11-11T01:37:01.820992+00:00",
+      "env": {
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.321",
+        "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+        "SESSIONNAME": "Console"
+      },
+      "agent": "claude",
+      "parent_chain": [],
+      "nested_in_agent": false
+    }
+  ]
+}
