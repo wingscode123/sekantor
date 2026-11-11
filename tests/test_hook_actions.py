@@ -160,10 +160,10 @@ def test_stop_typed_in_terminal_releases_waiting_hook(home):
         assert p.returncode == 0 and out == b"" and err == b""
 
 
-def test_no_reply_offered_in_sdk_hosts(home):
+def test_no_reply_offered_in_unverified_hosts(home):
     with Hub(home, Settings()) as hub:
         t = time.monotonic()
-        p = start_hook(home, hub.port, STOP, CLAUDE_CODE_ENTRYPOINT="sdk-ts")
+        p = start_hook(home, hub.port, STOP, CLAUDE_CODE_ENTRYPOINT="claude-desktop")
         p.communicate(timeout=10)
         assert p.returncode == 0 and time.monotonic() - t < 5
         assert hub.session().capabilities == []
@@ -180,3 +180,13 @@ def test_old_install_without_wait_flag_never_waits(home):
         p = start_hook(home, hub.port, PERMISSION, wait=False)
         out, _ = p.communicate(timeout=10)
         assert p.returncode == 0 and out == b"" and hub.session().capabilities == []
+
+
+def test_reply_hosts_come_from_config(home):
+    (home / "config.toml").write_text('reply_entrypoints = ["claude-desktop"]\n')
+    with Hub(home, Settings()) as hub:
+        p = start_hook(home, hub.port, STOP, CLAUDE_CODE_ENTRYPOINT="claude-desktop")
+        assert hub.wait_status("waiting_input").capabilities == ["reply"]
+        hub.call("POST", f"/v1/sessions/{SID}/actions", {"type": "reply", "text": "ok"})
+        p.communicate(timeout=10)
+        assert p.returncode == 2

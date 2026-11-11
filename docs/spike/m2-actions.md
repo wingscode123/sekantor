@@ -75,3 +75,18 @@ hub from `ronda up`, actions from the CLI (`ronda approve/deny/reply`). 2026-11-
 | `ronda approve` | command ran, `replied.txt` written; audit: reply and approve `delivered` |
 | `ronda deny` on `echo nope > denied.txt` | terminal: "Denied by the user from Ronda."; no file |
 | `ronda approve` on `rm -rf ./junk` | asked for a second confirmation; "n" sent nothing; deny afterwards; folder kept |
+
+## M4: reply in an Orca chat (Agent SDK host)
+
+2026-11-11. Orca 1.4.255 chat session (`CLAUDE_CODE_ENTRYPOINT=sdk-ts`, model haiku), test hooks in
+project settings: Stop `async` + `asyncRewake` waiting for a file; UserPromptSubmit logged.
+
+| t | event |
+| --- | --- |
+| +0 s | prompt "Reply with exactly READY"; agent answers READY; Stop hook starts waiting |
+| +3 s | reply written; hook exits 2 |
+| +5.6 s | UserPromptSubmit in the same session; transcript shows "Stop hook feedback" with the text |
+| +8.7 s | agent answers WOKE; Stop again with `stop_hook_active: true` |
+
+Reply is therefore enabled for `sdk-ts` as well as `cli` (`reply_entrypoints` in config.toml).
+Claude desktop (`claude-desktop`) and VS Code (`claude-vscode`) are still to be tried by hand.

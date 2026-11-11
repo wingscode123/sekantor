@@ -184,7 +184,7 @@ def capabilities(payload: dict, env: dict[str, str], settings) -> list[str]:
     name = payload.get("hook_event_name")
     if name == "PermissionRequest" and settings.approval_wait_s > 0:
         return ["approve", "deny"]
-    if name == "Stop" and settings.reply_wait_s > 0 and env.get("CLAUDE_CODE_ENTRYPOINT") == "cli":
+    if name == "Stop" and settings.reply_wait_s > 0 and env.get("CLAUDE_CODE_ENTRYPOINT") in settings.reply_entrypoints:
         return ["reply"]
     return []
 
