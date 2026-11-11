@@ -1,0 +1,147 @@
+"""Status engine: a session's current state is a fold over its events.
+
+Pure functions, no I/O: ``apply`` (one event), ``inbox_order`` (FR-10), ``sweep`` (FR-07).
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Callable, Iterable
+
+from pydantic import BaseModel
+
+from ronda.schema import Agent, Capability, Event, Host, Request, Status, Workspace
+
+NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
+
+# FR-10: waiting_approval > waiting_input > error > running > done (ended last, as history).
+PRIORITY = {
+    Status.waiting_approval: 0,
+    Status.waiting_input: 1,
+    Status.error: 2,
+    Status.running: 3,
+    Status.done: 4,
+    Status.ended: 5,
+}
+
+SILENCE_TIMEOUT = timedelta(minutes=10)
+
+
+class SessionState(BaseModel):
+    session_id: str
+    source: str
+    status: Status
+    status_since: datetime
+    status_ts: datetime  # ts of the event that set the current status (for out-of-order events)
+    started_at: datetime
+    last_event_at: datetime
+    ended_at: datetime | None = None
+    agent: Agent | None = None
+    workspace: Workspace = Workspace()
+    host: Host | None = None
+    summary: str | None = None
+    request: Request | None = None
+    capabilities: list[Capability] = []
+    pid: int | None = None
+
+    @property
+    def needs_you(self) -> bool:
+        return self.status in NEEDS_YOU
+
+
+def _merge_workspace(old: Workspace, new: Workspace | None) -> Workspace:
+    if new is None:
+        return old
+    return Workspace(cwd=new.cwd or old.cwd, branch=new.branch or old.branch)
+
+
+def apply(state: SessionState | None, event: Event) -> SessionState:
+    """Return the session state after ``event``. Never mutates ``state``."""
+    if state is None:
+        status = event.status or Status.running
+        return SessionState(
+            session_id=event.session_id,
+            source=event.source,
+            status=status,
+            status_since=event.ts,
+            status_ts=event.ts,
+            started_at=event.ts,
+            last_event_at=event.ts,
+            ended_at=event.ts if status is Status.ended else None,
+            agent=event.agent,
+            workspace=_merge_workspace(Workspace(), event.workspace),
+            host=event.host,
+            summary=event.summary,
+            request=event.request if status is Status.waiting_approval else None,
+            capabilities=list(event.capabilities),
+            pid=event.process.pid if event.process else None,
+        )
+
+    s = state.model_copy(deep=True)
+    newer = event.ts >= s.status_ts
+    s.last_event_at = max(s.last_event_at, event.ts)
+
+    # Details that are safe to take from any event, in any order.
+    if event.agent is not None:
+        s.agent = Agent(name=event.agent.name, model=event.agent.model or (s.agent.model if s.agent else None))
+    s.workspace = _merge_workspace(s.workspace, event.workspace)
+    if event.host is not None and (s.host is None or event.host.confidence >= s.host.confidence):
+        s.host = event.host
+    if event.capabilities:
+        s.capabilities = list(event.capabilities)
+    if event.process is not None and newer:
+        s.pid = event.process.pid
+
+    if not newer:
+        return s  # stale for status purposes: keep it in the timeline only
+
+    if event.summary:
+        s.summary = event.summary
+
+    # `ended` is terminal; only a new session_started (resume) revives it.
+    if s.status is Status.ended and event.type != "session_started":
+        return s
+
+    if event.status is not None:
+        if event.status is not s.status:
+            s.status = event.status
+            s.status_since = event.ts
+        s.status_ts = event.ts
+        if s.status is Status.ended:
+            s.ended_at = event.ts
+        else:
+            s.ended_at = None
+        if s.status is Status.waiting_approval:
+            s.request = event.request or s.request
+        else:
+            s.request = None
+    return s
+
+
+def sort_key(s: SessionState) -> tuple:
+    """Status priority first, then the longest wait (oldest status_since) first."""
+    return (PRIORITY[s.status], s.status_since)
+
+
+def inbox_order(sessions: Iterable[SessionState]) -> list[SessionState]:
+    return sorted(sessions, key=sort_key)
+
+
+def sweep(
+    s: SessionState,
+    now: datetime,
+    pid_alive: Callable[[int], bool],
+    timeout: timedelta = SILENCE_TIMEOUT,
+) -> SessionState | None:
+    """FR-07: return the session marked ``ended`` if it should be, else None."""
+    if s.status is Status.ended or now - s.last_event_at <= timeout:
+        return None
+    if s.pid is not None and pid_alive(s.pid):
+        return None
+    out = s.model_copy(deep=True)
+    out.status = Status.ended
+    out.status_since = now
+    out.status_ts = now
+    out.ended_at = now
+    out.request = None
+    return out
