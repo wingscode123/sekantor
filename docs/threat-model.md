@@ -48,9 +48,9 @@ relay (same user) --loopback--> hub ;  relay --HTTPS--> Telegram, webhooks (the 
 
 ## Residual risks
 
-- **The login link** (`/?token=...`) shows the token in the terminal and may stay in browser
-  history. Anyone with that link has full access until the token changes. Planned: `ronda token
-  rotate` and a short-lived login code.
+- **The login link** is a one-time code valid for 10 minutes (`/?login=...`, from `ronda up` or
+  `ronda open`); the token itself never appears in a URL. Whoever opens an unspent link first gets a
+  session cookie. If a token may have leaked, `ronda token rotate` and restart `ronda up`.
 - **A taken-over Telegram account** can approve non-risky commands and send replies. Unpair with
   `ronda unpair telegram`; consider keeping approvals local.
 - **ntfy topics and webhook URLs are bearer secrets.** Anyone who knows the topic reads the

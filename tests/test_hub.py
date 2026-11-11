@@ -43,16 +43,26 @@ def test_foreign_host_header_refused(client):
     assert r.status_code == 403
 
 
-def test_login_link_sets_cookie_and_hides_token(client):
-    r = client.get(f"/?token={TOKEN}", follow_redirects=False)
+def test_login_code_sets_cookie_once(client):
+    code = client.app.state.login_codes.issue()
+    r = client.get(f"/?login={code}", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/"
     assert "HttpOnly" in r.headers["set-cookie"] and "SameSite=Strict" in r.headers["set-cookie"]
     assert client.get("/v1/sessions").status_code == 200  # cookie now set
-    assert client.get("/?token=nope", follow_redirects=False).status_code in (200, 401)
+    client.cookies.clear()
+    assert client.get(f"/?login={code}", follow_redirects=False).status_code == 401  # spent
+    assert client.get(f"/?token={TOKEN}", follow_redirects=False).status_code == 401  # the token never works in a URL
+
+
+def test_login_code_endpoint_is_bearer_only(client):
+    r = client.post("/v1/login-code", headers=AUTH)
+    assert r.status_code == 200 and r.json()["path"].startswith("/?login=")
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
+    assert client.post("/v1/login-code", headers={"Origin": BASE}).status_code == 403
 
 
 def test_cookie_post_needs_same_origin(client):
-    client.get(f"/?token={TOKEN}", follow_redirects=False)
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
     assert client.post("/v1/events", json=ev(1, "running")).status_code == 403
     assert client.post("/v1/events", json=ev(1, "running"), headers={"Origin": "http://evil.example"}).status_code == 403
     assert client.post("/v1/events", json=ev(1, "running"), headers={"Origin": BASE}).status_code == 202
@@ -109,7 +119,7 @@ def test_stream_requires_token(client):
 
 
 def test_stream_cookie_needs_origin(client):
-    client.get(f"/?token={TOKEN}", follow_redirects=False)
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("ws://127.0.0.1:7878/v1/stream", headers={"Origin": "http://evil.example"}) as ws:
             ws.receive_json()

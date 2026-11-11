@@ -125,8 +125,8 @@ export default function App() {
     body = (
       <section className="state" aria-labelledby="st">
         <h1 id="st" className="state__title">Open Ronda from its link.</h1>
-        <p>This page needs the hub's token. Run the command below and open the link it prints, or the one it opened for you.</p>
-        <pre className="state__cmd"><code>ronda up</code></pre>
+        <p>Sign-in links work once and expire after 10 minutes. Run the command below for a fresh one.</p>
+        <pre className="state__cmd"><code>ronda open</code></pre>
       </section>
     );
   } else if (connection === "down" && !loaded) {

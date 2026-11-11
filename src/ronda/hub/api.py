@@ -179,6 +179,14 @@ async def get_actions(request: Request, limit: int = Query(100, ge=1, le=1000)):
     return {"actions": await run_in_threadpool(request.app.state.store.actions, None, limit)}
 
 
+@router.post("/login-code")
+async def login_code(request: Request):
+    """A one-time browser login link, for `ronda open`. Bearer token only."""
+    if request.scope.get("ronda_auth") != "bearer":
+        raise HTTPException(403, detail="bearer token required")
+    return {"path": f"/?login={request.app.state.login_codes.issue()}", "valid_s": int(request.app.state.login_codes.TTL_S)}
+
+
 @router.get("/health")
 async def health(request: Request):
     s = request.app.state.settings

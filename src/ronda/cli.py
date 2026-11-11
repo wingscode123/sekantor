@@ -97,22 +97,23 @@ def up(
             typer.secho(f"Port {port} is already in use. Is Ronda already up? Try `ronda status`.", fg="red")
             raise typer.Exit(1)
     token = ensure_token(config.token_path())
-    url = f"http://{config.HOST}:{port}/?token={token}"
+    settings = config.settings()
+    if notify is not None:
+        settings.notify = notify
+    hub_app = create_app(port=port, token=token, settings=settings)
+    url = f"http://{config.HOST}:{port}/?login={hub_app.state.login_codes.issue()}"
     typer.secho(f"Ronda hub on http://{config.HOST}:{port}", bold=True)
-    typer.echo(f"Open the inbox: {url}")
+    typer.echo(f"Open the inbox: {url}  (one-time link, 10 minutes; `ronda open` makes a new one)")
     if not web_dist():
         typer.secho("Web UI not built: run `npm ci && npm run build` in web/. The API works meanwhile.", fg="yellow")
     if open_browser:
         webbrowser.open(url)
-    settings = config.settings()
-    if notify is not None:
-        settings.notify = notify
     typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
                f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
     children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None,
                             _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
-        uvicorn.run(create_app(port=port, token=token, settings=settings), host=config.HOST, port=port, log_level="warning")
+        uvicorn.run(hub_app, host=config.HOST, port=port, log_level="warning")
     finally:
         for child in children:
             if child.poll() is None:
@@ -256,6 +257,37 @@ def unpair_telegram():
         typer.secho(f"Removed {path}. Restart `ronda up` to stop the relay.", fg="green")
     else:
         typer.echo("Telegram is not paired.")
+
+
+@app.command("open")
+def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the link instead of opening it.")):
+    """Open the inbox in a browser with a fresh one-time login link."""
+    try:
+        res = _api("/v1/login-code", method="POST", body={})
+    except (urllib.error.URLError, OSError, RuntimeError) as e:
+        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
+        raise typer.Exit(1)
+    if "_status" in res:
+        typer.secho(f"The hub refused ({res['_status']}).", fg="red")
+        raise typer.Exit(1)
+    url = config.hub_url() + res["path"]
+    typer.echo(url)
+    if not print_only:
+        webbrowser.open(url)
+
+
+token_app = typer.Typer(no_args_is_help=True, help="Manage the local hub token.")
+app.add_typer(token_app, name="token")
+
+
+@token_app.command("rotate")
+def token_rotate():
+    """Replace ~/.ronda/token (if a login link or the token leaked). Restart `ronda up` afterwards."""
+    from ronda.hub.auth import rotate_token
+
+    rotate_token(config.token_path())
+    typer.secho(f"New token written to {config.token_path()} (owner only).", fg="green")
+    typer.echo("Restart `ronda up`; hooks pick up the new token by themselves.")
 
 
 @app.command()
