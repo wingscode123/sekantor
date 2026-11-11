@@ -89,7 +89,7 @@ def _refuse(status: int, error: str, message: str, **extra) -> JSONResponse:
     return JSONResponse({"error": error, "message": message, **extra}, status_code=status)
 
 
-def check_action(s: SessionState, body: ActionIn, settings) -> JSONResponse | None:
+def check_action(s: SessionState, body: ActionIn, settings, channel: str = "api") -> JSONResponse | None:
     """Why this action cannot be accepted now, or None when it can."""
     if body.type in APPROVAL_TYPES:
         if settings.approval_wait_s == 0:
@@ -105,9 +105,12 @@ def check_action(s: SessionState, body: ActionIn, settings) -> JSONResponse | No
         return _refuse(409, "not_supported", f"This session does not accept '{body.type}' from Ronda.")
     if body.request_id and body.request_id != s.request.id:
         return _refuse(409, "stale_request", "That request was already answered or replaced.")
-    if body.type == "approve" and not body.confirm:
+    if body.type == "approve":
         pattern = risky_match(s.request.input, settings.risky)
-        if pattern:
+        if pattern and channel == "telegram":  # PRD Security: never from Telegram, even confirmed
+            return _refuse(409, "risky_remote", "Risky commands can only be approved on this computer.",
+                           pattern=pattern)
+        if pattern and not body.confirm:
             return _refuse(409, "confirm_required", "This command matches a risky pattern. Confirm to approve.",
                            pattern=pattern)
     return None
@@ -117,7 +120,7 @@ def _channel(request: Request) -> str:
     if request.scope.get("ronda_auth") == "cookie":
         return "web"
     ch = request.headers.get("x-ronda-channel", "api")
-    return ch if ch in ("cli", "api") else "api"
+    return ch if ch in ("cli", "api", "telegram") else "api"
 
 
 @router.post("/sessions/{session_id}/actions", status_code=202)
@@ -126,12 +129,13 @@ async def post_action(request: Request, session_id: str, body: ActionIn):
     s = await run_in_threadpool(st.store.session, session_id)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    refused = check_action(s, body, st.settings)
+    channel = _channel(request)
+    refused = check_action(s, body, st.settings, channel)
     if refused is not None:
         return refused
     text = body.text.strip() if body.text else None
     action = await run_in_threadpool(st.store.add_action, session_id, body.type, s.request.id, text,
-                                     _channel(request), getpass.getuser())
+                                     channel, getpass.getuser())
     st.waiters.notify(session_id)
     st.broadcaster.publish({"type": "action", "action": action})
     return {"action": action}
