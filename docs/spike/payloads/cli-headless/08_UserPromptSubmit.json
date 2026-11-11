@@ -1,0 +1,116 @@
+{
+  "captured_at": "2026-11-11T03:08:07.958349+00:00",
+  "event_arg": "UserPromptSubmit",
+  "stdin": {
+    "session_id": "b4d5b954-bb64-402d-aa75-0aee062be549",
+    "transcript_path": "~\\.claude\\projects\\D--Ronda\\b4d5b954-bb64-402d-aa75-0aee062be549.jsonl",
+    "cwd": "D:\\Ronda",
+    "scratchpad_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\ee1ae98b8ffef949\\b4d5b954-bb64-402d-aa75-0aee062be549\\scratchpad",
+    "prompt_id": "fe4e0266-94e9-4669-94fa-530fa0b404f1",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "Use your shell tool to run exactly: echo ronda-spike > spike-tmp.txt . If it is denied, just say DENIED."
+  },
+  "argv": [
+    "D:\\Ronda/scripts/spike/capture_hook.py",
+    "UserPromptSubmit"
+  ],
+  "cwd": "D:\\Ronda",
+  "pid": 31556,
+  "ppid": 59768,
+  "platform": "win32",
+  "python": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+  "env": {
+    "CLAUDECODE": "1",
+    "CLAUDE_AGENT_SDK_VERSION": "0.3.318",
+    "CLAUDE_CODE_ARTIFACT": "1",
+    "CLAUDE_CODE_CHILD_SESSION": "1",
+    "CLAUDE_CODE_ENTRYPOINT": "sdk-cli",
+    "CLAUDE_CODE_EXECPATH": "~\\.local\\bin\\claude.exe",
+    "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-d7568c99d6de9348b9a5714a6065e376",
+    "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+    "CLAUDE_CODE_SESSION_ATTENDED": "0",
+    "CLAUDE_CODE_SESSION_ID": "b4d5b954-bb64-402d-aa75-0aee062be549",
+    "CLAUDE_EFFORT": "medium",
+    "CLAUDE_PID": "28984",
+    "CLAUDE_PROJECT_DIR": "D:\\Ronda",
+    "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+    "MSYSTEM": "MINGW64",
+    "ORCA_AGENT_SESSION_ID": "claude_1054c161_1ccc_4a8c_a4ce_1a81681da93c",
+    "ORCA_AGENT_SESSION_SPAWN_TOKEN": "<redacted>",
+    "ORCA_APP_VERSION": "1.4.255",
+    "ORCA_CHAT_SCRATCH_DIR": "~\\AppData\\Roaming\\orca\\chat-scratch\\0d87fb3dbccd389ca94fee9418702c3c",
+    "ORCA_CLAUDE_PROFILE_POINTER": "~\\AppData\\Roaming\\orca\\claude-profiles\\selected-host",
+    "ORCA_CLI_COMMAND": "~\\AppData\\Local\\Programs\\orca\\resources\\bin\\orca.exe",
+    "ORCA_ENVIRONMENT": "",
+    "ORCA_PAIRING_CODE": "",
+    "ORCA_REMOTE_PAIRING": "",
+    "ORCA_STRUCTURED_SESSION": "1",
+    "ORCA_USER_DATA_PATH": "~\\AppData\\Roaming\\orca",
+    "ORCA_WSL_HOSTS_GATE_STATE": "closed",
+    "SESSIONNAME": "Console",
+    "SHELL": "~\\AppData\\Local\\Programs\\Git\\usr\\bin\\bash.exe",
+    "TERM": "xterm-256color"
+  },
+  "parent_chain": [
+    {
+      "pid": 59768,
+      "name": "python.exe",
+      "exe": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+      "cmdline": [
+        "D:\\Ronda/.venv/Scripts/python.exe",
+        "D:\\Ronda/scripts/spike/capture_hook.py",
+        "UserPromptSubmit"
+      ]
+    },
+    {
+      "pid": 28984,
+      "name": "claude.exe",
+      "exe": "~\\.local\\bin\\claude.exe",
+      "cmdline": [
+        "~\\.local\\bin\\claude.exe",
+        "-p",
+        "--model",
+        "haiku",
+        "--",
+        "Use your shell tool to run exactly: echo ronda-spike > spike-tmp.txt . If it is denied, just say DENIED."
+      ]
+    },
+    {
+      "pid": 9328,
+      "name": "env.exe",
+      "exe": "~\\AppData\\Local\\Programs\\Git\\usr\\bin\\env.exe",
+      "cmdline": [
+        "~\\AppData\\Local\\Programs\\Git\\usr\\bin\\env.exe",
+        "-u",
+        "CLAUDECODE",
+        "-u",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "-u",
+        "CLAUDE_CODE_SESSION_ID",
+        "-u",
+        "CLAUDE_CODE_CHILD_SESSION",
+        "-u",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "-u",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "-u",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS",
+        "-u",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE",
+        "-u",
+        "CLAUDE_PID",
+        "claude",
+        "-p",
+        "--model",
+        "haiku",
+        "--",
+        "Use your shell tool to run exactly: echo ronda-spike > spike-tmp.txt . If it is denied, just say DENIED."
+      ]
+    }
+  ],
+  "timing_ms": {
+    "stdin_read": 0.1,
+    "total": 470.1
+  }
+}

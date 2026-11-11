@@ -1,0 +1,139 @@
+{
+  "captured_at": "2026-11-11T03:07:05.118091+00:00",
+  "event_arg": "PostToolUse",
+  "stdin": {
+    "session_id": "d4bda651-bc3a-4233-bb3e-56e7902b8c9c",
+    "transcript_path": "~\\.claude\\projects\\D--Ronda\\d4bda651-bc3a-4233-bb3e-56e7902b8c9c.jsonl",
+    "cwd": "D:\\Ronda",
+    "scratchpad_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\ee1ae98b8ffef949\\d4bda651-bc3a-4233-bb3e-56e7902b8c9c\\scratchpad",
+    "prompt_id": "726a9441-414d-40ce-89d1-2c49dfcb592f",
+    "permission_mode": "default",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "PowerShell",
+    "tool_input": {
+      "command": "ls; git status",
+      "description": "List directory contents and show git status"
+    },
+    "tool_response": {
+      "stdout": "    Directory: D:\\Ronda\r\n\r\n\r\nMode                 LastWriteTime         Length Name                                                                 \r\n----                 -------------         ------ ----                                                                 \r\nd-----        11/11/2026  10:06 AM                .claude                                                              \r\nd-----        11/11/2026  10:02 AM                .pytest_cache                                                        \r\nd-----        11/11/2026  10:02 AM                .venv                                                                \r\nd-----        11/11/2026  10:01 AM                docs                                                                 \r\nd-----        11/11/2026  10:04 AM                scripts                                                              \r\nd-----        11/11/2026  10:01 AM                src                                                                  \r\nd-----        11/11/2026  10:02 AM                tests                                                                \r\nd-----        11/11/2026  10:01 AM                web                                                                  \r\n-a----        11/11/2026  10:02 AM             45 .gitattributes                                                       \r\n-a----        11/11/2026  10:03 AM            247 .gitignore                                                           \r\n-a----        11/11/2026  10:01 AM              5 .python-version                                                      \r\n-a----        11/11/2026  10:02 AM           1075 LICENSE                                                              \r\n-a----        11/11/2026  10:02 AM            566 pyproject.toml                                                       \r\n-a----        11/11/2026  10:02 AM            233 README.md                                                            \r\n-a----        11/11/2026  10:02 AM          27257 uv.lock                                                              \r\nOn branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   .gitignore\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\tscripts/\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false
+    },
+    "tool_use_id": "toolu_01WbDjvYcC47xS85DePh7ae8",
+    "duration_ms": 3435
+  },
+  "argv": [
+    "D:\\Ronda/scripts/spike/capture_hook.py",
+    "PostToolUse"
+  ],
+  "cwd": "D:\\Ronda",
+  "pid": 31200,
+  "ppid": 33732,
+  "platform": "win32",
+  "python": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+  "env": {
+    "CLAUDECODE": "1",
+    "CLAUDE_AGENT_SDK_VERSION": "0.3.318",
+    "CLAUDE_CODE_ARTIFACT": "1",
+    "CLAUDE_CODE_CHILD_SESSION": "1",
+    "CLAUDE_CODE_ENTRYPOINT": "sdk-cli",
+    "CLAUDE_CODE_EXECPATH": "~\\.local\\bin\\claude.exe",
+    "CLAUDE_CODE_MESSAGING_SOCKET": "\\\\.\\pipe\\LOCAL\\cc-msg-76f20b0b508d2a3159f67a78eb0b8e3f",
+    "CLAUDE_CODE_MESSAGING_TOKEN": "<redacted>",
+    "CLAUDE_CODE_SESSION_ATTENDED": "0",
+    "CLAUDE_CODE_SESSION_ID": "d4bda651-bc3a-4233-bb3e-56e7902b8c9c",
+    "CLAUDE_EFFORT": "medium",
+    "CLAUDE_PID": "47452",
+    "CLAUDE_PROJECT_DIR": "D:\\Ronda",
+    "COMSPEC": "C:\\windows\\system32\\cmd.exe",
+    "MSYSTEM": "MINGW64",
+    "ORCA_AGENT_SESSION_ID": "claude_1054c161_1ccc_4a8c_a4ce_1a81681da93c",
+    "ORCA_AGENT_SESSION_SPAWN_TOKEN": "<redacted>",
+    "ORCA_APP_VERSION": "1.4.255",
+    "ORCA_CHAT_SCRATCH_DIR": "~\\AppData\\Roaming\\orca\\chat-scratch\\0d87fb3dbccd389ca94fee9418702c3c",
+    "ORCA_CLAUDE_PROFILE_POINTER": "~\\AppData\\Roaming\\orca\\claude-profiles\\selected-host",
+    "ORCA_CLI_COMMAND": "~\\AppData\\Local\\Programs\\orca\\resources\\bin\\orca.exe",
+    "ORCA_ENVIRONMENT": "",
+    "ORCA_PAIRING_CODE": "",
+    "ORCA_REMOTE_PAIRING": "",
+    "ORCA_STRUCTURED_SESSION": "1",
+    "ORCA_USER_DATA_PATH": "~\\AppData\\Roaming\\orca",
+    "ORCA_WSL_HOSTS_GATE_STATE": "closed",
+    "SESSIONNAME": "Console",
+    "SHELL": "~\\AppData\\Local\\Programs\\Git\\usr\\bin\\bash.exe",
+    "TERM": "xterm-256color"
+  },
+  "parent_chain": [
+    {
+      "pid": 33732,
+      "name": "python.exe",
+      "exe": "D:\\Ronda\\.venv\\Scripts\\python.exe",
+      "cmdline": [
+        "D:\\Ronda/.venv/Scripts/python.exe",
+        "D:\\Ronda/scripts/spike/capture_hook.py",
+        "PostToolUse"
+      ]
+    },
+    {
+      "pid": 47452,
+      "name": "claude.exe",
+      "exe": "~\\.local\\bin\\claude.exe",
+      "cmdline": [
+        "~\\.local\\bin\\claude.exe",
+        "-p",
+        "--model",
+        "haiku",
+        "--allowedTools",
+        "Bash(git status)",
+        "Bash(ls *)",
+        "Bash(ls)",
+        "--",
+        "Run 'ls' then 'git status' with the Bash tool, then reply with one short sentence."
+      ]
+    },
+    {
+      "pid": 72928,
+      "name": "env.exe",
+      "exe": "~\\AppData\\Local\\Programs\\Git\\usr\\bin\\env.exe",
+      "cmdline": [
+        "~\\AppData\\Local\\Programs\\Git\\usr\\bin\\env.exe",
+        "-u",
+        "CLAUDECODE",
+        "-u",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "-u",
+        "CLAUDE_CODE_SESSION_ID",
+        "-u",
+        "CLAUDE_CODE_CHILD_SESSION",
+        "-u",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "-u",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "-u",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS",
+        "-u",
+        "CLAUDE_CODE_SDK_READS_SESSION_STATE",
+        "-u",
+        "CLAUDE_PID",
+        "claude",
+        "-p",
+        "--model",
+        "haiku",
+        "--allowedTools",
+        "Bash(git status)",
+        "Bash(ls *)",
+        "Bash(ls)",
+        "--",
+        "Run 'ls' then 'git status' with the Bash tool, then reply with one short sentence."
+      ]
+    }
+  ],
+  "timing_ms": {
+    "stdin_read": 0.1,
+    "total": 218.7
+  }
+}
