@@ -186,6 +186,7 @@ def test_action_is_broadcast(client):
     (Status.running, Status.error, True),
     (Status.waiting_input, Status.running, False),
     (Status.running, Status.ended, False),
+    (Status.done, Status.waiting_input, True),        # an idle OpenBot agent asks a question
 ])
 def test_should_notify(prev, new, expected):
     assert should_notify(prev, new) is expected

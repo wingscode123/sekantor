@@ -45,7 +45,8 @@ def should_notify(prev: Status | None, new: Status) -> bool:
         return False
     if new in (Status.waiting_approval, Status.error):
         return True
-    return new is Status.waiting_input and prev is Status.running  # a finished turn, not a fresh session
+    # a finished turn, or an idle agent asking something (OpenBot); not a fresh session
+    return new is Status.waiting_input and prev in (Status.running, Status.done)
 
 
 def message(s: SessionState) -> tuple[str, str]:

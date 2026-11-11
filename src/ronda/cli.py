@@ -83,6 +83,7 @@ def up(
     notify: bool = typer.Option(None, "--notify/--no-notify", help="Desktop notifications (default: config.toml, on)."),
     relay: bool = typer.Option(True, "--relay/--no-relay", help="Start the relay when Telegram or webhooks are set up."),
     tmux: bool = typer.Option(True, "--tmux/--no-tmux", help="Watch CLI agents in tmux panes when tmux is installed."),
+    openbot: bool = typer.Option(True, "--openbot/--no-openbot", help="Watch OpenBot agents when OpenBot is installed."),
 ):
     """Start the hub and the web inbox on 127.0.0.1."""
     import uvicorn
@@ -108,7 +109,8 @@ def up(
         settings.notify = notify
     typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
                f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
-    children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None) if c]
+    children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None,
+                            _start_openbot(port) if openbot else None) if c]
     try:
         uvicorn.run(create_app(port=port, token=token, settings=settings), host=config.HOST, port=port, log_level="warning")
     finally:
@@ -125,6 +127,24 @@ def _start_tmux(port: int):
     typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
     env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
     return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "tmux"], env=env)
+
+
+def _start_openbot(port: int):
+    from ronda.pos.openbot.pos import installed
+
+    if not installed():
+        return None
+    typer.echo("OpenBot pos: agents with Local scripts on (separate process)")
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "openbot"], env=env)
+
+
+@pos_app.command("openbot")
+def pos_openbot(interval: float = typer.Option(3.0, help="Seconds between polls.")):
+    """Watch OpenBot agents that have Local scripts on; answer their approvals and questions (runs with `ronda up`)."""
+    from ronda.pos.openbot.pos import main as openbot_main
+
+    openbot_main(interval)
 
 
 @pos_app.command("tmux")
@@ -466,6 +486,14 @@ def doctor():
 
     from ronda.relay.runner import configured, load_webhooks
     from ronda.relay.telegram import config_path as tg_path
+
+    from ronda.pos.openbot.pos import automation_dir, installed as openbot_installed
+
+    if openbot_installed():
+        on = (automation_dir() / "url").exists()
+        check(on, "OpenBot: Local scripts is on for at least one agent",
+              "OpenBot: no agent has Local scripts on, so Ronda cannot see OpenBot agents "
+              "(agent settings > Permissions > Local scripts)", warn=True)
 
     names = configured(config.home())
     _, hook_errors = load_webhooks(config.home())
