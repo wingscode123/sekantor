@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from datetime import datetime, timezone
@@ -28,15 +29,28 @@ GROUPS = [("Needs you", {"waiting_approval", "waiting_input", "error"}), ("Runni
           ("Done", {"done", "ended"})]
 
 
-def _api(path: str, timeout: float = 2.0) -> dict:
+def _api(path: str, timeout: float = 2.0, method: str = "GET", body: dict | None = None) -> dict:
+    """Call the hub; HTTP errors with a JSON body come back as dicts with "_status"."""
     from ronda.hub.auth import read_token
 
     token = read_token(config.token_path())
     if not token:
         raise RuntimeError("no token yet: run `ronda up` first")
-    req = urllib.request.Request(config.hub_url() + path, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+    req = urllib.request.Request(
+        config.hub_url() + path, method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "X-Ronda-Channel": "cli"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if method == "GET" and e.code in (401, 403):
+            raise
+        try:
+            data = json.loads(e.read())
+        except ValueError:
+            raise e from None
+        return {"_status": e.code, **(data if isinstance(data, dict) else {"detail": data})}
 
 
 def _ago(iso: str) -> str:
@@ -60,6 +74,7 @@ def version():
 def up(
     port: int = typer.Option(config.DEFAULT_PORT, help="Port on 127.0.0.1."),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the inbox in a browser."),
+    notify: bool = typer.Option(None, "--notify/--no-notify", help="Desktop notifications (default: config.toml, on)."),
 ):
     """Start the hub and the web inbox on 127.0.0.1."""
     import uvicorn
@@ -80,7 +95,12 @@ def up(
         typer.secho("Web UI not built: run `npm ci && npm run build` in web/. The API works meanwhile.", fg="yellow")
     if open_browser:
         webbrowser.open(url)
-    uvicorn.run(create_app(port=port, token=token), host=config.HOST, port=port, log_level="warning")
+    settings = config.settings()
+    if notify is not None:
+        settings.notify = notify
+    typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
+               f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
+    uvicorn.run(create_app(port=port, token=token, settings=settings), host=config.HOST, port=port, log_level="warning")
 
 
 @app.command()
@@ -159,6 +179,72 @@ def stats(
             typer.echo(f"    {x.ts}  {x.session_id}  {x.label}  {x.event_id}")
     if lost:
         raise typer.Exit(1)
+
+
+def _find_session(ref: str) -> dict:
+    """A session by full id, or by a unique prefix of its id with or without the 'claude:' part."""
+    try:
+        sessions = _api("/v1/sessions")["sessions"]
+    except (urllib.error.URLError, OSError, RuntimeError) as e:
+        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
+        raise typer.Exit(1)
+    hits = [s for s in sessions if s["session_id"] == ref]
+    if not hits:
+        hits = [s for s in sessions if s["session_id"].split(":", 1)[-1].startswith(ref) or s["session_id"].startswith(ref)]
+    if len(hits) != 1:
+        typer.secho(f"{'No' if not hits else 'More than one'} session matches '{ref}'. See `ronda status`.", fg="red")
+        raise typer.Exit(2)
+    return hits[0]
+
+
+def _act(ref: str, body: dict) -> None:
+    s = _find_session(ref)
+    path = f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/actions"
+    res = _api(path, method="POST", body=body, timeout=5)
+    if res.get("error") == "confirm_required":
+        cmd = (s.get("request") or {}).get("input", "")
+        typer.secho(f"Risky command: {cmd}", fg="yellow")
+        if not typer.confirm("Approve it anyway?", default=False):
+            raise typer.Exit(1)
+        res = _api(path, method="POST", body={**body, "confirm": True}, timeout=5)
+    if "_status" in res:
+        typer.secho(res.get("message") or res.get("detail") or f"Refused ({res['_status']})", fg="red")
+        raise typer.Exit(1)
+    typer.secho(f"Sent: {body['type']} to {s['session_id']}", fg="green")
+
+
+@app.command()
+def approve(session: str = typer.Argument(..., help="Session id or a unique prefix (see `ronda status`).")):
+    """Approve the tool call a session is waiting on."""
+    _act(session, {"type": "approve"})
+
+
+@app.command()
+def deny(session: str = typer.Argument(..., help="Session id or a unique prefix.")):
+    """Deny the tool call a session is waiting on."""
+    _act(session, {"type": "deny"})
+
+
+@app.command()
+def reply(session: str = typer.Argument(..., help="Session id or a unique prefix."),
+          text: str = typer.Argument(..., help="What to tell the agent.")):
+    """Reply to a session that finished its turn and waits for you."""
+    _act(session, {"type": "reply", "text": text})
+
+
+@app.command()
+def audit(limit: int = typer.Option(30, help="How many actions to show.")):
+    """Every approve, deny and reply sent through Ronda (FR-24), newest first."""
+    try:
+        actions = _api(f"/v1/actions?limit={limit}")["actions"]
+    except (urllib.error.URLError, OSError, RuntimeError) as e:
+        typer.secho(f"Hub not reachable ({e}).", fg="red")
+        raise typer.Exit(1)
+    if not actions:
+        typer.echo("No actions yet.")
+    for a in actions:
+        text = f"  {a['text'][:60]!r}" if a.get("text") else ""
+        typer.echo(f"{a['created_at'][:19]}  {a['type']:<8} {a['outcome']:<10} {a['channel']:<4} {a['actor']}  {a['session_id']}{text}")
 
 
 def _scope(project: bool, global_: bool) -> str:
