@@ -201,3 +201,32 @@ def test_permission_prompt_notification_keeps_request():
         ev(Status.waiting_approval, at=6),
     )
     assert s.request.id == "p1"
+
+
+# --- capabilities belong to the pending request ---------------------------------
+
+def _ask(at, rid, caps, cmd="npm test"):
+    return ev(Status.waiting_approval, at=at, capabilities=caps,
+              request={"kind": "tool", "tool": "Bash", "input": cmd, "id": rid})
+
+
+def test_capabilities_follow_the_request():
+    s = run(ev(Status.waiting_input, at=0, capabilities=["reply"], request={"kind": "input", "id": "s1"}),
+            ev(Status.running, at=5))
+    assert s.capabilities == []
+    s = apply(s, _ask(6, "p1", ["approve", "deny"]))
+    assert s.capabilities == ["approve", "deny"]
+
+
+def test_duplicate_ask_from_a_hook_that_cannot_act_is_ignored():
+    # capable hook first, then the same question from an older install without capabilities
+    s = run(_ask(0, "p-new", ["approve", "deny"]), _ask(1, "p-old", []))
+    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
+    # the other order: the capable one replaces the incapable one
+    s = run(_ask(0, "p-old", []), _ask(1, "p-new", ["approve", "deny"]))
+    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
+
+
+def test_a_different_question_replaces_even_without_capabilities():
+    s = run(_ask(0, "p1", ["approve", "deny"]), _ask(1, "p2", [], cmd="rm x"))
+    assert s.request.id == "p2" and s.capabilities == []

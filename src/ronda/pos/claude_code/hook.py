@@ -267,13 +267,17 @@ def decision(action: dict) -> dict | None:
     return None
 
 
-def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog) -> int:
-    """Returns the exit code: 0, or 2 only to deliver a reply on Stop."""
+def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog, can_wait: bool = False) -> int:
+    """Returns the exit code: 0, or 2 only to deliver a reply on Stop.
+
+    ``can_wait`` comes from the ``--wait`` argument, which only an install that runs PermissionRequest
+    synchronously and Stop with asyncRewake passes. An older install never waits and never offers
+    approve or reply, so it cannot swallow an answer it has no way to deliver."""
     payload = json.loads(stdin.decode("utf-8"))
     if not isinstance(payload, dict):
         return 0
     settings = _settings()
-    event = build_event(payload, env, settings=settings)  # env-only fingerprint: fast, so the card shows at once
+    event = build_event(payload, env, settings=settings if can_wait else None)  # env-only fingerprint: fast
     if event is None:
         return 0
     timeout = SESSION_END_HTTP_TIMEOUT_S if event.get("type") == "session_ended" else HTTP_TIMEOUT_S
@@ -313,7 +317,7 @@ def main() -> None:
     watchdog = Watchdog(HARD_TIMEOUT_S)
     code = 0
     try:
-        code = run(sys.stdin.buffer.read(MAX_STDIN), dict(os.environ), watchdog)
+        code = run(sys.stdin.buffer.read(MAX_STDIN), dict(os.environ), watchdog, can_wait="--wait" in sys.argv[1:])
     except Exception as e:
         _log(f"hook error: {type(e).__name__}: {e}")
     finally:

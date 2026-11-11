@@ -88,8 +88,6 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     s.workspace = _merge_workspace(s.workspace, event.workspace)
     if event.host is not None and (s.host is None or event.host.confidence >= s.host.confidence):
         s.host = event.host
-    if event.capabilities:
-        s.capabilities = list(event.capabilities)
     if event.process is not None and newer:
         s.pid = event.process.pid
 
@@ -114,12 +112,22 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
         else:
             s.ended_at = None
         if s.status in WAITING:
-            # A new request replaces the old one; a repeat of the same wait (e.g. the idle or
-            # permission notification) keeps it.
-            s.request = event.request or (None if changed else s.request)
+            if event.request is None:
+                # A repeat of the same wait (the idle or permission notification) keeps the request.
+                if changed:
+                    s.request, s.capabilities = None, list(event.capabilities)
+            elif (not changed and s.request is not None and s.capabilities and not event.capabilities
+                  and _same_ask(s.request, event.request)):
+                pass  # the same question from a hook that cannot act (an older install): keep ours
+            else:
+                s.request, s.capabilities = event.request, list(event.capabilities)
         else:
-            s.request = None
+            s.request, s.capabilities = None, list(event.capabilities)
     return s
+
+
+def _same_ask(a: Request, b: Request) -> bool:
+    return (a.kind, a.tool, a.input) == (b.kind, b.tool, b.input)
 
 
 def sort_key(s: SessionState) -> tuple:

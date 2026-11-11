@@ -12,14 +12,28 @@ export interface Session {
   workspace: { cwd?: string | null; branch?: string | null };
   host?: { app: string; confidence: number; via: string[] } | null;
   summary?: string | null;
-  request?: { kind: string; tool?: string | null; input?: string | null } | null;
+  request?: { kind: string; tool?: string | null; input?: string | null; id?: string | null } | null;
   capabilities: string[];
   pid?: number | null;
   needs_you: boolean;
 }
 
+export interface Action {
+  id: number;
+  session_id: string;
+  request_id: string | null;
+  type: "approve" | "deny" | "reply";
+  text?: string | null;
+  channel: string;
+  actor: string;
+  created_at: string;
+  outcome: "pending" | "delivered" | "superseded" | "expired";
+  outcome_at?: string | null;
+}
+
 export type StreamMessage =
   | { type: "snapshot"; sessions: Session[] }
-  | { type: "session"; session: Session };
+  | { type: "session"; session: Session }
+  | { type: "action"; action: Action };
 
 export type Connection = "connecting" | "live" | "down" | "unauthorized";

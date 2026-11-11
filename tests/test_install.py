@@ -29,9 +29,10 @@ def test_install_keeps_other_hooks_and_settings(tmp_path):
     end = data["hooks"]["SessionEnd"][0]["hooks"][0]
     assert "async" not in end and end["timeout"] == 2
     perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
-    assert "async" not in perm and perm["timeout"] == 600 + inst.MARGIN_S
+    assert "async" not in perm and perm["timeout"] == 600 + inst.MARGIN_S and perm["args"] == ["--wait"]
     stop = data["hooks"]["Stop"][1]["hooks"][0]
     assert stop["async"] is True and stop["asyncRewake"] is True and stop["timeout"] == 1800 + inst.MARGIN_S
+    assert stop["args"] == ["--wait"]
     assert inst.inspect(p).current_shape
 
 

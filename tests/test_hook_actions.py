@@ -68,11 +68,11 @@ def home(tmp_path):
     return tmp_path
 
 
-def start_hook(home, port, payload, **env_extra):
+def start_hook(home, port, payload, wait=True, **env_extra):
     host_vars = ("ORCA_", "OPENBOT", "CLAUDE", "VSCODE", "TERM_PROGRAM", "TMUX", "WT_SESSION", "CURSOR")
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith(host_vars)}
     env.update({"RONDA_HOME": str(home), "RONDA_URL": f"http://127.0.0.1:{port}", **env_extra})
-    p = subprocess.Popen([sys.executable, "-m", "ronda.pos.claude_code.hook"], env=env,
+    p = subprocess.Popen([sys.executable, "-m", "ronda.pos.claude_code.hook", *(["--wait"] if wait else [])], env=env,
                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p.stdin.write(json.dumps({"session_id": "abc", "cwd": str(home), **payload}).encode())
     p.stdin.close()
@@ -166,3 +166,16 @@ def test_no_reply_offered_in_sdk_hosts(home):
         p.communicate(timeout=10)
         assert p.returncode == 0 and time.monotonic() - t < 5
         assert hub.session().capabilities == []
+
+
+def test_old_install_without_wait_flag_never_waits(home):
+    """An M1-shaped install runs these hooks async: it must not offer buttons or take a reply."""
+    with Hub(home, Settings()) as hub:
+        t = time.monotonic()
+        p = start_hook(home, hub.port, STOP, wait=False, CLAUDE_CODE_ENTRYPOINT="cli")
+        p.communicate(timeout=10)
+        assert p.returncode == 0 and time.monotonic() - t < 5
+        assert hub.session().capabilities == []
+        p = start_hook(home, hub.port, PERMISSION, wait=False)
+        out, _ = p.communicate(timeout=10)
+        assert p.returncode == 0 and out == b"" and hub.session().capabilities == []

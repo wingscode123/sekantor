@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import type { Connection, Session } from "./types";
+import { ApprovalControls, ReplyForm } from "./Actions";
+import type { Action, Connection, Session } from "./types";
 import { useInbox, useNow } from "./useInbox";
 
 const SOURCES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", gemini: "Gemini", aider: "Aider" };
@@ -42,7 +43,7 @@ function Source({ s }: { s: Session }) {
   );
 }
 
-function Card({ s, now }: { s: Session; now: number }) {
+function Card({ s, now, action }: { s: Session; now: number; action?: Action }) {
   const lit = s.status === "waiting_approval" || s.status === "waiting_input";
   const cmd = s.status === "waiting_approval" ? s.request?.input : null;
   return (
@@ -63,6 +64,8 @@ function Card({ s, now }: { s: Session; now: number }) {
         <code title={s.workspace.cwd ?? undefined}>{project(s.workspace.cwd)}</code>
         {s.workspace.branch && <code>{s.workspace.branch}</code>}
       </p>
+      {s.status === "waiting_approval" && <ApprovalControls s={s} action={action} />}
+      {s.status === "waiting_input" && <ReplyForm s={s} action={action} />}
     </article>
   );
 }
@@ -107,7 +110,7 @@ const HUB_TEXT: Record<Connection, string> = {
 };
 
 export default function App() {
-  const { sessions, connection, loaded } = useInbox();
+  const { sessions, connection, loaded, actions } = useInbox();
   const now = useNow(1000);
   const needs = sessions.filter((s) => NEEDS.has(s.status));
   const running = sessions.filter((s) => s.status === "running");
@@ -156,7 +159,7 @@ export default function App() {
       <>
         <Group id="g-needs" title="Needs you" count={needs.length} h1>
           {needs.length ? (
-            <div className="needs">{needs.map((s) => <Card key={s.session_id} s={s} now={now} />)}</div>
+            <div className="needs">{needs.map((s) => <Card key={s.session_id} s={s} now={now} action={s.request?.id ? actions.get(s.request.id) : undefined} />)}</div>
           ) : (
             <p className="group__empty">Nobody is waiting for you.</p>
           )}

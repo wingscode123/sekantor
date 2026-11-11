@@ -56,10 +56,12 @@ def handler_for(event: str, exe: Path, settings=None) -> dict:
     settings = settings or Settings()
     h = {"type": "command", "command": exe.as_posix(), "args": []}
     if event == "PermissionRequest":
+        h["args"] = ["--wait"]
         h["timeout"] = max(10, settings.approval_wait_s + MARGIN_S)
     elif event in SYNC_EVENTS:
         h["timeout"] = 2
     elif event in REWAKE_EVENTS:
+        h["args"] = ["--wait"]
         h["async"] = True
         h["asyncRewake"] = True
         h["timeout"] = max(10, settings.reply_wait_s + MARGIN_S)
@@ -169,7 +171,8 @@ class Installed:
     def current_shape(self) -> bool:
         """False for an install from before M2 (PermissionRequest async, Stop without asyncRewake)."""
         perm, stop = self.handlers.get("PermissionRequest", {}), self.handlers.get("Stop", {})
-        return not perm.get("async") and bool(stop.get("asyncRewake"))
+        return (not perm.get("async") and "--wait" in (perm.get("args") or [])
+                and bool(stop.get("asyncRewake")) and "--wait" in (stop.get("args") or []))
 
     @property
     def complete(self) -> bool:
