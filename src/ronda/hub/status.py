@@ -26,6 +26,7 @@ PRIORITY = {
 }
 
 SILENCE_TIMEOUT = timedelta(minutes=10)
+ENDED_GRACE = timedelta(seconds=15)
 
 
 class SessionState(BaseModel):
@@ -97,9 +98,13 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     if event.summary:
         s.summary = event.summary
 
-    # `ended` is terminal; only a new session_started (resume) revives it.
+    # `ended` is terminal; a new session_started (resume) revives it, and so does a status event well
+    # after the end (the restart's SessionStart was missed, e.g. while the hub was down). Events within
+    # the grace period are stragglers from before the end (async hooks).
     if s.status is Status.ended and event.type != "session_started":
-        return s
+        revived = event.status is not None and s.ended_at is not None and event.ts - s.ended_at > ENDED_GRACE
+        if not revived:
+            return s
 
     if event.status is not None:
         changed = event.status is not s.status

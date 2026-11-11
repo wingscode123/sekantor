@@ -61,3 +61,17 @@ not as a typed user message, and Claude acted on it.
 - The hub must release waiting hooks when the session moves on (PostToolUse, PermissionDenied,
   UserPromptSubmit, Stop, SessionEnd), so stale hooks exit and the UI hides stale buttons.
 - One idle waiting process per session (Python, roughly 15-30 MB each) is the cost of reply.
+
+## M2 end-to-end check (built Ronda, same setup)
+
+Interactive Claude Code in an Orca terminal, `ronda install claude --project` (new hook shape),
+hub from `ronda up`, actions from the CLI (`ronda approve/deny/reply`). 2026-11-11.
+
+| Step | Result |
+| --- | --- |
+| Agent asks to run `echo from-ronda > approved.txt` | card in "Needs you" with Approve and Deny; host Orca, branch shown |
+| It was answered outside Ronda first (terminal/Orca) | Ronda refused the late approve ("not waiting"); nothing ran twice |
+| `ronda reply` with a new instruction | agent woke ("Stop hook feedback") and asked to run it |
+| `ronda approve` | command ran, `replied.txt` written; audit: reply and approve `delivered` |
+| `ronda deny` on `echo nope > denied.txt` | terminal: "Denied by the user from Ronda."; no file |
+| `ronda approve` on `rm -rf ./junk` | asked for a second confirmation; "n" sent nothing; deny afterwards; folder kept |

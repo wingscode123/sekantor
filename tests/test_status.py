@@ -230,3 +230,10 @@ def test_duplicate_ask_from_a_hook_that_cannot_act_is_ignored():
 def test_a_different_question_replaces_even_without_capabilities():
     s = run(_ask(0, "p1", ["approve", "deny"]), _ask(1, "p2", [], cmd="rm x"))
     assert s.request.id == "p2" and s.capabilities == []
+
+
+def test_events_well_after_end_revive_a_session_whose_restart_was_missed():
+    # Orca/desktop restart the CLI: SessionEnd, then SessionStart(resume). If the hub missed the
+    # SessionStart, later events from the live process must still bring the session back.
+    s = run(ev(Status.running, at=0), ev(Status.ended, at=10, type="session_ended"), ev(Status.running, at=40))
+    assert s.status is Status.running and s.ended_at is None
