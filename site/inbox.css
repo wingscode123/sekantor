@@ -1,0 +1,51 @@
+/* Hallmark · component: inbox (cards, rows, status labels) · genre: modern-minimal · theme: brand · states: 8 · contrast: pass · v2.0.0 */
+/* Shared by the landing page hero and the inbox design direction (site/inbox.html). The M1 web UI copies these rules. */
+
+.inbox { display: grid; gap: var(--space-md); padding: var(--space-lg); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card); background: var(--color-paper-2); font-size: var(--text-sm); }
+.inbox__bar { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md); }
+.inbox__title { font: 800 var(--text-lg)/1.2 var(--font-display); letter-spacing: var(--tracking-display); }
+.inbox__live { color: var(--color-ink-2); }
+.inbox__group { display: flex; align-items: baseline; gap: var(--space-xs); margin: 0; padding-top: var(--space-xs); border-top: var(--rule-hair) solid var(--color-rule); color: var(--color-ink-2); font-weight: 600; }
+.inbox__group:first-of-type { border-top: 0; padding-top: 0; }
+.inbox__group .num { color: var(--color-muted); font-weight: 400; }
+
+/* A session that needs you: the only lit thing on the screen. */
+.card { display: grid; gap: var(--space-xs); padding: var(--space-md); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-control); background: var(--color-paper-3); color: var(--color-ink); }
+.card--lit { border-color: var(--color-accent); }
+.card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-xs); min-width: 0; }
+.card__source { font-weight: 600; color: var(--color-ink); }
+.card__host { color: var(--color-ink-2); }
+.card__time { margin-left: auto; color: var(--color-muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.card__msg { color: var(--color-ink); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card__where { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-sm); color: var(--color-muted); }
+.card__actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); padding-top: var(--space-2xs); }
+
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+/* Status is a word in its colour, never a dot. */
+.status { font-weight: 600; white-space: nowrap; }
+.status--approval, .status--input { color: var(--color-waiting); }
+.status--error { color: var(--color-failing); }
+.status--running { color: var(--color-running); }
+.status--done, .status--ended { color: var(--color-idle); }
+
+.rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) minmax(0, 1fr) 3rem; align-items: baseline; gap: var(--space-sm); padding-block: var(--space-xs); border-top: var(--rule-hair) solid var(--color-rule); }
+.row:first-child { border-top: 0; }
+.row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row__where { color: var(--color-muted); }
+.row .card__time { text-align: right; }
+
+/* Small controls inside the product (app range: 32 to 40px, 44px hit target). */
+.ctl { position: relative; display: inline-flex; align-items: center; min-height: 34px; padding: 0 var(--space-md); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-control); background: transparent; color: var(--color-ink); font: 600 var(--text-sm)/1 var(--font-body); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out), transform var(--dur-micro) var(--ease-out); }
+.ctl::after { content: ""; position: absolute; inset: -5px; }
+.ctl:hover { background: var(--color-paper-2); border-color: var(--color-muted); }
+.ctl:active { transform: translateY(1px); }
+.ctl:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.ctl:disabled, .ctl[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; transform: none; }
+.ctl[aria-busy="true"] { cursor: progress; }
+.ctl--go { border-color: var(--color-accent); color: var(--color-accent); }
+.ctl--go:hover { background: color-mix(in oklab, var(--color-accent) 12%, transparent); border-color: var(--color-accent); }
+
+@media (prefers-reduced-motion: reduce) { .ctl { transition: background-color var(--dur-short) linear; } }
+@media (max-width: 40rem) { .row { grid-template-columns: minmax(0, 1fr) 3rem; gap: 0 var(--space-sm); } .row > * { grid-column: 1; } .row > .card__time { grid-column: 2; grid-row: 1; } .row__where { display: none; } }

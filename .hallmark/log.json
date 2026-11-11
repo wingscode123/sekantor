@@ -1,0 +1,28 @@
+[
+ {
+  "shape": "custom (night inbox)",
+  "theme": "brand",
+  "axes": "dark/mono/warm",
+  "hero": "split, text six columns, built inbox six",
+  "nav": "lockup left, three text links",
+  "footer": "lockup, Indonesian tagline, name origin, three links",
+  "imagery": "product built 3 (inbox, reply card, app screen)",
+  "photos": [],
+  "entry": "none",
+  "fingerprint": "split-hero/ladder/table/product-split/ledger-band/code-full/install-table",
+  "sections": [
+   "hero",
+   "order ladder",
+   "hosts table",
+   "reply",
+   "local ledger",
+   "pos code",
+   "install + milestones"
+  ],
+  "signature": "the inbox with one lit card",
+  "waived": [],
+  "prompt": "Ronda brand kit, landing page, README + social preview, inbox UI direction",
+  "date": "2026-11-11",
+  "mode": "build"
+ }
+]

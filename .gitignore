@@ -12,3 +12,4 @@ src/ronda/hub/static/
 probe*.json
 .claude/settings.local.json
 docs/spike/payloads/raw/
+site/.hallmark/
