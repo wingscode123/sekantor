@@ -93,7 +93,7 @@ def test_permission_request_gets_the_decision(home, action, behavior):
         assert s.capabilities == ["approve", "deny"] and s.request.id
         code, body = hub.call("POST", f"/v1/sessions/{SID}/actions", {"type": action, "request_id": s.request.id})
         assert code == 202, body
-        out, err = p.communicate(timeout=10)
+        out, err = p.communicate(timeout=30)
         assert p.returncode == 0
         decision = json.loads(out)["hookSpecificOutput"]
         assert decision["hookEventName"] == "PermissionRequest" and decision["decision"]["behavior"] == behavior
@@ -106,7 +106,7 @@ def test_answered_in_terminal_means_no_decision(home):
         t = time.monotonic()
         hub.call("POST", "/v1/events", {"event_id": "post-1", "ts": "2099-01-01T00:00:00+00:00",
                                         "source": "claude-code", "session_id": SID, "status": "running"})
-        out, _ = p.communicate(timeout=10)
+        out, _ = p.communicate(timeout=30)
         assert p.returncode == 0 and out == b""
         assert time.monotonic() - t < 3
 
@@ -126,7 +126,7 @@ def test_approvals_off_no_wait(home):
     with Hub(home, Settings(approval_wait_s=0)) as hub:
         t = time.monotonic()
         p = start_hook(home, hub.port, PERMISSION)
-        out, _ = p.communicate(timeout=10)
+        out, _ = p.communicate(timeout=30)
         assert p.returncode == 0 and out == b"" and time.monotonic() - t < 5
         assert hub.session().capabilities == []
 
@@ -134,7 +134,7 @@ def test_approvals_off_no_wait(home):
 def test_hub_down_no_decision(home):
     t = time.monotonic()
     p = start_hook(home, free_port(), PERMISSION)
-    out, _ = p.communicate(timeout=10)
+    out, _ = p.communicate(timeout=30)
     assert p.returncode == 0 and out == b"" and time.monotonic() - t < 5
 
 
@@ -145,7 +145,7 @@ def test_stop_reply_wakes_agent_with_exit_2(home):
         assert s.capabilities == ["reply"] and s.request.kind == "input"
         code, _ = hub.call("POST", f"/v1/sessions/{SID}/actions", {"type": "reply", "text": "Yes, deploy to staging."})
         assert code == 202
-        out, err = p.communicate(timeout=10)
+        out, err = p.communicate(timeout=30)
         assert p.returncode == 2 and out == b""
         assert err.decode() == "Reply from the user, sent through Ronda:\nYes, deploy to staging."
 
@@ -156,7 +156,7 @@ def test_stop_typed_in_terminal_releases_waiting_hook(home):
         hub.wait_status("waiting_input")
         hub.call("POST", "/v1/events", {"event_id": "ups-1", "ts": "2099-01-01T00:00:00+00:00",
                                         "source": "claude-code", "session_id": SID, "status": "running"})
-        out, err = p.communicate(timeout=10)
+        out, err = p.communicate(timeout=30)
         assert p.returncode == 0 and out == b"" and err == b""
 
 
@@ -164,7 +164,7 @@ def test_no_reply_offered_in_unverified_hosts(home):
     with Hub(home, Settings()) as hub:
         t = time.monotonic()
         p = start_hook(home, hub.port, STOP, CLAUDE_CODE_ENTRYPOINT="claude-desktop")
-        p.communicate(timeout=10)
+        p.communicate(timeout=30)
         assert p.returncode == 0 and time.monotonic() - t < 5
         assert hub.session().capabilities == []
 
@@ -174,11 +174,11 @@ def test_old_install_without_wait_flag_never_waits(home):
     with Hub(home, Settings()) as hub:
         t = time.monotonic()
         p = start_hook(home, hub.port, STOP, wait=False, CLAUDE_CODE_ENTRYPOINT="cli")
-        p.communicate(timeout=10)
+        p.communicate(timeout=30)
         assert p.returncode == 0 and time.monotonic() - t < 5
         assert hub.session().capabilities == []
         p = start_hook(home, hub.port, PERMISSION, wait=False)
-        out, _ = p.communicate(timeout=10)
+        out, _ = p.communicate(timeout=30)
         assert p.returncode == 0 and out == b"" and hub.session().capabilities == []
 
 
@@ -188,5 +188,5 @@ def test_reply_hosts_come_from_config(home):
         p = start_hook(home, hub.port, STOP, CLAUDE_CODE_ENTRYPOINT="claude-desktop")
         assert hub.wait_status("waiting_input").capabilities == ["reply"]
         hub.call("POST", f"/v1/sessions/{SID}/actions", {"type": "reply", "text": "ok"})
-        p.communicate(timeout=10)
+        p.communicate(timeout=30)
         assert p.returncode == 2

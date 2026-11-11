@@ -18,8 +18,15 @@ from ronda.pos.claude_code.translate import git_branch, translate
 from ronda.schema import Event
 
 ROOT = Path(__file__).resolve().parents[1]
-# The watchdog bounds the hook itself; interpreter start-up on a loaded CI runner or Windows box comes on top.
-STARTUP_SLACK_S = 2.0
+# The watchdog bounds the hook itself; interpreter start-up comes on top, and on a loaded CI runner or
+# Windows box it can take seconds. Measure it once and allow for it, so the test checks "no hang".
+def _startup_s() -> float:
+    t = time.perf_counter()
+    subprocess.run([sys.executable, "-c", "import ronda.pos.claude_code.hook"], capture_output=True)
+    return time.perf_counter() - t
+
+
+STARTUP_SLACK_S = max(2.0, 3 * _startup_s())
 PAYLOADS = ROOT / "docs" / "spike" / "payloads"
 EVIDENCE = ROOT / "docs" / "spike" / "evidence"
 
