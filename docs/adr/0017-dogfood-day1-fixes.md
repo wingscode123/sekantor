@@ -23,6 +23,10 @@ because the hub was off most of the morning; 47 sessions, 37 of them "OpenBot"; 
    no run limit and restart on failure, launchd agent, or systemd user unit) running
    `ronda up --no-open --log-file ~/.ronda/hub.log` with no window. `doctor` warns when it is missing.
 
+6. **Children end with the hub**: a force-stopped hub (Task Scheduler's End, a crash) runs no
+   cleanup, which left the relay and pos processes running. `ronda up` passes its PID and start time;
+   each child checks them every 5 s and exits when the hub is gone (`ronda.lifeline`).
+
 ## Consequences
 - Existing installs need `ronda install claude` again for the SessionEnd budget; doctor flags it.
 - `ronda stats` numbers are not comparable with the first run's "waited" line.

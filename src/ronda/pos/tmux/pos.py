@@ -196,6 +196,9 @@ class TmuxPos:
 
 def main(interval: float = 2.0) -> None:
     import shutil
+    from ronda.lifeline import start_parent_watch
+
+    start_parent_watch()  # end with the hub, even when it is force-stopped
 
     from ronda import config
     from ronda.hub.auth import read_token

@@ -195,7 +195,9 @@ _CHILD_OUT = None  # where child processes write when the hub runs as a service
 
 
 def _spawn(args: list[str], port: int):
-    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    from ronda.lifeline import parent_env
+
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}", **parent_env()}
     if _CHILD_OUT is not None:
         return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT)
     return subprocess.Popen(args, env=env)
