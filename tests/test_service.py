@@ -38,9 +38,9 @@ def test_linux_systemd_user_unit():
 
 
 def test_up_log_file_option_exists():
-    from typer.testing import CliRunner
+    import typer.main
 
     from ronda.cli import app
 
-    r = CliRunner().invoke(app, ["up", "--help"])
-    assert "--log-file" in r.output
+    up = typer.main.get_command(app).commands["up"]  # not --help text: CI renders it with colour codes
+    assert any("--log-file" in p.opts for p in up.params)
