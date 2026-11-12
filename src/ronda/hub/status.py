@@ -110,6 +110,10 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
         if not revived:
             return s
 
+    if (event.status is Status.waiting_approval and event.request is None and s.status is Status.waiting_input
+            and s.request is not None and s.request.kind == "question"):
+        return s  # the permission notification that follows a question (AskUserQuestion)
+
     if event.status is not None:
         changed = event.status is not s.status
         if changed:

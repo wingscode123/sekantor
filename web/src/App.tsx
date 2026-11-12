@@ -68,6 +68,11 @@ function Card({ s, now, action }: { s: Session; now: number; action?: Action }) 
       </p>
       {s.status === "waiting_approval" && <ApprovalControls s={s} action={action} />}
       {s.status === "waiting_input" && <ReplyForm s={s} action={action} />}
+      {s.status === "waiting_input" && s.request?.kind === "question" && !s.capabilities.includes("reply") && (
+        <p className="card__note">
+          Answer it in {s.host ? HOSTS[s.host.app] ?? s.host.app : "the app"}.
+        </p>
+      )}
       <SessionMenu s={s} now={now} />
       <Timeline sessionId={s.session_id} />
     </article>

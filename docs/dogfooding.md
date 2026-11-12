@@ -7,7 +7,8 @@ Ronda measures this itself, from local files only.
 
 ```sh
 uv run ronda install claude --global   # every project; backs up ~/.claude/settings.json first
-uv run ronda up                        # keep this terminal open all day
+uv run ronda service install           # the hub starts at login, no window (output: ~/.ronda/hub.log)
+uv run ronda open                      # the inbox in your browser
 uv run ronda doctor                    # should end with "All good."
 ```
 
@@ -32,7 +33,8 @@ uv run ronda stats --since 10h --lost   # list each lost event, if any
 | `lost` | A hook sent the event while the hub was up, and the hub never stored it | **0** |
 | `not delivered while the hub was down` | Expected: the agent fell back to its own prompt | any |
 | `hook errors` | From `~/.ronda/hook.log` | only "hub unreachable" while the hub was off |
-| `waited for approval / a reply` | Time agents spent waiting for you (PRD success metric) | baseline |
+| `waited for approval / a reply` | Waits you answered: total, count, median (PRD success metric) | baseline |
+| `left waiting` | Waits nobody answered: the session ended or still waits | context |
 
 `ronda stats` exits 1 when `lost` is above 0. If it is, keep `~/.ronda/sent.log`,
 `~/.ronda/hook.log` and `~/.ronda/ronda.db` and open an issue with the `--lost` output.

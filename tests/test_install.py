@@ -27,7 +27,7 @@ def test_install_keeps_other_hooks_and_settings(tmp_path):
     ours = data["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert ours == {"type": "command", "command": EXE.as_posix(), "args": [], "async": True, "timeout": 10}
     end = data["hooks"]["SessionEnd"][0]["hooks"][0]
-    assert "async" not in end and end["timeout"] == 2
+    assert "async" not in end and end["timeout"] == 5
     perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
     assert "async" not in perm and perm["timeout"] == 600 + inst.MARGIN_S and perm["args"] == ["--wait"]
     stop = data["hooks"]["Stop"][1]["hooks"][0]

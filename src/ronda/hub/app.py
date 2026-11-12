@@ -21,6 +21,7 @@ from ronda.hub.waiters import Waiters
 from ronda.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from ronda.hub.store import Store
 from ronda.hub.status import sweep
+from ronda.schema import Event, Status
 from ronda.hub.stream import Broadcaster
 
 SWEEP_EVERY_S = 30
@@ -56,7 +57,11 @@ def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = Non
     for s in store.sessions():
         out = sweep(s, now, pid_alive)
         if out is not None:
-            store.put_session(out)
+            # An event, not just a state change: the timeline and `ronda stats` then see the end too.
+            ev = Event(event_id=f"sweep-{now.timestamp():.0f}-{s.session_id}"[:128], ts=now, source=s.source,
+                       session_id=s.session_id, type="session_ended", status=Status.ended,
+                       summary="Ended: no events for 10 minutes and the process is gone")
+            out = store.add_event(ev) or out
             store.expire_actions(out.session_id, None)
             if on_change:
                 on_change(out.session_id)

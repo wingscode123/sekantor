@@ -84,12 +84,20 @@ def up(
     relay: bool = typer.Option(True, "--relay/--no-relay", help="Start the relay when Telegram or webhooks are set up."),
     tmux: bool = typer.Option(True, "--tmux/--no-tmux", help="Watch CLI agents in tmux panes when tmux is installed."),
     openbot: bool = typer.Option(True, "--openbot/--no-openbot", help="Watch OpenBot agents when OpenBot is installed."),
+    log_file: Path = typer.Option(None, "--log-file", help="Write output here instead of the console (used by `ronda service`)."),
 ):
     """Start the hub and the web inbox on 127.0.0.1."""
     import uvicorn
 
     from ronda.hub.app import create_app, web_dist
     from ronda.hub.auth import ensure_token
+
+    global _CHILD_OUT
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        _CHILD_OUT = open(log_file, "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = _CHILD_OUT
+        typer.echo(f"--- {datetime.now().isoformat(timespec='seconds')} ronda up")
 
     os.environ["RONDA_PORT"] = str(port)
     with socket.socket() as s:
@@ -126,8 +134,7 @@ def _start_tmux(port: int):
     if not shutil.which("tmux"):
         return None
     typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
-    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
-    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "tmux"], env=env)
+    return _spawn([sys.executable, "-m", "ronda.cli", "pos", "tmux"], port)
 
 
 def _start_orca(port: int):
@@ -148,8 +155,7 @@ def _start_orca(port: int):
         typer.secho("orca_pos is on but the orca CLI was not found.", fg="yellow")
         return None
     typer.echo("Orca pos: non-Claude agents in Orca terminals (separate process)")
-    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
-    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "orca"], env=env)
+    return _spawn([sys.executable, "-m", "ronda.cli", "pos", "orca"], port)
 
 
 @pos_app.command("orca")
@@ -166,8 +172,7 @@ def _start_openbot(port: int):
     if not installed():
         return None
     typer.echo("OpenBot pos: agents with Local scripts on (separate process)")
-    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
-    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "pos", "openbot"], env=env)
+    return _spawn([sys.executable, "-m", "ronda.cli", "pos", "openbot"], port)
 
 
 @pos_app.command("openbot")
@@ -186,6 +191,16 @@ def pos_tmux(interval: float = typer.Option(2.0, help="Seconds between scans."))
     tmux_main(interval)
 
 
+_CHILD_OUT = None  # where child processes write when the hub runs as a service
+
+
+def _spawn(args: list[str], port: int):
+    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
+    if _CHILD_OUT is not None:
+        return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT)
+    return subprocess.Popen(args, env=env)
+
+
 def _start_relay(port: int):
     """The relay is a separate process (ADR-0011): the hub itself never talks to the internet."""
     from ronda.relay.runner import configured
@@ -194,8 +209,7 @@ def _start_relay(port: int):
     if not names:
         return None
     typer.echo(f"Relay: {', '.join(names)} (separate process)")
-    env = {**os.environ, "RONDA_URL": f"http://{config.HOST}:{port}"}
-    return subprocess.Popen([sys.executable, "-m", "ronda.cli", "relay"], env=env)
+    return _spawn([sys.executable, "-m", "ronda.cli", "relay"], port)
 
 
 @app.command()
@@ -274,6 +288,59 @@ def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the
     typer.echo(url)
     if not print_only:
         webbrowser.open(url)
+
+
+service_app = typer.Typer(no_args_is_help=True, help="Start the hub automatically at login.")
+app.add_typer(service_app, name="service")
+
+
+@service_app.command("install")
+def service_install(start: bool = typer.Option(True, "--start/--no-start", help="Also start it now.")):
+    """Run the hub at every login (Task Scheduler / launchd / systemd user), with no window."""
+    from ronda import service
+
+    p = service.plan(config.home())
+    for path, content in p.files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
+    try:
+        service.run(p.install)
+        if start and p.start:
+            with socket.socket() as s:
+                busy = s.connect_ex((config.HOST, config.DEFAULT_PORT)) == 0
+            if busy:
+                typer.secho("A hub is already running; the service takes over at the next login.", fg="yellow")
+            else:
+                service.run(p.start)
+    except (RuntimeError, OSError) as e:
+        typer.secho(f"Could not install the service: {e}", fg="red")
+        raise typer.Exit(1)
+    typer.secho("The hub now starts at login (no window). Output: " + str(config.home() / "hub.log"), fg="green")
+    typer.echo("Open the inbox with `ronda open`. Remove with `ronda service uninstall`.")
+
+
+@service_app.command("uninstall")
+def service_uninstall():
+    """Stop starting the hub at login."""
+    from ronda import service
+
+    p = service.plan(config.home())
+    service.run(p.uninstall, check=False)
+    for path in p.remove:
+        if path.exists():
+            path.unlink()
+    typer.secho("Removed. The hub no longer starts at login.", fg="green")
+
+
+@service_app.command("status")
+def service_status():
+    """Is the hub set to start at login?"""
+    from ronda import service
+
+    ok = service.installed(service.plan(config.home()))
+    typer.secho("Starts at login: yes" if ok else "Starts at login: no (ronda service install)",
+                fg="green" if ok else "yellow")
+    raise typer.Exit(0 if ok else 1)
 
 
 token_app = typer.Typer(no_args_is_help=True, help="Manage the local hub token.")
@@ -356,10 +423,13 @@ def stats(
         typer.secho("  hook errors            0", fg="green")
     hosts = ", ".join(f"{h} {n}" for h, n in st.by_host.most_common()) or "none"
     typer.echo(f"  sessions               {st.sessions} ({hosts})")
-    typer.echo(f"  waited for approval    {_span(st.waiting['waiting_approval'])}")
-    typer.echo(f"  waited for a reply     {_span(st.waiting['waiting_input'])}")
+    for status, label in (("waiting_approval", "approval"), ("waiting_input", "a reply")):
+        n, med = len(st.answers[status]), st.median(status)
+        extra = f"   ({n} answered, median {_span(med)})" if n else ""
+        typer.echo(f"  waited for {label:<12}{_span(st.waiting[status])}{extra}")
+    typer.echo(f"  left waiting           {_span(st.left_waiting)}   (ended or still open with no answer)")
     if st.longest_wait_session:
-        typer.echo(f"  longest single wait    {_span(st.longest_wait)} ({st.longest_wait_session})")
+        typer.echo(f"  longest answered wait  {_span(st.longest_wait)} ({st.longest_wait_session})")
     if show_lost and st.lost:
         typer.secho("  lost events", fg="red")
         for x in st.lost:
@@ -556,7 +626,7 @@ def doctor():
         check(i.complete, f"All {len(inst.EVENTS)} hook events registered in {i.path.name}",
               f"Some hook events missing in {i.path}: run `ronda install claude` again")
         check(i.commands_exist, "Hook command exists", f"Hook command missing: {', '.join(i.commands)}")
-        check(i.current_shape, "Hooks can approve and reply (M2 shape)",
+        check(i.current_shape, "Hooks are up to date (approve, reply, SessionEnd budget)",
               f"Hooks in {i.path} are from an older Ronda: run `ronda install claude` again")
 
     try:
@@ -578,6 +648,11 @@ def doctor():
         check(on, "OpenBot: Local scripts is on for at least one agent",
               "OpenBot: no agent has Local scripts on, so Ronda cannot see OpenBot agents "
               "(agent settings > Permissions > Local scripts)", warn=True)
+
+    from ronda import service as _service
+
+    check(_service.installed(_service.plan(config.home())), "Hub starts at login (ronda service)",
+          "Hub does not start at login: `ronda service install` keeps it on", warn=True)
 
     names = configured(config.home())
     _, hook_errors = load_webhooks(config.home())

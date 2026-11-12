@@ -40,6 +40,17 @@ def tool_input_text(tool: str | None, tool_input) -> str | None:
     return _clip(json.dumps(tool_input, ensure_ascii=False, separators=(",", ":")), INPUT_MAX)
 
 
+def question_text(tool_input) -> str:
+    """'Asks: <first question> (option, option)' from AskUserQuestion's input."""
+    try:
+        q = (tool_input or {}).get("questions", [])[0]
+    except (AttributeError, IndexError, TypeError):
+        return "Asks you a question"
+    labels = ", ".join(o.get("label", "") for o in q.get("options") or [] if isinstance(o, dict))
+    text = q.get("question") or q.get("header") or "a question"
+    return f"Asks: {text}" + (f" ({labels})" if labels else "")
+
+
 def git_branch(cwd: str | None) -> str | None:
     """Read the branch from .git/HEAD without running git (worktrees included)."""
     if not cwd:
@@ -104,6 +115,12 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
         status = "running"
         text = tool_input_text(tool, payload.get("tool_input"))
         summary = _clip(f"{tool}: {text}" if text else tool, SUMMARY_MAX)
+    elif name == "PermissionRequest" and tool == "AskUserQuestion":
+        # Claude asks the person something. Approving the tool does not answer it, so this is a
+        # question to answer in the app, not an approval (dogfooding 2026-11-11).
+        status = "waiting_input"
+        request = {"kind": "question", "tool": tool, "id": event_id}
+        summary = _clip(question_text(payload.get("tool_input")), SUMMARY_MAX)
     elif name == "PermissionRequest":
         status = "waiting_approval"
         text = tool_input_text(tool, payload.get("tool_input"))
