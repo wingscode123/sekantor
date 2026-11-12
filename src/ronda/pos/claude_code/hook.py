@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 HARD_TIMEOUT_S = 2.0
 HTTP_TIMEOUT_S = 1.0  # Windows takes ~2 s to refuse a closed loopback port; stay under the watchdog
-SESSION_END_HTTP_TIMEOUT_S = 0.5  # SessionEnd hooks share a 1.5 s budget
+SESSION_END_HTTP_TIMEOUT_S = 1.5  # install raises SessionEnd's budget to 5 s (default 1.5 s)
 POLL_S = 25.0  # one long-poll request; the hub caps it at 30 s
 MAX_STDIN = 4 * 1024 * 1024
 LOG_MAX = 256 * 1024
@@ -182,6 +182,8 @@ def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
 def capabilities(payload: dict, env: dict[str, str], settings) -> list[str]:
     """What Ronda may do for this request (FR-25). Reply only where it was verified (ADR-0008)."""
     name = payload.get("hook_event_name")
+    if name == "PermissionRequest" and payload.get("tool_name") == "AskUserQuestion":
+        return []  # a question to answer in the app; approving would not answer it
     if name == "PermissionRequest" and settings.approval_wait_s > 0:
         return ["approve", "deny"]
     if name == "Stop" and settings.reply_wait_s > 0 and env.get("CLAUDE_CODE_ENTRYPOINT") in settings.reply_entrypoints:
@@ -277,6 +279,8 @@ def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog, can_wait: bool = 
     if not isinstance(payload, dict):
         return 0
     settings = _settings()
+    if settings.ignored(payload.get("cwd")):
+        return 0  # e.g. OpenBot's own helper runs from its program folder
     event = build_event(payload, env, settings=settings if can_wait else None)  # env-only fingerprint: fast
     if event is None:
         return 0

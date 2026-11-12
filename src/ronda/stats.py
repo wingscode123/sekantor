@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -34,9 +34,17 @@ class Stats:
     hook_errors: Counter = field(default_factory=Counter)
     sessions: int = 0
     by_host: Counter = field(default_factory=Counter)
+    # Waits the person answered (the agent moved on), per status; the PRD's "time agents wait for you".
     waiting: dict[str, timedelta] = field(default_factory=lambda: {s: timedelta() for s in sorted(WAITING)})
+    answers: dict[str, list[timedelta]] = field(default_factory=lambda: {s: [] for s in sorted(WAITING)})
+    # Waits nobody answered: the session ended, or is still waiting at the end of the window.
+    left_waiting: timedelta = timedelta()
     longest_wait: timedelta = timedelta()
     longest_wait_session: str | None = None
+
+    def median(self, status: str) -> timedelta | None:
+        xs = sorted(self.answers.get(status) or [])
+        return xs[len(xs) // 2] if xs else None
 
 
 def _parse_ts(text: str) -> datetime | None:
@@ -99,10 +107,13 @@ def compute(home: Path, since: datetime, until: datetime | None = None) -> Stats
             "SELECT session_id, ts, json_extract(body, '$.status'), json_extract(body, '$.host.app') "
             "FROM events WHERE ts <= ? ORDER BY session_id, ts", (hi,)
         ).fetchall()
+        # Sessions the hub closed without an event (FR-07 sweep before the fix): their end time.
+        ended = {sid: _parse_ts(t) for sid, t in con.execute(
+            "SELECT session_id, json_extract(body, '$.ended_at') FROM sessions WHERE status = 'ended'") if t}
     finally:
         con.close()
 
-    _waiting(st, rows)
+    _waiting(st, rows, ended)
     return st
 
 
@@ -117,24 +128,31 @@ def _split_lost(st: Stats, lost: list[Lost], down_at: set[int]) -> None:
             st.lost.append(x)
 
 
-def _waiting(st: Stats, rows: list[tuple]) -> None:
-    """Sum the time each session spent in a waiting status, clipped to [since, until]."""
+def _waiting(st: Stats, rows: list[tuple], ended: dict[str, datetime] | None = None) -> None:
+    """Time each session spent waiting, clipped to [since, until]. A wait counts as answered when the
+    session moved on to another status; one that ran into the end of the session (or of the window)
+    counts as left waiting."""
+    ended = ended or {}
     seen_in_window: set[str] = set()
     hosts: dict[str, str] = {}
     current: dict[str, tuple[str, datetime]] = {}
-    spans: dict[str, timedelta] = defaultdict(timedelta)
 
-    def close(sid: str, end: datetime) -> None:
+    def close(sid: str, end: datetime, answered: bool) -> None:
         if sid not in current:
             return
         status, start = current[sid]
-        if status in WAITING:
-            a, b = max(start, st.since), min(end, st.until)
-            if b > a:
-                st.waiting[status] += b - a
-                spans[sid] += b - a
-                if b - a > st.longest_wait:
-                    st.longest_wait, st.longest_wait_session = b - a, sid
+        if status not in WAITING:
+            return
+        a, b = max(start, st.since), min(end, st.until)
+        if b <= a:
+            return
+        if answered:
+            st.waiting[status] += b - a
+            st.answers[status].append(b - a)
+            if b - a > st.longest_wait:
+                st.longest_wait, st.longest_wait_session = b - a, sid
+        else:
+            st.left_waiting += b - a
 
     for sid, ts_text, status, host in rows:
         ts = _parse_ts(ts_text)
@@ -145,10 +163,11 @@ def _waiting(st: Stats, rows: list[tuple]) -> None:
         if host:
             hosts[sid] = host
         if status and (sid not in current or current[sid][0] != status):
-            close(sid, ts)
+            close(sid, ts, answered=status not in ("ended",))
             current[sid] = (status, ts)
     for sid in current:
-        close(sid, st.until)
+        end = ended.get(sid)
+        close(sid, min(end, st.until) if end else st.until, answered=False)
 
     st.sessions = len(seen_in_window)
     st.by_host = Counter(hosts.get(sid, "unknown") for sid in seen_in_window)

@@ -54,15 +54,32 @@ def test_lost_events_are_attempts_the_hub_never_stored(home):
 
 def test_waiting_time_and_sessions(home):
     st = compute(home, NOW - timedelta(hours=24), NOW)
-    assert st.waiting["waiting_input"] == timedelta(minutes=50)
+    # claude:a: 20 min for a reply and 5 min for approval, both answered (it ran on afterwards)
+    assert st.waiting["waiting_input"] == timedelta(minutes=20)
     assert st.waiting["waiting_approval"] == timedelta(minutes=5)
-    assert st.longest_wait == timedelta(minutes=30) and st.longest_wait_session == "claude:b"
+    assert st.median("waiting_input") == timedelta(minutes=20) and len(st.answers["waiting_approval"]) == 1
+    # claude:b still waits at the end of the window: not answered
+    assert st.left_waiting == timedelta(minutes=30)
+    assert st.longest_wait == timedelta(minutes=20) and st.longest_wait_session == "claude:a"
     assert st.sessions == 2 and st.by_host == {"orca": 1, "vscode": 1}
+
+
+def test_a_wait_cut_short_by_the_session_ending_is_left_waiting(home):
+    from ronda.hub.store import Store
+
+    store = Store(home / "ronda.db")
+    store.add_event(ev(20, "claude:c", "waiting_input", 60))
+    store.add_event(Event(event_id="e21", ts=NOW - timedelta(minutes=50), source="claude-code", session_id="claude:c",
+                          status="ended", type="session_ended"))
+    store.close()
+    st = compute(home, NOW - timedelta(hours=24), NOW)
+    assert st.left_waiting == timedelta(minutes=30 + 10)  # claude:b's 30 + claude:c's 10
 
 
 def test_window_clips_waits(home):
     st = compute(home, NOW - timedelta(minutes=110), NOW)
-    assert st.waiting["waiting_input"] == timedelta(minutes=40)  # 10 of the first 20 + 30
+    assert st.waiting["waiting_input"] == timedelta(minutes=10)  # the answered wait, clipped to the window
+    assert st.left_waiting == timedelta(minutes=30)
 
 
 def test_recent_attempts_are_in_flight(home):

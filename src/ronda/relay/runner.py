@@ -115,6 +115,9 @@ async def run(home: Path | None = None, hub_url: str | None = None) -> None:
 
 
 def main() -> None:
+    from ronda.lifeline import start_parent_watch
+
+    start_parent_watch()  # end with the hub, even when it is force-stopped
     logging.basicConfig(level=logging.INFO, format="%(asctime)s relay %(message)s", datefmt="%H:%M:%S")
     try:
         asyncio.run(run())

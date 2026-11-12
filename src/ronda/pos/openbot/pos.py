@@ -196,6 +196,9 @@ class OpenBotPos:
 
 
 def main(interval: float = 3.0) -> None:
+    from ronda.lifeline import start_parent_watch
+
+    start_parent_watch()  # end with the hub, even when it is force-stopped
     from ronda import config
     from ronda.hub.auth import read_token
     from ronda.pos.tmux.pos import HubApi

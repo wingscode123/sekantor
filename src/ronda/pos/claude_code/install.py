@@ -59,7 +59,9 @@ def handler_for(event: str, exe: Path, settings=None) -> dict:
         h["args"] = ["--wait"]
         h["timeout"] = max(10, settings.approval_wait_s + MARGIN_S)
     elif event in SYNC_EVENTS:
-        h["timeout"] = 2
+        # SessionEnd: Claude Code's shared 1.5 s budget was too short under load (one end lost in
+        # dogfooding); a per-hook timeout raises it.
+        h["timeout"] = 5
     elif event in REWAKE_EVENTS:
         h["args"] = ["--wait"]
         h["async"] = True
@@ -171,8 +173,10 @@ class Installed:
     def current_shape(self) -> bool:
         """False for an install from before M2 (PermissionRequest async, Stop without asyncRewake)."""
         perm, stop = self.handlers.get("PermissionRequest", {}), self.handlers.get("Stop", {})
+        end = self.handlers.get("SessionEnd", {})
         return (not perm.get("async") and "--wait" in (perm.get("args") or [])
-                and bool(stop.get("asyncRewake")) and "--wait" in (stop.get("args") or []))
+                and bool(stop.get("asyncRewake")) and "--wait" in (stop.get("args") or [])
+                and (end.get("timeout") or 0) >= 5)
 
     @property
     def complete(self) -> bool:

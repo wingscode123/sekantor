@@ -57,17 +57,36 @@ DEFAULT_RISKY = [
 # (docs/spike/m2-actions.md): a terminal, and an Orca chat (Agent SDK). Others can be added in config.toml.
 DEFAULT_REPLY_ENTRYPOINTS = ["cli", "sdk-ts"]
 
+# Folders whose Claude Code runs are not agent sessions: OpenBot's own helper runs start in its
+# program folder (28 of 37 "OpenBot" sessions in the first dogfooding run).
+DEFAULT_IGNORE_CWD = [r"/Programs/OpenBot(/|$)", r"/OpenBot\.app/", r"^/opt/OpenBot(/|$)"]
+
 
 class Settings:
     def __init__(self, approval_wait_s: int = 600, reply_wait_s: int = 1800, notify: bool = True,
                  risky: list[str] | None = None, reply_entrypoints: list[str] | None = None,
-                 quiet_hours: str | None = None):
+                 quiet_hours: str | None = None, ignore_cwd: list[str] | None = None):
         self.approval_wait_s = max(0, min(int(approval_wait_s), 3600))
         self.reply_wait_s = max(0, min(int(reply_wait_s), 86400))
         self.notify = bool(notify)
         self.risky = list(risky) if risky is not None else list(DEFAULT_RISKY)
         self.reply_entrypoints = [str(e) for e in reply_entrypoints] if reply_entrypoints is not None             else list(DEFAULT_REPLY_ENTRYPOINTS)
         self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
+        self.ignore_cwd = list(ignore_cwd) if ignore_cwd is not None else list(DEFAULT_IGNORE_CWD)
+
+    def ignored(self, cwd: str | None) -> bool:
+        import re
+
+        if not cwd:
+            return False
+        path = cwd.replace("\\", "/")
+        for p in self.ignore_cwd:
+            try:
+                if re.search(p, path, re.I):
+                    return True
+            except re.error:
+                continue
+        return False
 
     def quiet(self, now=None) -> bool:
         return in_quiet_hours(self.quiet_hours, now)
@@ -118,6 +137,7 @@ def settings(base: Path | None = None) -> Settings:
             risky=data.get("risky_commands"),
             reply_entrypoints=data.get("reply_entrypoints"),
             quiet_hours=data.get("quiet_hours"),
+            ignore_cwd=data.get("ignore_cwd"),
         )
     except (TypeError, ValueError):
         return Settings()
