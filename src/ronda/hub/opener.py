@@ -83,9 +83,9 @@ def plan(s: SessionState, which: Callable[[str], str | None] = shutil.which) -> 
     return None
 
 
-def run(p: Plan, runner=subprocess.Popen, opener=_open_url_or_path) -> None:
+def run(p: Plan) -> None:
     if p.kind == "exec":
-        runner(p.target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        subprocess.Popen(p.target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
     else:
-        opener(p.target)
+        _open_url_or_path(p.target)

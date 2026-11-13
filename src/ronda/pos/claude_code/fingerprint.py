@@ -114,7 +114,7 @@ def classify(rules: dict, env: dict[str, str], chain: list[str] | None = None, e
     return None
 
 
-def collect(env: dict[str, str], cwd: str | None, agent_pid: int | None, deep: bool) -> tuple[list[str], str | None, str | None]:
+def collect(agent_pid: int | None, deep: bool) -> tuple[list[str], str | None, str | None]:
     """(parent chain names, agent exe, agent cmdline) for the hook process. Empty unless ``deep``."""
     if not deep:
         return [], None, None

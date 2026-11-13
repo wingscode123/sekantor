@@ -98,7 +98,7 @@ class OpenBotApi:
             return r.status_code, {}
 
 
-def describe(agent: dict, pending: dict) -> dict:
+def describe(pending: dict) -> dict:
     """Status, request and capabilities for one agent from its pending list."""
     for a in pending.get("approvals") or []:
         cmd = a.get("command") or a.get("reason") or a.get("kind")
@@ -152,7 +152,7 @@ class OpenBotPos:
                 pending = self.api.get(f"/v1/agents/{quote(agent['id'], safe='')}/pending") or {}
             except (httpx.HTTPError, ValueError):
                 continue
-            d = describe(agent, pending)
+            d = describe(pending)
             prev = self.known.get(sid)
             if prev is None:
                 self.hub.post_event(self._event(agent, d, type="session_started", status=d["status"], summary=d["summary"],

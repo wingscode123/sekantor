@@ -226,7 +226,7 @@ async def open_in_source(request: Request, session_id: str):
     if p is None:
         return _refuse(409, "cannot_open", "There is no known way to open where this session runs.")
     try:
-        await run_in_threadpool(request.app.state.opener_run, p)
+        await run_in_threadpool(opener.run, p)
     except OSError as e:
         return _refuse(409, "open_failed", f"Could not open it ({type(e).__name__}).")
     return {"opened": p.label}

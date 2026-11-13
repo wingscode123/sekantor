@@ -100,12 +100,12 @@ def test_single_question_answered_by_reply(tmp_path):
 
 
 def test_things_only_openbot_can_answer_get_no_buttons():
-    d = describe(AGENT, {"prompts": [{"requestId": "s", "requiresOpenBot": True, "questions": []}]})
+    d = describe({"prompts": [{"requestId": "s", "requiresOpenBot": True, "questions": []}]})
     assert d["status"] == "waiting_input" and d["capabilities"] == [] and "in OpenBot" in d["summary"]
-    d = describe(AGENT, {"browserTakeovers": [{"requestId": "b", "requiresOpenBot": True}]})
+    d = describe({"browserTakeovers": [{"requestId": "b", "requiresOpenBot": True}]})
     assert d["capabilities"] == [] and "browser" in d["summary"]
     two = {"requestId": "m", "requiresOpenBot": False, "questions": [{"id": "a"}, {"id": "b"}]}
-    assert describe(AGENT, {"prompts": [two]})["capabilities"] == []
+    assert describe({"prompts": [two]})["capabilities"] == []
 
 
 def test_new_token_after_openbot_restart(tmp_path):

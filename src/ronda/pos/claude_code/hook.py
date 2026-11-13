@@ -161,7 +161,7 @@ def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
     try:
         from ronda.pos.claude_code.fingerprint import classify, collect, load_rules
 
-        chain, exe, cmdline = collect(env, payload.get("cwd"), _pid(env), deep)
+        chain, exe, cmdline = collect(_pid(env), deep)
         return classify(load_rules(), env, chain, exe, payload.get("cwd"), cmdline)
     except Exception as e:  # a broken rules file must not lose the event
         _log(f"fingerprint failed: {type(e).__name__}: {e}")
@@ -180,7 +180,7 @@ def capabilities(payload: dict, env: dict[str, str], settings) -> list[str]:
     return []
 
 
-def build_event(payload: dict, env: dict[str, str], deep: bool = False, settings=None) -> dict | None:
+def build_event(payload: dict, env: dict[str, str], settings=None) -> dict | None:
     from ronda.pos.claude_code.translate import translate
 
     event = translate(payload)
@@ -189,7 +189,7 @@ def build_event(payload: dict, env: dict[str, str], deep: bool = False, settings
     pid = _pid(env)
     if pid:
         event["process"] = {"pid": pid}
-    host = _host(payload, env, deep)
+    host = _host(payload, env, deep=False)
     if host:
         event["host"] = host
     if settings is not None:
