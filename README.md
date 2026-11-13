@@ -41,6 +41,7 @@ and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; who
 - [Phone notifications, Telegram, webhooks, tmux](docs/channels.md)
 - [Writing a pos](docs/writing-a-pos.md) and the [threat model](docs/threat-model.md)
 - [Releasing](docs/release.md)
+- [Improvement log](docs/improvement-log.md): the pstack audit, cleanup, CI move and dogfooding (November 2026)
 - [Brand](brand/BRAND.md) and [design system](design.md)
 - [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
 
