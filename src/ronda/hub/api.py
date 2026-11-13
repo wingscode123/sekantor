@@ -12,7 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from ronda import __version__
+from ronda import __version__, labels
 from ronda.config import risky_match
 from ronda.hub.status import WAITING, SessionState, inbox_order
 from ronda.schema import ActionIn, Event, Status
@@ -31,6 +31,8 @@ def session_json(s: SessionState) -> dict[str, Any]:
 
     d = s.model_dump(mode="json", exclude={"status_ts"})
     d["needs_you"] = s.needs_you
+    d["source_label"] = labels.source(s.source)
+    d["host_label"] = labels.host(s.host.app) if s.host else None
     try:
         p = plan(s)
     except Exception:
@@ -188,12 +190,10 @@ class SnoozeIn(BaseModel):
 @router.post("/sessions/{session_id}/snooze")
 async def snooze(request: Request, session_id: str, body: SnoozeIn):
     st = request.app.state
-    s = await run_in_threadpool(st.store.session, session_id)
+    until = datetime.now(timezone.utc) + (timedelta(minutes=body.minutes) if body.minutes else FOREVER)
+    s = await run_in_threadpool(st.store.set_snooze, session_id, until)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    now = datetime.now(timezone.utc)
-    s.snoozed_until = now + (timedelta(minutes=body.minutes) if body.minutes else FOREVER)
-    await run_in_threadpool(st.store.put_session, s)
     st.broadcaster.publish({"type": "session", "session": session_json(s)})
     return {"snoozed_until": s.snoozed_until.isoformat()}
 
@@ -201,11 +201,9 @@ async def snooze(request: Request, session_id: str, body: SnoozeIn):
 @router.delete("/sessions/{session_id}/snooze")
 async def unsnooze(request: Request, session_id: str):
     st = request.app.state
-    s = await run_in_threadpool(st.store.session, session_id)
+    s = await run_in_threadpool(st.store.set_snooze, session_id, None)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    s.snoozed_until = None
-    await run_in_threadpool(st.store.put_session, s)
     st.broadcaster.publish({"type": "session", "session": session_json(s)})
     return {"snoozed_until": None}
 
@@ -224,7 +222,7 @@ async def open_in_source(request: Request, session_id: str):
     if p is None:
         return _refuse(409, "cannot_open", "There is no known way to open where this session runs.")
     try:
-        await run_in_threadpool(request.app.state.opener_run, p)
+        await run_in_threadpool(opener.run, p)
     except OSError as e:
         return _refuse(409, "open_failed", f"Could not open it ({type(e).__name__}).")
     return {"opened": p.label}

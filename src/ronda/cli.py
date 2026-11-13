@@ -59,6 +59,24 @@ def _api(path: str, timeout: float = 2.0, method: str = "GET", body: dict | None
         return {"_status": e.code, **(data if isinstance(data, dict) else {"detail": data})}
 
 
+def _hub(path: str, **kw) -> dict:
+    """_api for commands: a hub that is down, refuses the token or does not answer ends the command with one line."""
+    try:
+        return _api(path, **kw)
+    except urllib.error.HTTPError as e:
+        why = "refused the token" if e.code in (401, 403) else "answered with an error"
+        typer.secho(f"The hub {why} (HTTP {e.code}). Run `ronda doctor`.", fg="red")
+    except (urllib.error.URLError, RuntimeError) as e:  # could not connect or send, or no token
+        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
+    except OSError as e:  # sent, but the answer did not come: it may have been done
+        typer.secho(f"The hub did not answer in time ({e}). Check `ronda audit` before you try again.", fg="red")
+    raise typer.Exit(1)
+
+
+def _session_path(s: dict, suffix: str) -> str:
+    return f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/{suffix}"
+
+
 def _ago(iso: str) -> str:
     s = max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(iso)).total_seconds()))
     if s < 60:
@@ -105,7 +123,9 @@ def up(
             typer.secho(f"Port {port} is already in use. Is Ronda already up? Try `ronda status`.", fg="red")
             raise typer.Exit(1)
     token = ensure_token(config.token_path())
-    settings = config.settings()
+    settings, problems = config.load()
+    for p in problems:
+        typer.secho(f"config.toml: {p}", fg="yellow")
     if notify is not None:
         settings.notify = notify
     hub_app = create_app(port=port, token=token, settings=settings)
@@ -140,14 +160,7 @@ def _start_tmux(port: int):
 def _start_orca(port: int):
     """Opt-in (`orca_pos = true` in config.toml): the Orca CLI is heavy to poll, and Claude in Orca
     already reports through its hooks."""
-    import tomllib
-
-    try:
-        with open(config.config_path(), "rb") as f:
-            wanted = bool(tomllib.load(f).get("orca_pos", False))
-    except (OSError, tomllib.TOMLDecodeError):
-        wanted = False
-    if not wanted:
+    if not config.settings().orca_pos:
         return None
     from ronda.pos.orca.pos import orca_cli
 
@@ -278,11 +291,7 @@ def unpair_telegram():
 @app.command("open")
 def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the link instead of opening it.")):
     """Open the inbox in a browser with a fresh one-time login link."""
-    try:
-        res = _api("/v1/login-code", method="POST", body={})
-    except (urllib.error.URLError, OSError, RuntimeError) as e:
-        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
-        raise typer.Exit(1)
+    res = _hub("/v1/login-code", method="POST", body={})
     if "_status" in res:
         typer.secho(f"The hub refused ({res['_status']}).", fg="red")
         raise typer.Exit(1)
@@ -302,10 +311,10 @@ def service_install(start: bool = typer.Option(True, "--start/--no-start", help=
     from ronda import service
 
     p = service.plan(config.home())
-    for path, content in p.files.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
     try:
+        for path, content in p.files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
         service.run(p.install)
         if start and p.start:
             with socket.socket() as s:
@@ -362,11 +371,7 @@ def token_rotate():
 @app.command()
 def status(as_json: bool = typer.Option(False, "--json", help="Print raw JSON.")):
     """Show sessions, the ones that need you first."""
-    try:
-        data = _api("/v1/sessions")
-    except (urllib.error.URLError, OSError, RuntimeError) as e:
-        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
-        raise typer.Exit(1)
+    data = _hub("/v1/sessions")
     if as_json:
         typer.echo(json.dumps(data, indent=2))
         return
@@ -442,11 +447,7 @@ def stats(
 
 def _find_session(ref: str) -> dict:
     """A session by full id, or by a unique prefix of its id with or without the 'claude:' part."""
-    try:
-        sessions = _api("/v1/sessions")["sessions"]
-    except (urllib.error.URLError, OSError, RuntimeError) as e:
-        typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
-        raise typer.Exit(1)
+    sessions = _hub("/v1/sessions")["sessions"]
     hits = [s for s in sessions if s["session_id"] == ref]
     if not hits:
         hits = [s for s in sessions if s["session_id"].split(":", 1)[-1].startswith(ref) or s["session_id"].startswith(ref)]
@@ -458,14 +459,14 @@ def _find_session(ref: str) -> dict:
 
 def _act(ref: str, body: dict) -> None:
     s = _find_session(ref)
-    path = f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/actions"
-    res = _api(path, method="POST", body=body, timeout=5)
+    path = _session_path(s, "actions")
+    res = _hub(path, method="POST", body=body, timeout=5)
     if res.get("error") == "confirm_required":
         cmd = (s.get("request") or {}).get("input", "")
         typer.secho(f"Risky command: {cmd}", fg="yellow")
         if not typer.confirm("Approve it anyway?", default=False):
             raise typer.Exit(1)
-        res = _api(path, method="POST", body={**body, "confirm": True}, timeout=5)
+        res = _hub(path, method="POST", body={**body, "confirm": True}, timeout=5)
     if "_status" in res:
         typer.secho(res.get("message") or res.get("detail") or f"Refused ({res['_status']})", fg="red")
         raise typer.Exit(1)
@@ -497,8 +498,7 @@ def snooze(session: str = typer.Argument(..., help="Session id or a unique prefi
            forever: bool = typer.Option(False, "--forever", help="Until you unmute it.")):
     """Stop notifications for one session or agent for a while (FR-15). It stays in the inbox."""
     s = _find_session(session)
-    path = f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/snooze"
-    res = _api(path, method="POST", body={"minutes": None if forever else minutes})
+    res = _hub(_session_path(s, "snooze"), method="POST", body={"minutes": None if forever else minutes})
     if "_status" in res:
         typer.secho(str(res.get("detail") or res), fg="red")
         raise typer.Exit(1)
@@ -509,18 +509,17 @@ def snooze(session: str = typer.Argument(..., help="Session id or a unique prefi
 def unsnooze(session: str = typer.Argument(..., help="Session id or a unique prefix.")):
     """Turn notifications back on for a session."""
     s = _find_session(session)
-    _api(f"/v1/sessions/{urllib.parse.quote(s['session_id'], safe='')}/snooze", method="DELETE")
+    res = _hub(_session_path(s, "snooze"), method="DELETE")
+    if "_status" in res:
+        typer.secho(str(res.get("detail") or res), fg="red")
+        raise typer.Exit(1)
     typer.secho(f"Unmuted {s['session_id']}", fg="green")
 
 
 @app.command()
 def audit(limit: int = typer.Option(30, help="How many actions to show.")):
     """Every approve, deny and reply sent through Ronda (FR-24), newest first."""
-    try:
-        actions = _api(f"/v1/actions?limit={limit}")["actions"]
-    except (urllib.error.URLError, OSError, RuntimeError) as e:
-        typer.secho(f"Hub not reachable ({e}).", fg="red")
-        raise typer.Exit(1)
+    actions = _hub(f"/v1/actions?limit={limit}")["actions"]
     if not actions:
         typer.echo("No actions yet.")
     for a in actions:
@@ -604,7 +603,6 @@ def doctor():
             typer.echo(bad)
 
     typer.secho(f"Ronda {__version__} doctor", bold=True)
-    check(sys.version_info >= (3, 11), f"Python {sys.version.split()[0]}", "Python 3.11 or later is required")
 
     tp = config.token_path()
     check(read_token(tp) is not None and token_mode_ok(tp), f"Token at {tp} (owner only)",
@@ -615,7 +613,7 @@ def doctor():
         check(h.get("ok") is True, f"Hub answers at {config.hub_url()} with the token", "Hub answered but not ok")
     except urllib.error.HTTPError as e:
         check(False, "", f"Hub refused the token (HTTP {e.code}): the token file and the running hub differ")
-    except (urllib.error.URLError, OSError, RuntimeError):
+    except (OSError, RuntimeError):
         check(False, "", f"Hub not reachable at {config.hub_url()}: run `ronda up`")
 
     exe = inst.hook_executable()
@@ -657,6 +655,9 @@ def doctor():
           "Hub does not start at login: `ronda service install` keeps it on", warn=True)
 
     names = configured(config.home())
+    _, config_problems = config.load()
+    check(not config_problems, f"Settings in {config.config_path()}",
+          "config.toml: " + "; ".join(config_problems))
     _, hook_errors = load_webhooks(config.home())
     check(not hook_errors, "Relay: " + (", ".join(names) if names else "not set up (optional)"),
           "Webhook config problems: " + "; ".join(f"#{e.index + 1} {e.message}" for e in hook_errors))

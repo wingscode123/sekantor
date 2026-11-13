@@ -95,10 +95,10 @@ class LoginCodes:
 class TokenAuthMiddleware:
     """Pure ASGI middleware so it covers http and websocket scopes alike."""
 
-    def __init__(self, app, token: str, port: int, login_codes: LoginCodes | None = None):
+    def __init__(self, app, token: str, port: int, login_codes: LoginCodes):
         self.app = app
         self.token = token
-        self.login_codes = login_codes or LoginCodes()
+        self.login_codes = login_codes
         self.hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
         self.origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
 

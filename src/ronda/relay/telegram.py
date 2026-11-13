@@ -15,7 +15,8 @@ from typing import Any
 import httpx
 
 from ronda.config import risky_match
-from ronda.relay.common import HubClient, TITLES, log, pending_request_id, redact, should_notify, who
+from ronda.labels import TITLES
+from ronda.relay.common import HubClient, log, pending_request_id, redact, should_notify, who
 
 API = "https://api.telegram.org"
 CMD_LIMIT = 300

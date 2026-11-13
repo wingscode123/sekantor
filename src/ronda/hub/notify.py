@@ -17,15 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from ronda import labels
 from ronda.hub.status import SessionState
 from ronda.schema import Status
 
 MIN_GAP_S = 10.0
-SOURCES = {"claude-code": "Claude Code"}
-HOSTS = {"orca": "Orca", "openbot": "OpenBot", "claude-desktop": "Claude desktop", "vscode": "VS Code",
-         "terminal": "Terminal", "tmux": "tmux", "cursor": "Cursor"}
-TITLES = {Status.waiting_approval: "Approval needed", Status.waiting_input: "Waiting for you",
-          Status.error: "Agent error"}
 
 # PowerShell's own AppUserModelID: a toast needs a registered app id to show on Windows 10/11.
 _PS_APP_ID = r"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
@@ -51,11 +47,11 @@ def should_notify(prev: Status | None, new: Status) -> bool:
 
 
 def message(s: SessionState) -> tuple[str, str]:
-    who = SOURCES.get(s.source, s.source)
+    who = labels.source(s.source)
     if s.host:
-        who += f" in {HOSTS.get(s.host.app, s.host.app)}"
+        who += f" in {labels.host(s.host.app)}"
     project = Path(s.workspace.cwd).name if s.workspace.cwd else None
-    return TITLES[s.status], f"{who}, {project}" if project else who
+    return labels.TITLES[s.status.value], f"{who}, {project}" if project else who
 
 
 def send_native(title: str, body: str) -> None:

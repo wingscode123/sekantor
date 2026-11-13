@@ -19,6 +19,7 @@ import subprocess
 import zlib
 from pathlib import Path
 
+from ronda.pos.hub import connect, poll
 from ronda.pos.tmux.detect import AGENTS, Pane
 from ronda.pos.tmux.pos import TmuxPos
 
@@ -53,12 +54,16 @@ class OrcaTerminals:
             return None
         return p.stdout if p.returncode == 0 else None
 
-    def panes(self) -> list[Pane]:
-        out = self._run("terminal", "list")
-        if not out:
+    def panes(self) -> list[Pane] | None:
+        """Agent terminals, or None when the orca CLI did not answer in time."""
+        try:
+            p = self.runner([self.cli, "terminal", "list", "--json"], capture_output=True, text=True, timeout=self.timeout)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if p.returncode != 0:
             return []
         try:
-            data = json.loads(out)
+            data = json.loads(p.stdout)
         except ValueError:
             return []
         terms = (data.get("result") or data).get("terminals") or []
@@ -97,23 +102,9 @@ def make_pos(hub, transport: OrcaTerminals) -> TmuxPos:
 
 
 def main(interval: float = 10.0) -> None:
-    from ronda.lifeline import start_parent_watch
-
-    start_parent_watch()  # end with the hub, even when it is force-stopped
-    from ronda import config
-    from ronda.hub.auth import read_token
-    from ronda.pos.tmux.pos import HubApi
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s orca %(message)s", datefmt="%H:%M:%S")
     cli = orca_cli()
     if not cli:
         raise SystemExit("The orca CLI was not found.")
-    token = read_token(config.token_path())
-    if not token:
-        raise SystemExit("No hub token: run `ronda up` first.")
-    pos = make_pos(HubApi(config.hub_url(), token), OrcaTerminals(cli))
+    pos = make_pos(connect("orca"), OrcaTerminals(cli))
     log.info("watching non-Claude agents in Orca terminals every %.0fs", interval)
-    try:
-        pos.run(interval)
-    except KeyboardInterrupt:
-        pass
+    poll(pos.tick, interval, log)

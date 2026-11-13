@@ -1,16 +1,15 @@
 import { useState } from "react";
+import { sessionApi } from "./api";
+import { STATUS_CLASS, type Status } from "./types";
 
 interface TimelineEvent {
   event_id: string;
   ts: string;
   type: string;
-  status?: string | null;
+  status?: Status | null;
   summary?: string | null;
 }
 
-const STATUS_CLASS: Record<string, string> = {
-  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", done: "done", ended: "ended",
-};
 const TYPE_TEXT: Record<string, string> = {
   session_started: "Started", status_changed: "", message: "Note", session_ended: "Ended",
 };
@@ -22,13 +21,9 @@ export function Timeline({ sessionId }: { sessionId: string }) {
 
   const load = async () => {
     setError(null);
-    try {
-      const r = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=50`, { cache: "no-store" });
-      if (!r.ok) throw new Error(String(r.status));
-      setEvents(((await r.json()).events as TimelineEvent[]).reverse());
-    } catch {
-      setError("Could not load the timeline.");
-    }
+    const answer = await sessionApi(sessionId, "events?limit=50");
+    if (answer?.ok && Array.isArray(answer.data.events)) setEvents((answer.data.events as TimelineEvent[]).reverse());
+    else setError("Could not load the timeline.");
   };
 
   return (
@@ -42,7 +37,7 @@ export function Timeline({ sessionId }: { sessionId: string }) {
           {events.map((e) => (
             <li key={e.event_id}>
               <time dateTime={e.ts}>{new Date(e.ts).toLocaleTimeString()}</time>
-              <span className={`status status--${STATUS_CLASS[e.status ?? ""] ?? "done"}`}>
+              <span className={`status status--${e.status ? STATUS_CLASS[e.status] : "done"}`}>
                 {TYPE_TEXT[e.type] || (e.status ?? "").replace("_", " ")}
               </span>
               <span className="timeline__text">{e.summary ?? ""}</span>

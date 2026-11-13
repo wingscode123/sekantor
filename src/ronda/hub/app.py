@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,10 +19,11 @@ from ronda.hub.notify import Notifier
 from ronda.hub.waiters import Waiters
 from ronda.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from ronda.hub.store import Store
-from ronda.hub.status import sweep
+from ronda.hub.status import SessionState, sweep
 from ronda.schema import Event, Status
 from ronda.hub.stream import Broadcaster
 
+log = logging.getLogger("ronda.hub")
 SWEEP_EVERY_S = 30
 PRUNE_EVERY_S = 3600
 
@@ -45,10 +46,10 @@ def pid_alive(pid: int) -> bool:
         return True  # unsure: do not end a session we cannot check
 
 
-def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = None,
-              on_change=None) -> int:
+def run_sweep(store: Store, now: datetime | None = None) -> list[SessionState]:
+    """FR-07: end silent sessions whose process is gone, and return them. Runs in a worker thread."""
     now = now or datetime.now(timezone.utc)
-    ended = 0
+    ended = []
     for s in store.sessions():
         out = sweep(s, now, pid_alive)
         if out is not None:
@@ -58,11 +59,15 @@ def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = Non
                        summary="Ended: no events for 10 minutes and the process is gone")
             out = store.add_event(ev) or out
             store.expire_actions(out.session_id, None)
-            if on_change:
-                on_change(out.session_id)
-            broadcaster.publish({"type": "session", "session": session_json(out)})
-            ended += 1
+            ended.append(out)
     return ended
+
+
+async def sweep_tick(store: Store, broadcaster: Broadcaster, waiters: Waiters) -> None:
+    """Sweep in a worker thread, then wake long-polls and tell stream clients here, on the event loop."""
+    for s in await asyncio.to_thread(run_sweep, store):
+        waiters.notify(s.session_id)
+        broadcaster.publish({"type": "session", "session": session_json(s)})
 
 
 def create_app(home: Path | None = None, port: int | None = None, token: str | None = None,
@@ -83,12 +88,15 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
             while True:
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
-                with contextlib.suppress(Exception):
-                    loop_ = asyncio.get_running_loop()
-                    await asyncio.to_thread(run_sweep, store, broadcaster, None,
-                                            lambda sid: loop_.call_soon_threadsafe(waiters.notify, sid))
-                    if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
+                try:
+                    await sweep_tick(store, broadcaster, waiters)
+                except Exception:
+                    log.warning("sweep failed", exc_info=True)
+                if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
+                    try:
                         await asyncio.to_thread(store.prune)
+                    except Exception:
+                        log.warning("prune failed", exc_info=True)
         await asyncio.to_thread(store.prune)
         task = asyncio.create_task(loop())
         try:
@@ -105,9 +113,6 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()
-    from ronda.hub import opener as _opener
-
-    app.state.opener_run = _opener.run  # tests replace it
     app.include_router(router)
 
     dist = web_dist()

@@ -11,17 +11,12 @@ from urllib.parse import quote
 
 import httpx
 
+from ronda import labels
 from ronda.hub.notify import should_notify as _should_notify
 from ronda.relay.redact import redact
 from ronda.schema import Status
 
 log = logging.getLogger("ronda.relay")
-
-SOURCES = {"claude-code": "Claude Code", "codex": "Codex", "opencode": "opencode", "gemini": "Gemini", "aider": "Aider"}
-HOSTS = {"orca": "Orca", "openbot": "OpenBot", "claude-desktop": "Claude desktop", "vscode": "VS Code",
-         "terminal": "Terminal", "tmux": "tmux", "cursor": "Cursor", "windows-terminal": "Windows Terminal"}
-TITLES = {"waiting_approval": "Approval needed", "waiting_input": "Waiting for you", "error": "Agent error",
-          "running": "Running", "done": "Done", "ended": "Ended"}
 
 
 def should_notify(prev: dict | None, s: dict) -> bool:
@@ -36,10 +31,10 @@ def pending_request_id(s: dict | None) -> str | None:
 
 def who(s: dict) -> str:
     """'Claude Code in Orca, shop (feat/checkout)'"""
-    text = SOURCES.get(s.get("source"), s.get("source") or "Agent")
+    text = labels.source(s.get("source") or "Agent")
     host = (s.get("host") or {}).get("app")
     if host:
-        text += f" in {HOSTS.get(host, host)}"
+        text += f" in {labels.host(host)}"
     ws = s.get("workspace") or {}
     if ws.get("cwd"):
         text += f", {Path(ws['cwd'].replace(chr(92), '/')).name}"
@@ -90,4 +85,4 @@ class HubClient:
             delay = min(delay * 2, 30.0)
 
 
-__all__ = ["HubClient", "pending_request_id", "redact", "should_notify", "who", "TITLES", "log"]
+__all__ = ["HubClient", "pending_request_id", "redact", "should_notify", "who", "log"]

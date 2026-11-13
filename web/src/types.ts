@@ -1,5 +1,10 @@
 export type Status = "waiting_approval" | "waiting_input" | "error" | "running" | "done" | "ended";
 
+/** The `status--*` modifier in site/app.css for each status. */
+export const STATUS_CLASS: Record<Status, string> = {
+  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", done: "done", ended: "ended",
+};
+
 export interface Session {
   session_id: string;
   source: string;
@@ -16,6 +21,8 @@ export interface Session {
   capabilities: string[];
   pid?: number | null;
   needs_you: boolean;
+  source_label: string;
+  host_label?: string | null;
   snoozed_until?: string | null;
   open_label?: string | null;
 }

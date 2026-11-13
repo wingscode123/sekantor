@@ -24,6 +24,8 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from ronda import config
+
 HARD_TIMEOUT_S = 2.0
 HTTP_TIMEOUT_S = 1.0  # Windows takes ~2 s to refuse a closed loopback port; stay under the watchdog
 SESSION_END_HTTP_TIMEOUT_S = 1.5  # install raises SessionEnd's budget to 5 s (default 1.5 s)
@@ -58,13 +60,9 @@ class Watchdog:
             time.sleep(min(left, 0.5))
 
 
-def _home() -> str:
-    return os.environ.get("RONDA_HOME") or os.path.join(os.path.expanduser("~"), ".ronda")
-
-
 def _log(message: str) -> None:
     try:
-        path = os.path.join(_home(), "hook.log")
+        path = str(config.hook_log_path())
         if os.path.exists(path) and os.path.getsize(path) > LOG_MAX:
             os.replace(path, path + ".1")
         with open(path, "a", encoding="utf-8") as f:
@@ -76,7 +74,7 @@ def _log(message: str) -> None:
 def _record_sent(event: dict) -> None:
     """One line per event the hook tries to deliver; `ronda stats` compares it with what the hub stored."""
     try:
-        path = os.path.join(_home(), "sent.log")
+        path = str(config.home() / "sent.log")
         if os.path.exists(path) and os.path.getsize(path) > SENT_MAX:
             os.replace(path, path + ".1")
         line = f"{event.get('ts')} {event.get('event_id')} {event.get('session_id')} {event.get('status') or event.get('type')}\n"
@@ -89,31 +87,22 @@ def _record_sent(event: dict) -> None:
         pass
 
 
-def _hub_url() -> str:
-    port = os.environ.get("RONDA_PORT", "7878")
-    return os.environ.get("RONDA_URL") or f"http://127.0.0.1:{port}"
-
-
 def _hub_addr() -> tuple[str, int]:
-    url = _hub_url().split("://", 1)[-1].split("/", 1)[0]
+    url = config.hub_url().split("://", 1)[-1].split("/", 1)[0]
     host, _, port = url.rpartition(":")
     return (host or url), int(port or 80)
 
 
 def _token() -> str | None:
     try:
-        with open(os.path.join(_home(), "token"), encoding="utf-8") as f:
+        with open(config.token_path(), encoding="utf-8") as f:
             return f.read().strip() or None
     except OSError:
         return None
 
 
 def _settings():
-    from pathlib import Path
-
-    from ronda.config import settings
-
-    return settings(Path(_home()))
+    return config.settings()
 
 
 def request(method: str, path: str, token: str, body: dict | None, timeout: float) -> tuple[int, bytes]:
@@ -172,7 +161,7 @@ def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
     try:
         from ronda.pos.claude_code.fingerprint import classify, collect, load_rules
 
-        chain, exe, cmdline = collect(env, payload.get("cwd"), _pid(env), deep)
+        chain, exe, cmdline = collect(_pid(env), deep)
         return classify(load_rules(), env, chain, exe, payload.get("cwd"), cmdline)
     except Exception as e:  # a broken rules file must not lose the event
         _log(f"fingerprint failed: {type(e).__name__}: {e}")
@@ -191,7 +180,7 @@ def capabilities(payload: dict, env: dict[str, str], settings) -> list[str]:
     return []
 
 
-def build_event(payload: dict, env: dict[str, str], deep: bool = False, settings=None) -> dict | None:
+def build_event(payload: dict, env: dict[str, str], settings=None) -> dict | None:
     from ronda.pos.claude_code.translate import translate
 
     event = translate(payload)
@@ -200,7 +189,7 @@ def build_event(payload: dict, env: dict[str, str], deep: bool = False, settings
     pid = _pid(env)
     if pid:
         event["process"] = {"pid": pid}
-    host = _host(payload, env, deep)
+    host = _host(payload, env, deep=False)
     if host:
         event["host"] = host
     if settings is not None:

@@ -11,7 +11,7 @@ from ronda.hub import opener
 from ronda.hub.app import create_app
 from ronda.hub.notify import Notifier
 from ronda.hub.status import SessionState
-from ronda.schema import Host, Status, Workspace
+from ronda.schema import Event, Host, Status, Workspace
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -58,10 +58,10 @@ def test_vscode_url_has_no_injection(tmp_path):
 # --- API ------------------------------------------------------------------------------
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     app = create_app(home=tmp_path, port=7878, token=TOKEN, settings=Settings(), notifier=Notifier(enabled=False))
     opened = []
-    app.state.opener_run = opened.append
+    monkeypatch.setattr(opener, "run", opened.append)
     with TestClient(app, base_url=BASE) as c:
         c.opened = opened
         c.cwd = str(tmp_path)
@@ -101,6 +101,33 @@ def test_snooze_and_unsnooze(client):
     client.post("/v1/sessions/claude:s1/snooze", headers=AUTH, json={"minutes": None})
     assert client.delete("/v1/sessions/claude:s1/snooze", headers=AUTH).json() == {"snoozed_until": None}
     assert client.post("/v1/sessions/claude:none/snooze", headers=AUTH, json={}).status_code == 404
+
+
+def test_snooze_keeps_an_event_that_lands_meanwhile(client, monkeypatch):
+    """An event that arrives while the snooze is being saved must not be overwritten."""
+    import threading
+
+    post(client)
+    store = client.app.state.store
+    get = store._get_session
+    writer = []
+
+    def get_while_an_event_arrives(sid):
+        s = get(sid)
+        if not writer:  # the snooze's read: another request stores an event now
+            ev = Event(event_id="e2", ts=NOW + timedelta(seconds=1), source="claude-code", session_id=sid,
+                       status=Status.running, summary="new work")
+            writer.append(threading.Thread(target=store.add_event, args=(ev,)))
+            writer[0].start()
+            writer[0].join(0.2)
+        return s
+
+    monkeypatch.setattr(store, "_get_session", get_while_an_event_arrives)
+    assert client.post("/v1/sessions/claude:s1/snooze", headers=AUTH, json={"minutes": 30}).status_code == 200
+    writer[0].join(5)
+    monkeypatch.setattr(store, "_get_session", get)
+    s = client.get("/v1/sessions", headers=AUTH).json()["sessions"][0]
+    assert s["status"] == "running" and s["summary"] == "new work" and s["snoozed_until"]
 
 
 # --- notifications gated --------------------------------------------------------------

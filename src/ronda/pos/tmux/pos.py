@@ -12,9 +12,9 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from typing import Callable
-from urllib.parse import quote
 
 from ronda.pos.claude_code.translate import git_branch, new_event_id
+from ronda.pos.hub import connect, poll
 from ronda.pos.tmux.detect import LIST_FORMAT, Pane, Rules, Watch, agent_of, assess, load_rules, parse_panes
 
 log = logging.getLogger("ronda.pos.tmux")
@@ -33,9 +33,13 @@ class Tmux:
             return None
         return p.stdout if p.returncode == 0 else None
 
-    def panes(self) -> list[Pane]:
-        out = self.run("list-panes", "-a", "-F", LIST_FORMAT)
-        return parse_panes(out) if out else []
+    def panes(self) -> list[Pane] | None:
+        """The panes, [] when no tmux server runs, None when tmux did not answer in time."""
+        try:
+            p = self.runner([*self.cmd, "list-panes", "-a", "-F", LIST_FORMAT], capture_output=True, text=True, timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return parse_panes(p.stdout) if p.returncode == 0 else []
 
     def capture(self, pane_id: str) -> str | None:
         return self.run("capture-pane", "-p", "-J", "-t", pane_id, "-S", "-80")
@@ -67,28 +71,7 @@ def find_agent(pane_pid: int) -> tuple[str, int] | None:
     return None
 
 
-class HubApi:
-    """Minimal synchronous hub client (the pos loop is synchronous)."""
-
-    def __init__(self, base_url: str, token: str):
-        import httpx
-
-        self.base = base_url.rstrip("/")
-        self.client = httpx.Client(timeout=5, headers={"Authorization": f"Bearer {token}"})
-
-    def post_event(self, event: dict) -> bool:
-        return self.client.post(f"{self.base}/v1/events", json=event).status_code == 202
-
-    def next_action(self, session_id: str, kind: str, request_id: str) -> dict | None:
-        r = self.client.get(f"{self.base}/v1/sessions/{quote(session_id, safe='')}/actions/next",
-                            params={"for": kind, "request_id": request_id, "wait": 0})
-        return r.json().get("action") if r.status_code == 200 else None
-
-
 class TmuxPos:
-    name = "tmux"
-    capabilities = {"approve", "deny", "reply"}
-
     def __init__(self, tmux: Tmux, hub, rules: dict[str, Rules] | None = None,
                  find: Callable[[Pane], tuple[str, int] | None] | None = None, clock: Callable[[], float] = time.monotonic,
                  host: dict = HOST, prefix: str = "tmux", real_pid: bool = True):
@@ -111,9 +94,12 @@ class TmuxPos:
               "workspace": {"cwd": pane.cwd, "branch": git_branch(pane.cwd)}, "type": "status_changed", **kw}
         return {k: v for k, v in ev.items() if v is not None}
 
-    def discover(self) -> dict[str, tuple[Pane, str, int]]:
+    def discover(self) -> dict[str, tuple[Pane, str, int]] | None:
+        panes = self.tmux.panes()
+        if panes is None:
+            return None
         found = {}
-        for pane in self.tmux.panes():
+        for pane in panes:
             hit = self.find(pane)
             if not hit:
                 continue
@@ -126,6 +112,8 @@ class TmuxPos:
     def tick(self) -> None:
         now = self.clock()
         found = self.discover()
+        if found is None:  # the listing timed out: no agent is known to have exited
+            return
         for sid in list(self.watches):
             if sid not in found:
                 w, pane = self.watches.pop(sid), self.panes.pop(sid)
@@ -185,33 +173,12 @@ class TmuxPos:
             w.request_id = None  # the screen will move on; the next tick reports the new state
         return ok
 
-    def run(self, interval: float = 2.0) -> None:
-        while True:
-            try:
-                self.tick()
-            except Exception as e:
-                log.warning("tick failed: %s", type(e).__name__)
-            time.sleep(interval)
-
 
 def main(interval: float = 2.0) -> None:
     import shutil
-    from ronda.lifeline import start_parent_watch
 
-    start_parent_watch()  # end with the hub, even when it is force-stopped
-
-    from ronda import config
-    from ronda.hub.auth import read_token
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s tmux %(message)s", datefmt="%H:%M:%S")
     if not shutil.which("tmux"):
         raise SystemExit("tmux is not installed.")
-    token = read_token(config.token_path())
-    if not token:
-        raise SystemExit("No hub token: run `ronda up` first.")
-    pos = TmuxPos(Tmux(), HubApi(config.hub_url(), token))
+    pos = TmuxPos(Tmux(), connect("tmux"))
     log.info("watching tmux panes every %.0fs", interval)
-    try:
-        pos.run(interval)
-    except KeyboardInterrupt:
-        pass
+    poll(pos.tick, interval, log)

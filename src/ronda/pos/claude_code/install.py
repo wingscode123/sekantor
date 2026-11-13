@@ -26,9 +26,9 @@ MARGIN_S = 30
 HOOK_NAMES = {"ronda-hook", "ronda-hook.exe"}
 
 
-def settings_path(scope: str, cwd: Path | None = None) -> Path:
+def settings_path(scope: str) -> Path:
     if scope == "project":
-        return (cwd or Path.cwd()) / ".claude" / "settings.local.json"
+        return Path.cwd() / ".claude" / "settings.local.json"
     if scope == "global":
         base = os.environ.get("CLAUDE_CONFIG_DIR")
         return (Path(base) if base else Path.home() / ".claude") / "settings.json"

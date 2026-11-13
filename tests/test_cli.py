@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from ronda.cli import app
@@ -23,12 +24,13 @@ def test_both_scopes_refused(tmp_path, monkeypatch):
     assert runner.invoke(app, ["install", "claude", "--project", "--global"]).exit_code == 2
 
 
-def test_status_when_hub_down(tmp_path, monkeypatch):
+@pytest.mark.parametrize("args", [["status"], ["audit"], ["open", "--print"], ["approve", "abc"]])
+def test_commands_when_hub_down(tmp_path, monkeypatch, args):
     monkeypatch.setenv("RONDA_HOME", str(tmp_path))
     (tmp_path / "token").write_text("x")
     monkeypatch.setenv("RONDA_URL", "http://127.0.0.1:9")
-    r = runner.invoke(app, ["status"])
-    assert r.exit_code == 1 and "ronda up" in r.output
+    r = runner.invoke(app, args)
+    assert r.exit_code == 1 and "Hub not reachable" in r.output and "ronda up" in r.output
 
 
 def test_doctor_reports_failures_without_hub(tmp_path, monkeypatch):
@@ -42,8 +44,6 @@ def test_doctor_reports_failures_without_hub(tmp_path, monkeypatch):
 
 
 # --- M2: approve / deny / reply / audit against a live hub ----------------------
-
-import pytest
 
 from ronda.config import Settings
 from tests.test_hook_actions import SID, TOKEN, Hub
@@ -96,3 +96,30 @@ def test_cli_snooze_and_unsnooze(hub):
     assert hub.session().snoozed_until is not None
     assert runner.invoke(app, ["unsnooze", "ab"]).exit_code == 0
     assert hub.session().snoozed_until is None
+
+
+def test_cli_wrong_token_is_not_called_unreachable(hub, tmp_path):
+    (tmp_path / "token").write_text("wrong-token-" + "x" * 32)
+    r = runner.invoke(app, ["status"])
+    assert r.exit_code == 1 and "refused the token" in r.output and "not reachable" not in r.output
+
+
+def test_cli_unsnooze_reports_a_refusal(monkeypatch):
+    import ronda.cli as cli
+
+    monkeypatch.setattr(cli, "_find_session", lambda ref: {"session_id": "claude:gone"})
+    monkeypatch.setattr(cli, "_api", lambda *a, **kw: {"_status": 404, "detail": "no such session"})
+    r = runner.invoke(app, ["unsnooze", "gone"])
+    assert r.exit_code == 1 and "no such session" in r.output and "Unmuted" not in r.output
+
+
+def test_service_install_reports_a_file_it_cannot_write(tmp_path, monkeypatch):
+    from ronda import service
+
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("")
+    plan = service.plan(tmp_path)
+    plan.files = {blocker / "ronda.xml": "x"}
+    monkeypatch.setattr(service, "plan", lambda home: plan)
+    r = runner.invoke(app, ["service", "install", "--no-start"])
+    assert r.exit_code == 1 and "Could not install the service" in r.output
