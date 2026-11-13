@@ -356,6 +356,27 @@ def service_uninstall():
     typer.secho("Removed. The hub no longer starts at login.", fg="green")
 
 
+@service_app.command("restart")
+def service_restart():
+    """Restart the hub that runs as a service, e.g. after updating Ronda."""
+    from ronda import service
+
+    p = service.plan(config.home())
+    if not service.installed(p):
+        typer.secho("The service is not installed: `ronda service install`.", fg="yellow")
+        raise typer.Exit(1)
+    try:
+        ok = service.restart(p, busy=lambda: service.port_busy(config.HOST, config.port()))
+    except (RuntimeError, OSError) as e:
+        typer.secho(f"Could not restart the hub: {e}", fg="red")
+        raise typer.Exit(1)
+    if not ok:
+        typer.secho(f"The old hub still holds port {config.port()} after 20 s. Stop it (Task Manager: "
+                    "pythonw.exe running ronda) and run this again.", fg="red")
+        raise typer.Exit(1)
+    typer.secho("Restarted.", fg="green")
+
+
 @service_app.command("status")
 def service_status():
     """Is the hub set to start at login?"""
@@ -434,7 +455,7 @@ def stats(
     typer.echo(f"   stored by the hub {st.stored}   ", nl=False)
     typer.secho(f"lost {lost}", fg=color)
     if st.lost_hub_down:
-        typer.echo(f"  not delivered while the hub was down: {len(st.lost_hub_down)} (expected: agents fell back to their own prompts)")
+        typer.echo(f"  not delivered, the hub was down or too slow: {len(st.lost_hub_down)} (agents fell back to their own prompts)")
     if st.hook_errors:
         typer.secho("  hook errors", fg="yellow")
         for msg, n in st.hook_errors.most_common():

@@ -158,7 +158,10 @@ def test_hub_down_exits_zero_fast_and_silent(home):
     p, dt = run_hook(home, free_port(), START)
     assert p.returncode == 0 and p.stdout == b""
     assert dt < hook.HARD_TIMEOUT_S + STARTUP_SLACK_S
-    assert "hub unreachable" in (home / "hook.log").read_text()
+    log = (home / "hook.log").read_text()
+    assert "hub unreachable" in log
+    sent_id = (home / "sent.log").read_text().split()[1]
+    assert log.rstrip().endswith(sent_id)  # `ronda stats` matches the failure to its event by id
 
 
 def test_hub_hanging_is_cut_by_watchdog(home):

@@ -44,3 +44,35 @@ def test_up_log_file_option_exists():
 
     up = typer.main.get_command(app).commands["up"]  # not --help text: CI renders it with colour codes
     assert any("--log-file" in p.opts for p in up.params)
+
+
+def test_windows_restart_waits_until_the_old_hub_has_let_go_of_the_port(tmp_path):
+    # Task Scheduler's End returns before the hub exits; starting at once finds the port busy.
+    p = service.plan(HOME, platform="win32", python=str(tmp_path / "python.exe"), user="me", scratch=tmp_path)
+    assert p.stop == [["schtasks", "/End", "/TN", "Ronda hub"]]
+    ran, busy = [], iter([True, True, False])
+    ok = service.restart(p, busy=lambda: next(busy), run_=lambda cmds, check=True: ran.append(cmds),
+                         sleep=lambda s: None)
+    assert ok and ran == [p.stop, p.start]
+
+
+def test_windows_restart_gives_up_when_the_old_hub_does_not_stop(tmp_path):
+    p = service.plan(HOME, platform="win32", python=str(tmp_path / "python.exe"), user="me", scratch=tmp_path)
+    ran, t = [], [0.0]
+
+    def sleep(s):
+        t[0] += s
+
+    ok = service.restart(p, busy=lambda: True, run_=lambda cmds, check=True: ran.append(cmds),
+                         wait_s=5, clock=lambda: t[0], sleep=sleep)
+    assert not ok and ran == [p.stop]  # never starts a second hub
+
+
+def test_macos_and_linux_restart_in_one_command():
+    mac = service.plan(HOME, platform="darwin", python="/opt/ronda/bin/python")
+    assert mac.restart[0][:3] == ["launchctl", "kickstart", "-k"]
+    linux = service.plan(HOME, platform="linux", python="/opt/ronda/bin/python")
+    assert linux.restart == [["systemctl", "--user", "restart", "ronda.service"]]
+    ran = []
+    assert service.restart(linux, busy=lambda: True, run_=lambda cmds, check=True: ran.append(cmds))
+    assert ran == [linux.restart]
