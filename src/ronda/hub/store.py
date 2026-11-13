@@ -5,14 +5,18 @@ One connection guarded by a lock; FastAPI handlers call it from worker threads.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ronda.hub.status import SessionState, apply
 from ronda.schema import Event, Status
 
+log = logging.getLogger("ronda.hub")
+SLOW_S = 1.0  # the hook stops waiting for the hub after 1 s, so anything slower gets a log line
 RETENTION = timedelta(days=7)
 AUDIT_RETENTION = timedelta(days=90)
 ACTION_COLS = ("id", "session_id", "request_id", "type", "text", "channel", "actor", "created_at", "outcome", "outcome_at")
@@ -75,7 +79,9 @@ class Store:
     def add_event(self, event: Event, received_at: datetime | None = None) -> SessionState | None:
         """Store ``event`` and return the updated session, or None if it was a duplicate."""
         received_at = received_at or _now()
+        asked = time.monotonic()
         with self._lock:
+            got = time.monotonic()
             try:
                 self._db.execute("BEGIN IMMEDIATE")
                 cur = self._db.execute(
@@ -93,6 +99,11 @@ class Store:
             except BaseException:
                 self._db.execute("ROLLBACK")
                 raise
+            finally:
+                done = time.monotonic()
+                if done - asked > SLOW_S:
+                    log.warning("store.add_event %s: waited %.2fs for the store lock, held it %.2fs",
+                                event.event_id, got - asked, done - got)
 
     def set_snooze(self, session_id: str, until: datetime | None) -> SessionState | None:
         """Set or clear a session's snooze, keeping the rest of it as stored. None if there is no such session."""

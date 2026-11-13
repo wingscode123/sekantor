@@ -18,7 +18,7 @@ from ronda.hub.api import router, session_json
 from ronda.hub.notify import Notifier
 from ronda.hub.waiters import Waiters
 from ronda.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
-from ronda.hub.store import Store
+from ronda.hub.store import SLOW_S, Store
 from ronda.hub.status import SessionState, sweep
 from ronda.schema import Event, Status
 from ronda.hub.stream import Broadcaster
@@ -63,6 +63,17 @@ def run_sweep(store: Store, now: datetime | None = None) -> list[SessionState]:
     return ended
 
 
+async def watch_loop(interval: float = 0.5, threshold: float = SLOW_S) -> None:
+    """Log when the event loop wakes up late: something blocked it, and every request waited."""
+    loop = asyncio.get_running_loop()
+    while True:
+        start = loop.time()
+        await asyncio.sleep(interval)
+        late = loop.time() - start - interval
+        if late > threshold:
+            log.warning("event loop was blocked for %.1fs", late)
+
+
 async def sweep_tick(store: Store, broadcaster: Broadcaster, waiters: Waiters) -> None:
     """Sweep in a worker thread, then wake long-polls and tell stream clients here, on the event loop."""
     for s in await asyncio.to_thread(run_sweep, store):
@@ -98,11 +109,12 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                     except Exception:
                         log.warning("prune failed", exc_info=True)
         await asyncio.to_thread(store.prune)
-        task = asyncio.create_task(loop())
+        tasks = [asyncio.create_task(loop()), asyncio.create_task(watch_loop())]
         try:
             yield
         finally:
-            task.cancel()
+            for task in tasks:
+                task.cancel()
             store.close()
 
     app = FastAPI(title="Ronda hub", version="1", docs_url=None, redoc_url=None, openapi_url=None,
