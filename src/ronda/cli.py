@@ -593,7 +593,6 @@ def doctor():
             typer.echo(bad)
 
     typer.secho(f"Ronda {__version__} doctor", bold=True)
-    check(sys.version_info >= (3, 11), f"Python {sys.version.split()[0]}", "Python 3.11 or later is required")
 
     tp = config.token_path()
     check(read_token(tp) is not None and token_mode_ok(tp), f"Token at {tp} (owner only)",
