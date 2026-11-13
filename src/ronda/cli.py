@@ -114,6 +114,7 @@ def up(
     global _CHILD_OUT
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_log(log_file)
         _CHILD_OUT = open(log_file, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = _CHILD_OUT
         typer.echo(f"--- {datetime.now().isoformat(timespec='seconds')} ronda up")
@@ -207,6 +208,16 @@ def pos_tmux(interval: float = typer.Option(2.0, help="Seconds between scans."))
 
 
 _CHILD_OUT = None  # where child processes write when the hub runs as a service
+LOG_MAX_BYTES = 5_000_000
+
+
+def _rotate_log(path: Path, max_bytes: int = LOG_MAX_BYTES) -> None:
+    """Move a large log to <name>.1 (replacing the old one) so the service log never grows without bound."""
+    try:
+        if path.stat().st_size > max_bytes:
+            os.replace(path, path.with_name(path.name + ".1"))
+    except OSError:  # missing, or still open in another process: keep appending
+        pass
 
 
 def _spawn(args: list[str], port: int):

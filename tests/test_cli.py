@@ -123,3 +123,15 @@ def test_service_install_reports_a_file_it_cannot_write(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "plan", lambda home: plan)
     r = runner.invoke(app, ["service", "install", "--no-start"])
     assert r.exit_code == 1 and "Could not install the service" in r.output
+
+
+def test_a_large_service_log_is_rotated_at_start(tmp_path):
+    from ronda.cli import _rotate_log
+
+    log = tmp_path / "hub.log"
+    log.write_text("x" * 100)
+    _rotate_log(log, max_bytes=50)
+    assert not log.exists() and (tmp_path / "hub.log.1").read_text() == "x" * 100
+    log.write_text("small")
+    _rotate_log(log, max_bytes=50)
+    assert log.read_text() == "small"

@@ -133,3 +133,24 @@ def test_not_running_is_quiet(tmp_path):
     hub = FakeHub()
     OpenBotPos(api, hub).tick()
     assert hub.events == []
+
+
+def test_an_unreachable_openbot_is_logged_once_and_its_return_too(tmp_path, monkeypatch, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, "ronda.pos.openbot")
+    pos, ob, hub, _ = setup(tmp_path)
+    real_get = pos.api.get
+
+    def refused(path):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(pos.api, "get", refused)
+    for _ in range(3):
+        pos.tick()
+    monkeypatch.setattr(pos.api, "get", real_get)
+    pos.tick()
+    pos.tick()
+    lines = [r.getMessage() for r in caplog.records if r.name == "ronda.pos.openbot"]
+    assert sum("not reachable" in m for m in lines) == 1
+    assert sum("reachable again" in m for m in lines) == 1

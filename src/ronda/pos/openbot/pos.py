@@ -127,6 +127,7 @@ class OpenBotPos:
         self.hub = hub
         self.agents_root = agents_root or Path.home() / "OpenBot" / "Agents"
         self.known: dict[str, dict] = {}  # session id -> last description (+ agent)
+        self.reachable: bool | None = None  # log only when this changes, not on every poll
 
     def _event(self, agent: dict, d: dict | None, **kw) -> dict:
         cwd = (d or {}).get("cwd") or str(self.agents_root / agent["id"])
@@ -139,8 +140,14 @@ class OpenBotPos:
         try:
             agents = self.api.get("/v1/agents")
         except (httpx.HTTPError, ValueError) as e:
-            log.info("OpenBot not reachable (%s)", type(e).__name__)
+            if self.reachable is not False:
+                log.info("OpenBot not reachable (%s); polling on quietly", type(e).__name__)
+            self.reachable = False
             agents = None
+        else:
+            if self.reachable is False:
+                log.info("OpenBot reachable again")
+            self.reachable = True
         seen = set()
         for agent in agents or []:
             sid = f"openbot:{agent['id']}"
