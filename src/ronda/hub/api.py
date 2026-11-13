@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -15,8 +17,10 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from ronda import __version__, labels
 from ronda.config import risky_match
 from ronda.hub.status import WAITING, SessionState, inbox_order
+from ronda.hub.store import SLOW_S
 from ronda.schema import ActionIn, Event, Status
 
+log = logging.getLogger("ronda.hub")
 router = APIRouter(prefix="/v1")
 _events = TypeAdapter(Event | list[Event])
 MAX_BATCH = 100
@@ -62,6 +66,8 @@ async def post_events(request: Request, body: Any = Body(...)):
         raise HTTPException(413, detail=f"at most {MAX_BATCH} events per request")
     st = request.app.state
     accepted = 0
+    started, now = time.monotonic(), datetime.now(timezone.utc)
+    late = max((now - ev.ts).total_seconds() for ev in events)
     for ev in events:
         prev = await run_in_threadpool(st.store.session, ev.session_id)
         state = await run_in_threadpool(st.store.add_event, ev)
@@ -74,6 +80,9 @@ async def post_events(request: Request, body: Any = Body(...)):
         st.notifier.maybe(prev, state)
         st.broadcaster.publish({"type": "session", "session": session_json(state),
                                 "event": ev.model_dump(mode="json", exclude_none=True)})
+    took = time.monotonic() - started
+    if took > SLOW_S or late > SLOW_S:
+        log.warning("POST /v1/events: %d event(s) sent %.1fs ago, handled in %.2fs", len(events), late, took)
     return {"accepted": accepted, "duplicates": len(events) - accepted}
 
 

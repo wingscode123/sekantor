@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -116,6 +117,7 @@ def up(
         _CHILD_OUT = open(log_file, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = _CHILD_OUT
         typer.echo(f"--- {datetime.now().isoformat(timespec='seconds')} ronda up")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s hub %(message)s", datefmt="%H:%M:%S")
 
     os.environ["RONDA_PORT"] = str(port)
     with socket.socket() as s:
