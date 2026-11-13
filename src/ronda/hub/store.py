@@ -94,9 +94,14 @@ class Store:
                 self._db.execute("ROLLBACK")
                 raise
 
-    def put_session(self, state: SessionState) -> None:
+    def set_snooze(self, session_id: str, until: datetime | None) -> SessionState | None:
+        """Set or clear a session's snooze, keeping the rest of it as stored. None if there is no such session."""
         with self._lock:
-            self._put_session(state)
+            s = self._get_session(session_id)
+            if s is not None:
+                s.snoozed_until = until
+                self._put_session(s)
+            return s
 
     def prune(self, now: datetime | None = None) -> int:
         """Delete events past retention and ended sessions with no events left. Returns events deleted."""
