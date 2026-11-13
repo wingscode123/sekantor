@@ -133,5 +133,3 @@ fallback:
     signals:
       - {id: shell_parent, parent: '^(bash|zsh|fish|sh|pwsh|powershell|cmd|nu)(\.exe)?$', weight: 0.5}
       - {id: env_term, env: TERM, weight: 0.2}
-  unknown:
-    label: Unknown

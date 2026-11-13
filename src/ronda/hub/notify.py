@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -93,8 +94,6 @@ class Notifier:
     def maybe(self, prev: SessionState | None, new: SessionState) -> bool:
         if not self.enabled or not should_notify(prev.status if prev else None, new.status):
             return False
-        from datetime import datetime, timezone
-
         if new.snoozed(datetime.now(timezone.utc)) or self.quiet():  # FR-15, FR-33
             return False
         now = time.monotonic()
@@ -103,6 +102,6 @@ class Notifier:
                 return False
             self._last[new.session_id] = now
         title, body = message(new)
-        sender = self.sender or globals()["send_native"]  # looked up late so tests can replace it
+        sender = self.sender or send_native
         threading.Thread(target=sender, args=(title, body), daemon=True).start()
         return True
