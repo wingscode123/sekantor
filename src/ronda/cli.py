@@ -118,7 +118,9 @@ def up(
             typer.secho(f"Port {port} is already in use. Is Ronda already up? Try `ronda status`.", fg="red")
             raise typer.Exit(1)
     token = ensure_token(config.token_path())
-    settings = config.settings()
+    settings, problems = config.load()
+    for p in problems:
+        typer.secho(f"config.toml: {p}", fg="yellow")
     if notify is not None:
         settings.notify = notify
     hub_app = create_app(port=port, token=token, settings=settings)
@@ -645,6 +647,9 @@ def doctor():
           "Hub does not start at login: `ronda service install` keeps it on", warn=True)
 
     names = configured(config.home())
+    _, config_problems = config.load()
+    check(not config_problems, f"Settings in {config.config_path()}",
+          "config.toml: " + "; ".join(config_problems))
     _, hook_errors = load_webhooks(config.home())
     check(not hook_errors, "Relay: " + (", ".join(names) if names else "not set up (optional)"),
           "Webhook config problems: " + "; ".join(f"#{e.index + 1} {e.message}" for e in hook_errors))

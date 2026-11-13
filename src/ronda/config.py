@@ -135,13 +135,35 @@ SETTING_KEYS = {"approval_wait": "approval_wait_s", "reply_wait": "reply_wait_s"
                 "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos"}
 
 
-def settings(base: Path | None = None) -> Settings:
-    """Read config.toml; a missing or broken file gives the defaults."""
-    data = read_toml(base)
+def load(base: Path | None = None) -> tuple[Settings, list[str]]:
+    """The settings from config.toml and what is wrong with it. A bad value keeps its default, the rest still apply."""
+    import tomllib
+
     try:
-        return Settings(**{arg: data[key] for key, arg in SETTING_KEYS.items() if key in data})
-    except (TypeError, ValueError):
-        return Settings()
+        with open(config_path(base), "rb") as f:
+            data = tomllib.load(f)
+    except FileNotFoundError:
+        return Settings(), []
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        return Settings(), [f"{config_path(base)} is not read, defaults apply: {e}"]
+    good, problems = {}, []
+    for key, value in data.items():
+        if key == "webhooks":
+            continue  # checked by the relay (ronda.relay.webhook.parse)
+        if key not in SETTING_KEYS:
+            problems.append(f"unknown setting {key!r}")
+            continue
+        try:
+            Settings(**{SETTING_KEYS[key]: value})
+            good[SETTING_KEYS[key]] = value
+        except (TypeError, ValueError):
+            problems.append(f"{key} = {value!r} is not valid, the default applies")
+    return Settings(**good), problems
+
+
+def settings(base: Path | None = None) -> Settings:
+    """Read config.toml. A missing file gives the defaults; see load() for what was wrong with it."""
+    return load(base)[0]
 
 
 def risky_match(command: str | None, patterns: list[str]) -> str | None:
