@@ -136,7 +136,7 @@ def test_sweep_ends_silent_dead_sessions(client):
         {**ev(1, "waiting_input", sid="claude:dead"), "ts": old, "process": {"pid": 2_000_000_000}},
         {**ev(2, "waiting_input", sid="claude:fresh")},
     ])
-    assert run_sweep(app.state.store, app.state.broadcaster) == 1
+    assert len(run_sweep(app.state.store)) == 1
     by_id = {s["session_id"]: s for s in client.get("/v1/sessions", headers=AUTH).json()["sessions"]}
     assert by_id["claude:dead"]["status"] == "ended"
     assert by_id["claude:fresh"]["status"] == "waiting_input"
@@ -146,7 +146,7 @@ def test_sweep_leaves_an_event_in_the_timeline(client):
     old = (NOW - timedelta(minutes=20)).isoformat()
     client.post("/v1/events", headers=AUTH, json={**ev(1, "waiting_input", sid="claude:gone"), "ts": old,
                                                   "process": {"pid": 2_000_000_000}})
-    run_sweep(client.app.state.store, client.app.state.broadcaster)
+    run_sweep(client.app.state.store)
     evs = client.get("/v1/sessions/claude:gone/events", headers=AUTH).json()["events"]
     assert evs[-1]["type"] == "session_ended" and evs[-1]["status"] == "ended"
 
