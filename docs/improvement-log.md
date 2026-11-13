@@ -74,8 +74,8 @@ GitHub Actions ran out of minutes, so CI moved.
 
 ## 6. Still open
 
-1. Hub stalls under memory pressure (see section 4): decide how to keep the hub responsive when
-   Windows pages it out.
+1. Hub stalls under memory pressure (see section 4): the hub now keeps a 96 MB hard minimum working
+   set on Windows (ADR-0020). The next dogfooding run shows whether "not delivered" drops to near 0.
 2. Decide on the unused `stop` and `open` capabilities, the pre-M2 hook install compatibility,
    `scripts/spike/` and `.hallmark/`.
 3. Releasing before the beta (25 January 2027): GitHub Actions minutes for `release.yml`, or move it
