@@ -1,0 +1,5 @@
+name: python tests
+discover: git ls-files "tests/test_*.py"
+run: uv run pytest -q -rs -o junit_family=xunit1 --junitxml="<< outputs.junit >>" << test.atoms >>
+outputs:
+  junit: test-results/pytest/junit.xml
