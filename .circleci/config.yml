@@ -1,0 +1,61 @@
+version: 2.1
+
+jobs:
+  # The ronda Python package: uv, tests with pytest, wheel build as in release.yml. No linter is set up.
+  python:
+    docker:
+      - image: cimg/python:3.12
+    environment:
+      # .python-version says 3.11 for local work; use the image's Python 3.12 (pyenv and uv both read that file)
+      PYENV_VERSION: "3.12"
+      UV_PYTHON: "3.12"
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - uv-v1-{{ checksum "uv.lock" }}
+      - run:
+          name: Install
+          command: |
+            pip install --user uv==0.12.22
+            uv sync --locked
+      - save_cache:
+          key: uv-v1-{{ checksum "uv.lock" }}
+          paths:
+            - ~/.cache/uv
+      - run:
+          name: Build
+          command: uv build
+      - run:
+          name: Test
+          command: circleci testsuite run "python tests"
+      - store_test_results:
+          path: test-results/pytest
+
+  # The web inbox (web/): built with tsc and vite. No tests or linter are set up.
+  web:
+    docker:
+      - image: cimg/node:20.20
+    working_directory: ~/project/web
+    steps:
+      - checkout:
+          path: ~/project
+      - restore_cache:
+          keys:
+            - npm-v1-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install
+          command: npm ci
+      - save_cache:
+          key: npm-v1-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
+      - run:
+          name: Build
+          command: npm run build
+
+workflows:
+  ci:
+    jobs:
+      - python
+      - web
