@@ -68,3 +68,19 @@ def test_orca_pos_new_run_in_same_terminal_is_a_new_session():
     pos.tick()
     assert [e["type"] for e in hub.events[-2:]] == ["session_ended", "session_started"]
     assert hub.events[-1]["session_id"] != first
+
+
+def test_a_slow_orca_cli_does_not_end_sessions():
+    cli = FakeCli()
+    hub = FakeHub()
+    pos = make_pos(hub, OrcaTerminals("orca", runner=cli))
+    pos.tick()
+
+    def timeout(args, **kw):
+        raise subprocess.TimeoutExpired(args, 60)
+
+    pos.tmux.runner = timeout
+    pos.tick()
+    pos.tmux.runner = cli
+    pos.tick()
+    assert [e["type"] for e in hub.events] == ["session_started"]

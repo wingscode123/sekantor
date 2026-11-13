@@ -182,3 +182,36 @@ def test_real_tmux_pane(tmp_path):
         assert out.read_text() == "y"
     finally:
         subprocess.run(["tmux", "-L", sock, "kill-server"], capture_output=True)
+
+
+def test_a_tmux_timeout_does_not_end_sessions():
+    lists = iter(["ok", "timeout", "ok"])
+
+    def runner(cmd, **kw):
+        if "list-panes" in cmd:
+            if next(lists) == "timeout":
+                raise subprocess.TimeoutExpired(cmd, 3)
+            return subprocess.CompletedProcess(cmd, 0, stdout="%1\twork\t0.0\t100\tcodex\t/tmp/shop\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="thinking\n", stderr="")
+
+    hub = FakeHub()
+    pos = TmuxPos(Tmux(runner=runner), hub, RULES, find=lambda pane: ("codex", 1001))
+    for _ in range(3):
+        pos.tick()
+    assert [e["type"] for e in hub.events] == ["session_started"]
+
+
+def test_no_tmux_server_ends_sessions():
+    listing = ["%1\twork\t0.0\t100\tcodex\t/tmp/shop\n"]
+
+    def runner(cmd, **kw):
+        if "list-panes" in cmd:
+            out = listing.pop() if listing else ""
+            return subprocess.CompletedProcess(cmd, 0 if out else 1, stdout=out, stderr="" if out else "no server running")
+        return subprocess.CompletedProcess(cmd, 0, stdout="thinking\n", stderr="")
+
+    hub = FakeHub()
+    pos = TmuxPos(Tmux(runner=runner), hub, RULES, find=lambda pane: ("codex", 1001))
+    pos.tick()
+    pos.tick()
+    assert [e["type"] for e in hub.events] == ["session_started", "session_ended"]
