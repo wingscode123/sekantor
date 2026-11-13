@@ -22,7 +22,7 @@ export function Timeline({ sessionId }: { sessionId: string }) {
   const load = async () => {
     setError(null);
     const answer = await sessionApi(sessionId, "events?limit=50");
-    if (answer?.ok) setEvents((answer.data.events as TimelineEvent[]).reverse());
+    if (answer?.ok && Array.isArray(answer.data.events)) setEvents((answer.data.events as TimelineEvent[]).reverse());
     else setError("Could not load the timeline.");
   };
 
