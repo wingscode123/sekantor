@@ -1,0 +1,88 @@
+# CI on CircleCI: the same checks as .github/workflows/ci.yml (pytest and the web build).
+# macOS is left out to save credits; add a macos job (resource_class m4pro.medium) when needed.
+version: 2.1
+
+parameters:
+  uv-version:
+    type: string
+    default: "0.12.22"  # matches uv_build in pyproject.toml
+
+jobs:
+  pytest-linux:
+    parameters:
+      python:
+        type: string
+    docker:
+      - image: cimg/base:current
+    environment:
+      UV_PYTHON: << parameters.python >>
+    steps:
+      - checkout
+      - run:
+          name: tmux (for the tmux pos test)
+          command: sudo apt-get update && sudo apt-get install -y tmux
+      - run:
+          name: uv
+          command: curl -LsSf https://astral.sh/uv/<< pipeline.parameters.uv-version >>/install.sh | sh
+      - run:
+          name: install
+          command: ~/.local/bin/uv sync --locked
+      - run:
+          name: pytest
+          command: ~/.local/bin/uv run pytest -q -rs --junitxml=test-results/pytest/junit.xml
+      - store_test_results:
+          path: test-results
+
+  pytest-windows:
+    parameters:
+      python:
+        type: string
+    machine:
+      image: windows-server-2022-gui:current
+    resource_class: windows.medium
+    shell: powershell.exe -ExecutionPolicy Bypass
+    environment:
+      UV_PYTHON: << parameters.python >>
+    steps:
+      - checkout
+      - run:
+          name: uv
+          command: irm https://astral.sh/uv/<< pipeline.parameters.uv-version >>/install.ps1 | iex
+      - run:
+          name: install
+          command: '& "$env:USERPROFILE\.local\bin\uv.exe" sync --locked'
+      - run:
+          name: pytest
+          command: '& "$env:USERPROFILE\.local\bin\uv.exe" run pytest -q -rs --junitxml=test-results/pytest/junit.xml'
+      - store_test_results:
+          path: test-results
+
+  web-build:
+    docker:
+      - image: cimg/node:20.18
+    working_directory: ~/project/web
+    steps:
+      - checkout:
+          path: ~/project
+      - restore_cache:
+          keys:
+            - npm-v1-{{ checksum "package-lock.json" }}
+      - run: npm ci
+      - save_cache:
+          key: npm-v1-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
+      - run: npm run build
+
+workflows:
+  ci:
+    jobs:
+      - pytest-linux:
+          name: pytest-linux-py<< matrix.python >>
+          matrix:
+            parameters:
+              python: ["3.11", "3.12"]
+      - pytest-windows:
+          name: pytest-windows-py3.11
+          python: "3.11"
+      - web-build
