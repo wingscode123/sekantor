@@ -47,14 +47,7 @@ class Relay:
 
 
 def load_webhooks(home: Path):
-    import tomllib
-
-    try:
-        with open(config.config_path(home), "rb") as f:
-            data = tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError):
-        return [], []
-    return parse(data.get("webhooks"))
+    return parse(config.read_toml(home).get("webhooks"))
 
 
 def configured(home: Path) -> list[str]:

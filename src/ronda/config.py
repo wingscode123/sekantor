@@ -61,7 +61,7 @@ DEFAULT_IGNORE_CWD = [r"/Programs/OpenBot(/|$)", r"/OpenBot\.app/", r"^/opt/Open
 class Settings:
     def __init__(self, approval_wait_s: int = 600, reply_wait_s: int = 1800, notify: bool = True,
                  risky: list[str] | None = None, reply_entrypoints: list[str] | None = None,
-                 quiet_hours: str | None = None, ignore_cwd: list[str] | None = None):
+                 quiet_hours: str | None = None, ignore_cwd: list[str] | None = None, orca_pos: bool = False):
         self.approval_wait_s = max(0, min(int(approval_wait_s), 3600))
         self.reply_wait_s = max(0, min(int(reply_wait_s), 86400))
         self.notify = bool(notify)
@@ -70,6 +70,7 @@ class Settings:
                                   else [str(e) for e in reply_entrypoints])
         self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
         self.ignore_cwd = list(ignore_cwd) if ignore_cwd is not None else list(DEFAULT_IGNORE_CWD)
+        self.orca_pos = bool(orca_pos)  # opt-in: the orca CLI is heavy to poll
 
     def ignored(self, cwd: str | None) -> bool:
         import re
@@ -117,25 +118,28 @@ def config_path(base: Path | None = None) -> Path:
     return (base or home()) / "config.toml"
 
 
-def settings(base: Path | None = None) -> Settings:
-    """Read config.toml; a missing or broken file gives the defaults."""
+def read_toml(base: Path | None = None) -> dict:
+    """config.toml as a dict; a missing or broken file reads as empty."""
     import tomllib
 
     try:
         with open(config_path(base), "rb") as f:
-            data = tomllib.load(f)
+            return tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
-        return Settings()
+        return {}
+
+
+# config.toml key -> Settings argument
+SETTING_KEYS = {"approval_wait": "approval_wait_s", "reply_wait": "reply_wait_s", "notify": "notify",
+                "risky_commands": "risky", "reply_entrypoints": "reply_entrypoints", "quiet_hours": "quiet_hours",
+                "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos"}
+
+
+def settings(base: Path | None = None) -> Settings:
+    """Read config.toml; a missing or broken file gives the defaults."""
+    data = read_toml(base)
     try:
-        return Settings(
-            approval_wait_s=data.get("approval_wait", 600),
-            reply_wait_s=data.get("reply_wait", 1800),
-            notify=data.get("notify", True),
-            risky=data.get("risky_commands"),
-            reply_entrypoints=data.get("reply_entrypoints"),
-            quiet_hours=data.get("quiet_hours"),
-            ignore_cwd=data.get("ignore_cwd"),
-        )
+        return Settings(**{arg: data[key] for key, arg in SETTING_KEYS.items() if key in data})
     except (TypeError, ValueError):
         return Settings()
 
