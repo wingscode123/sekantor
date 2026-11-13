@@ -18,5 +18,5 @@ class Waiters:
         ev = self._events.setdefault(session_id, asyncio.Event())
         try:
             await asyncio.wait_for(ev.wait(), timeout)
-        except (asyncio.TimeoutError, TimeoutError):
+        except TimeoutError:
             pass

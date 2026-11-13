@@ -64,25 +64,3 @@ are separate processes started by `ronda up`, for isolation: a crash in one neve
 
 Add fixtures of real platform output (redacted), and test both halves against a live hub; see
 `tests/test_hook_actions.py` (`Hub` helper) and `tests/test_openbot.py` (a fake platform API).
-EOF
-mkdir -p .github/ISSUE_TEMPLATE && cat > .github/ISSUE_TEMPLATE/new-pos.md <<'EOF'
----
-name: New pos request
-about: Ask for (or offer) support for another agent or app
-title: "pos: <platform>"
-labels: pos
----
-
-**Platform / agent**: name, version, link.
-
-**How do you run it?** (terminal, IDE, desktop app, inside another tool)
-
-**How could Ronda see its state?** Anything you know: hooks, a local API, log files, a CLI,
-its process name, env vars. A `scripts/probe_hosts.py -o probe.json` run while it waits for you
-helps a lot (check the file for secrets first).
-
-**How could Ronda answer it?** (approve/deny, reply text, keys in a terminal, an API call)
-
-**Will you write it?** See docs/writing-a-pos.md.
-EOF
-cd /d/Ronda && .venv/Scripts/python.exe -c "import ast;ast.parse(open('examples/pos_minimal.py').read());print(sum(1 for l in open('examples/pos_minimal.py') if l.strip()), 'non-empty lines')"

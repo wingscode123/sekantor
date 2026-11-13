@@ -132,8 +132,6 @@ SAMPLE = {"session_id": "claude:ronda-test", "source": "claude-code", "status": 
 
 async def send_test(home: Path | None = None) -> list[tuple[str, bool]]:
     """Send one sample 'Approval needed' to every configured channel. Returns (channel, ok) pairs."""
-    from ronda.relay.webhook import WebhookChannel
-
     home = home or config.home()
     results: list[tuple[str, bool]] = []
     hooks, _ = load_webhooks(home)

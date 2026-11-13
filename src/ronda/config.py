@@ -17,10 +17,6 @@ def token_path() -> Path:
     return home() / "token"
 
 
-def db_path() -> Path:
-    return home() / "ronda.db"
-
-
 def hook_log_path() -> Path:
     return home() / "hook.log"
 
@@ -70,7 +66,8 @@ class Settings:
         self.reply_wait_s = max(0, min(int(reply_wait_s), 86400))
         self.notify = bool(notify)
         self.risky = list(risky) if risky is not None else list(DEFAULT_RISKY)
-        self.reply_entrypoints = [str(e) for e in reply_entrypoints] if reply_entrypoints is not None             else list(DEFAULT_REPLY_ENTRYPOINTS)
+        self.reply_entrypoints = (list(DEFAULT_REPLY_ENTRYPOINTS) if reply_entrypoints is None
+                                  else [str(e) for e in reply_entrypoints])
         self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
         self.ignore_cwd = list(ignore_cwd) if ignore_cwd is not None else list(DEFAULT_IGNORE_CWD)
 

@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from urllib.parse import quote
 
 import httpx

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 AGENTS = ("claude", "codex", "opencode", "gemini", "aider")
@@ -22,10 +22,6 @@ class Pane:
     pid: int            # the pane's shell
     command: str        # what runs in the foreground
     cwd: str
-
-    @property
-    def target(self) -> str:
-        return self.pane_id
 
 
 def parse_panes(text: str) -> list[Pane]:
@@ -101,8 +97,6 @@ class Watch:
     changed_at: float = 0.0
     status: str | None = None
     request_id: str | None = None
-    summary: str | None = None
-    extra: dict = field(default_factory=dict)
 
 
 def assess(w: Watch, screen: str, rules: Rules, now: float) -> tuple[str, str | None, str | None, str | None]:

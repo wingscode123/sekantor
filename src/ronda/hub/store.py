@@ -5,7 +5,6 @@ One connection guarded by a lock; FastAPI handlers call it from worker threads.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone

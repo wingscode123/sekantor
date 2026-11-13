@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,13 +33,9 @@ NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Ronda</title>
 
 
 def web_dist() -> Path | None:
-    candidates = [os.environ.get("RONDA_WEB_DIST"),
-                  Path(__file__).parent / "static",
-                  Path(__file__).resolve().parents[3] / "web" / "dist"]
-    for c in candidates:
-        if c and (Path(c) / "index.html").is_file():
-            return Path(c)
-    return None
+    """The built web UI: ``npm run build`` in web/ writes it here, and the wheel ships it."""
+    dist = Path(__file__).parent / "static"
+    return dist if (dist / "index.html").is_file() else None
 
 
 def pid_alive(pid: int) -> bool:
