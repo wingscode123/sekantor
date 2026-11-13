@@ -65,6 +65,11 @@ def run_sweep(store: Store, broadcaster: Broadcaster, now: datetime | None = Non
     return ended
 
 
+async def sweep_tick(store: Store, broadcaster: Broadcaster, waiters: Waiters) -> None:
+    loop = asyncio.get_running_loop()
+    await asyncio.to_thread(run_sweep, store, broadcaster, None, lambda sid: loop.call_soon_threadsafe(waiters.notify, sid))
+
+
 def create_app(home: Path | None = None, port: int | None = None, token: str | None = None,
                settings: config.Settings | None = None, notifier: Notifier | None = None) -> FastAPI:
     home = home or config.home()
@@ -84,9 +89,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
                 with contextlib.suppress(Exception):
-                    loop_ = asyncio.get_running_loop()
-                    await asyncio.to_thread(run_sweep, store, broadcaster, None,
-                                            lambda sid: loop_.call_soon_threadsafe(waiters.notify, sid))
+                    await sweep_tick(store, broadcaster, waiters)
                     if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
                         await asyncio.to_thread(store.prune)
         await asyncio.to_thread(store.prune)
