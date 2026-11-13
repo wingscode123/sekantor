@@ -106,3 +106,16 @@ def test_hook_records_what_it_sends(tmp_path, monkeypatch):
     monkeypatch.setenv("RONDA_HOME", str(tmp_path))
     hook._record_sent({"ts": "2026-11-12T18:00:00+00:00", "event_id": "x1", "session_id": "claude:z", "status": "running"})
     assert (tmp_path / "sent.log").read_text() == "2026-11-12T18:00:00+00:00 x1 claude:z running\n"
+
+
+def test_an_unreachable_line_naming_the_event_counts_however_late_it_was_logged(home):
+    # Under load a hook can log its timeout many seconds after the event's timestamp (seen: 7 s).
+    late = ev(8, "claude:b", "running", 3)
+    sent(home, [late])
+    with open(home / "hook.log", "a", encoding="utf-8") as f:
+        at = (late.ts + timedelta(seconds=20)).astimezone().strftime("%Y-%m-%dT%H:%M:%S")
+        f.write(f"{at} SessionStart: hub unreachable (TimeoutError) e8\n")
+    st = compute(home, NOW - timedelta(hours=24), NOW)
+    assert [x.event_id for x in st.lost] == ["e6"]
+    assert sorted(x.event_id for x in st.lost_hub_down) == ["e7", "e8"]
+    assert st.hook_errors == {"hub unreachable": 2}

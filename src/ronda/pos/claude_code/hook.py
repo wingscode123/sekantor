@@ -275,14 +275,16 @@ def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog, can_wait: bool = 
         return 0
     timeout = SESSION_END_HTTP_TIMEOUT_S if event.get("type") == "session_ended" else HTTP_TIMEOUT_S
     name = payload.get("hook_event_name")
+    sending = event
     try:
         post(event, timeout)
         if event.get("type") == "session_started":
-            update = host_update(event, payload, env)
-            if update:
-                post(update, timeout)
+            sending = host_update(event, payload, env)
+            if sending:
+                post(sending, timeout)
     except Exception as e:
-        _log(f"{name}: hub unreachable ({type(e).__name__})")
+        # The event id lets `ronda stats` match this line to the event, however late it is logged.
+        _log(f"{name}: hub unreachable ({type(e).__name__}) {(sending or event)['event_id']}")
         return 0
 
     caps = event.get("capabilities") or []

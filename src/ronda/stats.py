@@ -13,6 +13,7 @@ from pathlib import Path
 
 IN_FLIGHT = timedelta(seconds=15)  # attempts this recent may still be on their way
 WAITING = {"waiting_approval", "waiting_input"}
+UNREACHABLE_ID = re.compile(r"hub unreachable \(\w+\) (\S+)\s*$")
 
 
 @dataclass
@@ -30,7 +31,7 @@ class Stats:
     attempted: int = 0
     stored: int = 0
     lost: list[Lost] = field(default_factory=list)  # not stored, with no hub outage to explain it
-    lost_hub_down: list[Lost] = field(default_factory=list)  # not stored because the hub was down
+    lost_hub_down: list[Lost] = field(default_factory=list)  # not stored: the hub was down or did not answer in time
     hook_errors: Counter = field(default_factory=Counter)
     sessions: int = 0
     by_host: Counter = field(default_factory=Counter)
@@ -80,7 +81,8 @@ def compute(home: Path, since: datetime, until: datetime | None = None) -> Stats
         attempts[parts[1]] = Lost(parts[0], parts[1], parts[2], parts[3])
     st.attempted = len(attempts)
 
-    down_at: set[int] = set()  # epoch seconds of "hub unreachable" log lines
+    down_at: set[int] = set()  # epoch seconds of "hub unreachable" log lines that name no event
+    down_ids: set[str] = set()  # events a hook could not deliver, named in its log line
     for line in _read_lines(home / "hook.log"):
         try:
             ts = datetime.strptime(line[:19], "%Y-%m-%dT%H:%M:%S").astimezone(timezone.utc)
@@ -90,18 +92,22 @@ def compute(home: Path, since: datetime, until: datetime | None = None) -> Stats
             message = re.sub(r"^[A-Z][A-Za-z]+: ", "", line[20:].split(" (")[0])  # drop "SessionStart: "
             st.hook_errors[message] += 1
             if message == "hub unreachable":
-                down_at.add(int(ts.timestamp()))
+                named = UNREACHABLE_ID.search(line)
+                if named:
+                    down_ids.add(named.group(1))
+                else:  # written by an older hook
+                    down_at.add(int(ts.timestamp()))
 
     db = home / "ronda.db"
     if not db.exists():
-        _split_lost(st, sorted(attempts.values(), key=lambda x: x.ts), down_at)
+        _split_lost(st, sorted(attempts.values(), key=lambda x: x.ts), down_at, down_ids)
         return st
     con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
     try:
         lo, hi = (since - timedelta(minutes=1)).isoformat(), until.isoformat()
         stored = {r[0] for r in con.execute("SELECT event_id FROM events WHERE ts >= ? AND ts <= ?", (lo, hi))}
         st.stored = len(stored & set(attempts)) if attempts else len(stored)
-        _split_lost(st, sorted((a for eid, a in attempts.items() if eid not in stored), key=lambda x: x.ts), down_at)
+        _split_lost(st, sorted((a for eid, a in attempts.items() if eid not in stored), key=lambda x: x.ts), down_at, down_ids)
 
         rows = con.execute(
             "SELECT session_id, ts, json_extract(body, '$.status'), json_extract(body, '$.host.app') "
@@ -117,12 +123,13 @@ def compute(home: Path, since: datetime, until: datetime | None = None) -> Stats
     return st
 
 
-def _split_lost(st: Stats, lost: list[Lost], down_at: set[int]) -> None:
-    """A hook logs "hub unreachable" within a couple of seconds of its event's timestamp."""
+def _split_lost(st: Stats, lost: list[Lost], down_at: set[int], down_ids: set[str]) -> None:
+    """A hook's "hub unreachable" line names its event; an older hook's line only has a time, close
+    after the event's timestamp."""
     for x in lost:
         ts = _parse_ts(x.ts)
         t = int(ts.timestamp()) if ts else None
-        if t is not None and any(t - 1 <= d <= t + 3 for d in down_at):
+        if x.event_id in down_ids or (t is not None and any(t - 1 <= d <= t + 3 for d in down_at)):
             st.lost_hub_down.append(x)
         else:
             st.lost.append(x)

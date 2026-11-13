@@ -434,7 +434,7 @@ def stats(
     typer.echo(f"   stored by the hub {st.stored}   ", nl=False)
     typer.secho(f"lost {lost}", fg=color)
     if st.lost_hub_down:
-        typer.echo(f"  not delivered while the hub was down: {len(st.lost_hub_down)} (expected: agents fell back to their own prompts)")
+        typer.echo(f"  not delivered, the hub was down or too slow: {len(st.lost_hub_down)} (agents fell back to their own prompts)")
     if st.hook_errors:
         typer.secho("  hook errors", fg="yellow")
         for msg, n in st.hook_errors.most_common():
