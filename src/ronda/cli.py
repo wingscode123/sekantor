@@ -118,7 +118,12 @@ def up(
         _CHILD_OUT = open(log_file, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = _CHILD_OUT
         typer.echo(f"--- {datetime.now().isoformat(timespec='seconds')} ronda up")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s hub %(message)s", datefmt="%H:%M:%S")
+    from ronda import logs, resident
+
+    logs.setup("hub")
+    why_not = resident.keep_resident()
+    if why_not and sys.platform == "win32":
+        logging.getLogger("ronda.hub").warning("could not keep the hub in RAM: %s", why_not)
 
     os.environ["RONDA_PORT"] = str(port)
     with socket.socket() as s:

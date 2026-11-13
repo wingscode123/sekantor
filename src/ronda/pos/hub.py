@@ -33,7 +33,9 @@ def connect(name: str) -> HubApi:
     from ronda.lifeline import start_parent_watch
 
     start_parent_watch()  # end with the hub, even when it is force-stopped
-    logging.basicConfig(level=logging.INFO, format=f"%(asctime)s {name} %(message)s", datefmt="%H:%M:%S")
+    from ronda import logs
+
+    logs.setup(name)
     token = read_token(config.token_path())
     if not token:
         raise SystemExit("No hub token: run `ronda up` first.")

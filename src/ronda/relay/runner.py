@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 
 from ronda import config
@@ -111,7 +110,9 @@ def main() -> None:
     from ronda.lifeline import start_parent_watch
 
     start_parent_watch()  # end with the hub, even when it is force-stopped
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s relay %(message)s", datefmt="%H:%M:%S")
+    from ronda import logs
+
+    logs.setup("relay")
     try:
         asyncio.run(run())
     except KeyboardInterrupt:
