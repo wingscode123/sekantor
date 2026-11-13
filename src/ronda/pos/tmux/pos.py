@@ -72,9 +72,6 @@ def find_agent(pane_pid: int) -> tuple[str, int] | None:
 
 
 class TmuxPos:
-    name = "tmux"
-    capabilities = {"approve", "deny", "reply"}
-
     def __init__(self, tmux: Tmux, hub, rules: dict[str, Rules] | None = None,
                  find: Callable[[Pane], tuple[str, int] | None] | None = None, clock: Callable[[], float] = time.monotonic,
                  host: dict = HOST, prefix: str = "tmux", real_pid: bool = True):

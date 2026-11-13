@@ -131,17 +131,18 @@
   <section class="pos container" aria-labelledby="pos-title">
     <div class="pos__text">
       <h2 id="pos-title">A new pos in an afternoon.</h2>
-      <p>A pos adapts one platform: three functions, or any script that posts JSON to <code>/v1/events</code>.</p>
+      <p>A pos adapts one platform: any script that posts JSON to <code>/v1/events</code> and reads the answer back.</p>
     </div>
     <figure class="pos__code">
-      <pre><code><span class="k">class</span> Pos(Protocol):
-    name: str
-    capabilities: set[str]   <span class="c"># approve, deny, reply, open</span>
+      <pre><code><span class="c"># tell Ronda what the agent is doing</span>
+<span class="k">POST</span> /v1/events
+{"session_id": "mytool:42", "status": "waiting_approval",
+ "request": {"id": "r1", "input": "npm run deploy"},
+ "capabilities": ["approve", "deny"]}
 
-    <span class="k">def</span> discover(self) -&gt; list[Session]: ...
-    <span class="k">def</span> stream(self) -&gt; Iterator[Event]: ...
-    <span class="k">def</span> act(self, session_id: str, action: Action) -&gt; None: ...</code></pre>
-      <figcaption><code>src/ronda/pos/base.py</code></figcaption>
+<span class="c"># take the answer back</span>
+<span class="k">GET</span>  /v1/sessions/mytool:42/actions/next?request_id=r1</code></pre>
+      <figcaption><code>examples/pos_minimal.py</code></figcaption>
     </figure>
   </section>
 

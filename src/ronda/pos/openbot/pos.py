@@ -122,9 +122,6 @@ def describe(pending: dict) -> dict:
 
 
 class OpenBotPos:
-    name = "openbot"
-    capabilities = {"approve", "deny", "reply"}
-
     def __init__(self, api: OpenBotApi, hub, agents_root: Path | None = None):
         self.api = api
         self.hub = hub
