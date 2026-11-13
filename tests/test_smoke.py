@@ -1,5 +1,9 @@
+import tomllib
+from pathlib import Path
+
 import ronda
 
 
-def test_version():
-    assert ronda.__version__ == "0.1.0"
+def test_version_matches_pyproject():
+    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    assert ronda.__version__ == pyproject["project"]["version"]

@@ -1,18 +1,10 @@
 import { useId, useState } from "react";
+import { sessionApi } from "./api";
 import type { Action, Session } from "./types";
 
 async function postAction(s: Session, body: Record<string, unknown>) {
-  try {
-    const r = await fetch(`/v1/sessions/${encodeURIComponent(s.session_id)}/actions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request_id: s.request?.id, ...body }),
-    });
-    const data = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, data };
-  } catch {
-    return { ok: false, status: 0, data: { message: "The hub did not answer. Nothing was sent." } };
-  }
+  const answer = await sessionApi(s.session_id, "actions", "POST", { request_id: s.request?.id, ...body });
+  return answer ?? { ok: false, status: 0, data: { message: "The hub did not answer. Nothing was sent." } };
 }
 
 const SENT: Record<Action["type"], string> = { approve: "Approved", deny: "Denied", reply: "Reply sent" };

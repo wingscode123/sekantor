@@ -58,10 +58,10 @@ def test_vscode_url_has_no_injection(tmp_path):
 # --- API ------------------------------------------------------------------------------
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     app = create_app(home=tmp_path, port=7878, token=TOKEN, settings=Settings(), notifier=Notifier(enabled=False))
     opened = []
-    app.state.opener_run = opened.append
+    monkeypatch.setattr(opener, "run", opened.append)
     with TestClient(app, base_url=BASE) as c:
         c.opened = opened
         c.cwd = str(tmp_path)

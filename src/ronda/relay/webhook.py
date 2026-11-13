@@ -21,7 +21,8 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ronda.relay.common import TITLES, log, redact, should_notify, who
+from ronda.labels import TITLES
+from ronda.relay.common import log, redact, should_notify, who
 
 DEFAULT_STATUSES = ("waiting_approval", "waiting_input", "error")
 FORMATS = ("json", "text", "ntfy", "slack")

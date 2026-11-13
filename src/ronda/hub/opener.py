@@ -15,10 +15,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import quote
 
+from ronda import labels
 from ronda.hub.status import SessionState
-
-LABELS = {"vscode": "VS Code", "cursor": "Cursor", "orca": "Orca", "tmux": "tmux", "openbot": "OpenBot",
-          "claude-desktop": "Claude desktop"}
 
 
 @dataclass
@@ -64,7 +62,7 @@ def plan(s: SessionState, which: Callable[[str], str | None] = shutil.which) -> 
     folder = cwd if cwd and Path(cwd).is_dir() else None
     if app in ("vscode", "cursor") and folder:
         scheme = "vscode" if app == "vscode" else "cursor"
-        return Plan(f"Open in {LABELS[app]}", "url", f"{scheme}://file/{quote(Path(folder).as_posix(), safe='/:')}")
+        return Plan(f"Open in {labels.host(app)}", "url", f"{scheme}://file/{quote(Path(folder).as_posix(), safe='/:')}")
     if app == "orca":
         cli = _orca_cli()
         if cli:
@@ -79,15 +77,15 @@ def plan(s: SessionState, which: Callable[[str], str | None] = shutil.which) -> 
     if app in ("openbot", "claude-desktop"):
         cmd = _app(app)
         if cmd:
-            return Plan(f"Open {LABELS[app]}", "exec", cmd)
+            return Plan(f"Open {labels.host(app)}", "exec", cmd)
     if folder:
         return Plan("Open folder", "folder", folder)
     return None
 
 
-def run(p: Plan, runner=subprocess.Popen, opener=_open_url_or_path) -> None:
+def run(p: Plan) -> None:
     if p.kind == "exec":
-        runner(p.target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        subprocess.Popen(p.target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
     else:
-        opener(p.target)
+        _open_url_or_path(p.target)

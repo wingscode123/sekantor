@@ -30,7 +30,7 @@ def _clip(text: str | None, n: int) -> str | None:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def tool_input_text(tool: str | None, tool_input) -> str | None:
+def tool_input_text(tool_input) -> str | None:
     """The one line a person needs to judge a tool call."""
     if not isinstance(tool_input, dict):
         return _clip(tool_input, INPUT_MAX) if tool_input else None
@@ -85,7 +85,7 @@ def git_branch(cwd: str | None) -> str | None:
         return None
 
 
-def translate(payload: dict, now: datetime | None = None) -> dict | None:
+def translate(payload: dict) -> dict | None:
     name = payload.get("hook_event_name")
     sid = payload.get("session_id")
     if not name or not sid:
@@ -113,7 +113,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
             summary = _clip(prompt, SUMMARY_MAX)
     elif name == "PreToolUse":
         status = "running"
-        text = tool_input_text(tool, payload.get("tool_input"))
+        text = tool_input_text(payload.get("tool_input"))
         summary = _clip(f"{tool}: {text}" if text else tool, SUMMARY_MAX)
     elif name == "PermissionRequest" and tool == "AskUserQuestion":
         # Claude asks the person something. Approving the tool does not answer it, so this is a
@@ -123,7 +123,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
         summary = _clip(question_text(payload.get("tool_input")), SUMMARY_MAX)
     elif name == "PermissionRequest":
         status = "waiting_approval"
-        text = tool_input_text(tool, payload.get("tool_input"))
+        text = tool_input_text(payload.get("tool_input"))
         request = {"kind": "tool", "tool": tool, "input": text, "id": event_id}
         summary = _clip(f"Wants to run: {text}" if text else f"Wants to use {tool}", SUMMARY_MAX)
     elif name in ("PostToolUse", "PostToolUseFailure", "PermissionDenied"):
@@ -155,7 +155,7 @@ def translate(payload: dict, now: datetime | None = None) -> dict | None:
     event = {
         "v": 1,
         "event_id": event_id,
-        "ts": (now or datetime.now(timezone.utc)).isoformat(),
+        "ts": datetime.now(timezone.utc).isoformat(),
         "source": SOURCE,
         "session_id": f"claude:{sid}",
         "agent": {"name": "claude", "model": payload.get("model")},

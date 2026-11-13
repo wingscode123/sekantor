@@ -15,6 +15,7 @@ from ronda.schema import Event, Status
 
 RETENTION = timedelta(days=7)
 AUDIT_RETENTION = timedelta(days=90)
+ACTION_COLS = ("id", "session_id", "request_id", "type", "text", "channel", "actor", "created_at", "outcome", "outcome_at")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -148,17 +149,16 @@ class Store:
 
     def actions(self, session_id: str | None = None, limit: int = 100) -> list[dict]:
         with self._lock:
+            select = f"SELECT {','.join(ACTION_COLS)} FROM actions"
             if session_id:
-                rows = self._db.execute("SELECT id FROM actions WHERE session_id=? ORDER BY id DESC LIMIT ?",
-                                        (session_id, limit)).fetchall()
+                rows = self._db.execute(f"{select} WHERE session_id=? ORDER BY id DESC LIMIT ?", (session_id, limit))
             else:
-                rows = self._db.execute("SELECT id FROM actions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-            return [self._action(r[0]) for r in rows]
+                rows = self._db.execute(f"{select} ORDER BY id DESC LIMIT ?", (limit,))
+            return [dict(zip(ACTION_COLS, r)) for r in rows]
 
     def _action(self, action_id: int) -> dict:
-        cols = ("id", "session_id", "request_id", "type", "text", "channel", "actor", "created_at", "outcome", "outcome_at")
-        row = self._db.execute(f"SELECT {','.join(cols)} FROM actions WHERE id=?", (action_id,)).fetchone()
-        return dict(zip(cols, row))
+        row = self._db.execute(f"SELECT {','.join(ACTION_COLS)} FROM actions WHERE id=?", (action_id,)).fetchone()
+        return dict(zip(ACTION_COLS, row))
 
     # --- reads ----------------------------------------------------------------
 

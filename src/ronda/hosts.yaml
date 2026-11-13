@@ -5,7 +5,7 @@
 #   1 - product(1 - weight) over matched signals
 # so independent weak signals add up but never exceed 1. The host with the highest
 # confidence wins (ties: earlier in this file wins). Below `min_confidence` the host is
-# "terminal" (or "unknown" when there is no terminal evidence either).
+# "terminal" when there is terminal evidence, else no host. Display names live in src/ronda/labels.py.
 #
 # Signal kinds (all optional, all case-insensitive):
 #   env:          name of an env var on the agent process / hook
@@ -24,7 +24,6 @@ min_confidence: 0.5
 
 hosts:
   - id: orca
-    label: Orca
     verified: [windows]
     signals:
       - {id: env_orca_session, env: ORCA_AGENT_SESSION_ID, weight: 0.9}       # Orca chat (SDK) sessions
@@ -34,7 +33,6 @@ hosts:
       - {id: process_tree, parent: '^orca(\.exe)?$', weight: 0.7}
 
   - id: openbot
-    label: OpenBot
     verified: [windows]
     signals:
       - {id: env_openbot, env: OPENBOT_AGENT_PROCESS, equals: "1", weight: 0.9}
@@ -45,7 +43,6 @@ hosts:
       - {id: exe, exe: '/OpenBot/provider-runtimes/', weight: 0.6}
 
   - id: claude-desktop
-    label: Claude desktop
     verified: [windows]
     signals:
       - {id: entrypoint, env: CLAUDE_CODE_ENTRYPOINT, equals: claude-desktop, weight: 0.95}
@@ -54,7 +51,6 @@ hosts:
       - {id: exe, exe: '/Claude/claude-code/[0-9.]+/', weight: 0.6}
 
   - id: cursor
-    label: Cursor
     verified: []
     signals:
       - {id: env_cursor, env: CURSOR_TRACE_ID, weight: 0.8}
@@ -62,7 +58,6 @@ hosts:
       - {id: exe, exe: '/cursor/extensions/anthropic\.claude-code-', weight: 0.6}
 
   - id: vscode
-    label: VS Code
     verified: [windows]
     signals:
       - {id: entrypoint, env: CLAUDE_CODE_ENTRYPOINT, equals: claude-vscode, weight: 0.8}  # extension panel (Cursor may share it)
@@ -72,14 +67,12 @@ hosts:
       - {id: exe, exe: '/\.vscode(-insiders)?/extensions/anthropic\.claude-code-', weight: 0.6}
 
   - id: jetbrains
-    label: JetBrains IDE
     verified: []
     signals:
       - {id: terminal_emulator, env: TERMINAL_EMULATOR, matches: '^JetBrains', weight: 0.8}
       - {id: process_tree, parent: '^(idea|pycharm|webstorm|goland|clion|rider|phpstorm|rubymine)(64)?(\.exe)?$', weight: 0.7}
 
   - id: tmux
-    label: tmux
     verified: []
     signals:
       - {id: env_tmux, env: TMUX, weight: 0.9}
@@ -87,41 +80,35 @@ hosts:
       - {id: process_tree, parent: '^tmux', weight: 0.7}
 
   - id: windows-terminal
-    label: Windows Terminal
     verified: []
     signals:
       - {id: env_wt, env: WT_SESSION, weight: 0.8}
       - {id: process_tree, parent: '^windowsterminal(\.exe)?$', weight: 0.7}
 
   - id: iterm
-    label: iTerm2
     verified: []
     signals:
       - {id: term_program, env: TERM_PROGRAM, equals: iTerm.app, weight: 0.8}
       - {id: env_iterm, env: ITERM_SESSION_ID, weight: 0.6}
 
   - id: apple-terminal
-    label: Terminal.app
     verified: []
     signals:
       - {id: term_program, env: TERM_PROGRAM, equals: Apple_Terminal, weight: 0.8}
 
   - id: wezterm
-    label: WezTerm
     verified: []
     signals:
       - {id: term_program, env: TERM_PROGRAM, equals: WezTerm, weight: 0.8}
       - {id: env_wezterm, env: WEZTERM_PANE, weight: 0.6}
 
   - id: ghostty
-    label: Ghostty
     verified: []
     signals:
       - {id: term_program, env: TERM_PROGRAM, equals: ghostty, weight: 0.8}
       - {id: env_ghostty, env: GHOSTTY_RESOURCES_DIR, weight: 0.5}
 
   - id: kitty
-    label: kitty
     verified: []
     signals:
       - {id: env_kitty, env: KITTY_WINDOW_ID, weight: 0.8}
@@ -129,7 +116,6 @@ hosts:
 # Fallback when nothing above reaches min_confidence but the agent has a TTY-ish parent.
 fallback:
   terminal:
-    label: Terminal
     signals:
       - {id: shell_parent, parent: '^(bash|zsh|fish|sh|pwsh|powershell|cmd|nu)(\.exe)?$', weight: 0.5}
       - {id: env_term, env: TERM, weight: 0.2}

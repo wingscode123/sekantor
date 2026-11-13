@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { sessionApi } from "./api";
 import type { Session } from "./types";
 
 const SNOOZE: { label: string; minutes: number | null }[] = [
@@ -19,16 +20,9 @@ function until(iso: string): string {
 }
 
 async function call(s: Session, path: string, method: string, body?: unknown) {
-  try {
-    const r = await fetch(`/v1/sessions/${encodeURIComponent(s.session_id)}/${path}`, {
-      method, headers: body === undefined ? {} : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = await r.json().catch(() => ({}));
-    return r.ok ? null : (data.message ?? data.detail ?? "Did not work.");
-  } catch {
-    return "The hub did not answer.";
-  }
+  const answer = await sessionApi(s.session_id, path, method, body);
+  if (!answer) return "The hub did not answer.";
+  return answer.ok ? null : (answer.data.message ?? answer.data.detail ?? "Did not work.");
 }
 
 /** FR-14 open in source, FR-15 snooze. */

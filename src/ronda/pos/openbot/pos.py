@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -25,6 +24,7 @@ from urllib.parse import quote
 import httpx
 
 from ronda.pos.claude_code.translate import new_event_id
+from ronda.pos.hub import connect, poll
 
 log = logging.getLogger("ronda.pos.openbot")
 HOST = {"app": "openbot", "confidence": 1.0, "via": ["openbot_api"]}
@@ -98,7 +98,7 @@ class OpenBotApi:
             return r.status_code, {}
 
 
-def describe(agent: dict, pending: dict) -> dict:
+def describe(pending: dict) -> dict:
     """Status, request and capabilities for one agent from its pending list."""
     for a in pending.get("approvals") or []:
         cmd = a.get("command") or a.get("reason") or a.get("kind")
@@ -152,7 +152,7 @@ class OpenBotPos:
                 pending = self.api.get(f"/v1/agents/{quote(agent['id'], safe='')}/pending") or {}
             except (httpx.HTTPError, ValueError):
                 continue
-            d = describe(agent, pending)
+            d = describe(pending)
             prev = self.known.get(sid)
             if prev is None:
                 self.hub.post_event(self._event(agent, d, type="session_started", status=d["status"], summary=d["summary"],
@@ -186,30 +186,8 @@ class OpenBotPos:
             log.warning("OpenBot refused the %s (%s): %s", action["type"], code, body.get("error", ""))
         return code == 200
 
-    def run(self, interval: float = 3.0) -> None:
-        while True:
-            try:
-                self.tick()
-            except Exception as e:
-                log.warning("tick failed: %s", type(e).__name__)
-            time.sleep(interval)
-
 
 def main(interval: float = 3.0) -> None:
-    from ronda.lifeline import start_parent_watch
-
-    start_parent_watch()  # end with the hub, even when it is force-stopped
-    from ronda import config
-    from ronda.hub.auth import read_token
-    from ronda.pos.tmux.pos import HubApi
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s openbot %(message)s", datefmt="%H:%M:%S")
-    token = read_token(config.token_path())
-    if not token:
-        raise SystemExit("No hub token: run `ronda up` first.")
-    pos = OpenBotPos(OpenBotApi(), HubApi(config.hub_url(), token))
+    pos = OpenBotPos(OpenBotApi(), connect("openbot"))
     log.info("watching OpenBot agents with Local scripts on (%s)", automation_dir())
-    try:
-        pos.run(interval)
-    except KeyboardInterrupt:
-        pass
+    poll(pos.tick, interval, log)

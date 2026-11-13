@@ -2,23 +2,13 @@ import { useEffect } from "react";
 import { ApprovalControls, ReplyForm } from "./Actions";
 import { Timeline } from "./Timeline";
 import { SessionMenu, isSnoozed } from "./SessionMenu";
-import type { Action, Connection, Session } from "./types";
+import { STATUS_CLASS, type Action, type Connection, type Session } from "./types";
 import { useInbox, useNow } from "./useInbox";
 
-const SOURCES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", gemini: "Gemini", aider: "Aider" };
-const HOSTS: Record<string, string> = {
-  orca: "Orca", openbot: "OpenBot", "claude-desktop": "Claude desktop", vscode: "VS Code", cursor: "Cursor",
-  jetbrains: "JetBrains", tmux: "tmux", "windows-terminal": "Windows Terminal", iterm: "iTerm2",
-  "apple-terminal": "Terminal.app", wezterm: "WezTerm", ghostty: "Ghostty", kitty: "kitty", terminal: "Terminal",
-};
 const STATUS_TEXT: Record<Session["status"], string> = {
   waiting_approval: "Waiting for approval", waiting_input: "Waiting for you", error: "Error",
   running: "Running", done: "Done", ended: "Ended",
 };
-const STATUS_CLASS: Record<Session["status"], string> = {
-  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", done: "done", ended: "ended",
-};
-const NEEDS = new Set(["waiting_approval", "waiting_input", "error"]);
 
 function since(iso: string, now: number): string {
   const s = Math.max(0, Math.floor((now - Date.parse(iso)) / 1000));
@@ -35,11 +25,11 @@ function project(cwd?: string | null): string {
 }
 
 function Source({ s }: { s: Session }) {
-  const host = s.host ? HOSTS[s.host.app] ?? s.host.app : null;
+  const host = s.host_label;
   const hostTitle = s.host ? `Host: ${host}, confidence ${s.host.confidence}, via ${s.host.via.join(", ")}` : undefined;
   return (
     <>
-      <span className="card__source">{s.source === "openbot" && s.agent?.name ? s.agent.name : SOURCES[s.source] ?? s.source}</span>
+      <span className="card__source">{s.source === "openbot" && s.agent?.name ? s.agent.name : s.source_label}</span>
       {host && <>{" "}<span className="card__host" title={hostTitle}>in {host}</span></>}
     </>
   );
@@ -49,7 +39,7 @@ function Card({ s, now, action }: { s: Session; now: number; action?: Action }) 
   const lit = s.status === "waiting_approval" || s.status === "waiting_input";
   const cmd = s.status === "waiting_approval" ? s.request?.input : null;
   return (
-    <article className={lit ? "card card--lit" : "card"} aria-label={`${SOURCES[s.source] ?? s.source}, ${STATUS_TEXT[s.status]}`}>
+    <article className={lit ? "card card--lit" : "card"} aria-label={`${s.source_label}, ${STATUS_TEXT[s.status]}`}>
       <div className="card__head">
         <Source s={s} />
         <time className="card__time" dateTime={s.status_since} title={`Since ${new Date(s.status_since).toLocaleString()}`}>
@@ -70,7 +60,7 @@ function Card({ s, now, action }: { s: Session; now: number; action?: Action }) 
       {s.status === "waiting_input" && <ReplyForm s={s} action={action} />}
       {s.status === "waiting_input" && s.request?.kind === "question" && !s.capabilities.includes("reply") && (
         <p className="card__note">
-          Answer it in {s.host ? HOSTS[s.host.app] ?? s.host.app : "the app"}.
+          Answer it in {s.host_label ?? "the app"}.
         </p>
       )}
       <SessionMenu s={s} now={now} />
@@ -122,7 +112,7 @@ export default function App() {
   const { sessions, connection, loaded, actions } = useInbox();
   const now = useNow(1000);
   const awake = sessions.filter((s) => !isSnoozed(s, now) || s.status === "ended");
-  const needs = awake.filter((s) => NEEDS.has(s.status));
+  const needs = awake.filter((s) => s.needs_you);
   const running = awake.filter((s) => s.status === "running");
   const snoozed = sessions.filter((s) => isSnoozed(s, now) && s.status !== "ended");
   const done = awake.filter((s) => s.status === "done" || s.status === "ended");

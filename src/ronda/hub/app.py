@@ -105,9 +105,6 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()
-    from ronda.hub import opener as _opener
-
-    app.state.opener_run = _opener.run  # tests replace it
     app.include_router(router)
 
     dist = web_dist()

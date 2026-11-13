@@ -1,6 +1,5 @@
 """tmux pos (FR-04, FR-23): detection, events, answers, and a real-tmux run where tmux exists."""
 
-import os
 import shutil
 import subprocess
 import sys
