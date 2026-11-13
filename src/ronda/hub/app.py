@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +23,7 @@ from ronda.hub.status import SessionState, sweep
 from ronda.schema import Event, Status
 from ronda.hub.stream import Broadcaster
 
+log = logging.getLogger("ronda.hub")
 SWEEP_EVERY_S = 30
 PRUNE_EVERY_S = 3600
 
@@ -87,10 +88,15 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
             while True:
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
-                with contextlib.suppress(Exception):
+                try:
                     await sweep_tick(store, broadcaster, waiters)
-                    if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
+                except Exception:
+                    log.warning("sweep failed", exc_info=True)
+                if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
+                    try:
                         await asyncio.to_thread(store.prune)
+                    except Exception:
+                        log.warning("prune failed", exc_info=True)
         await asyncio.to_thread(store.prune)
         task = asyncio.create_task(loop())
         try:
