@@ -26,7 +26,7 @@ slow. Everything is on `main` in 28 commits.
 | --- | --- |
 | [#8](https://github.com/wingscode123/ronda/pull/8) | Deleted dead code and stray files: `halo.txt`, a leaked shell heredoc (with a local path) at the end of `docs/writing-a-pos.md`, unread fields and helpers, unused imports, the `web/dist` and `RONDA_WEB_DIST` lookups, duplicated dev dependencies. |
 | [#9](https://github.com/wingscode123/ronda/pull/9) | One copy of each rule. Display names (`ronda.labels`) had drifted between toasts, Telegram and the inbox. Also one copy each of the hook's paths, the polling pos start-up (`ronda.pos.hub`), the `config.toml` read, the CLI's hub-down handling and the web fetch helper. |
-| [#10](https://github.com/wingscode123/ronda/pull/10) | Bugs, each with a failing test first: a tmux/Orca timeout ended every session, the sweep published from a worker thread so a session's end could miss the inbox, a snooze overwrote an event stored meanwhile, `config.toml` problems were silent and one bad value reset every setting, and CLI messages misled. The unused `Pos` Protocol (`pos/base.py`) was deleted and the docs now show the HTTP contract every pos uses. |
+| [#10](https://github.com/wingscode123/ronda/pull/10) | Four bugs, each with a failing test first: a tmux/Orca timeout ended every session, the sweep published from a worker thread so a session's end could miss the inbox, a snooze overwrote an event stored meanwhile, `config.toml` problems were silent and one bad value reset every setting. CLI messages that misled were reworded. The unused `Pos` Protocol (`pos/base.py`) was deleted and the docs now show the HTTP contract every pos uses. |
 | [#13](https://github.com/wingscode123/ronda/pull/13) | Brought #9 and #10 to `main`: they had merged into their stacked base branches. |
 
 ## 3. CI on CircleCI
@@ -56,6 +56,12 @@ GitHub Actions ran out of minutes, so CI moved.
 - [#15](https://github.com/wingscode123/ronda/pull/15): `hub.log` had reached 11 MB of "OpenBot not
   reachable" lines. The OpenBot pos now logs only changes, and `ronda up --log-file` rotates a log
   over 5 MB.
+- Follow-up the same day: `hub.log` caught 39 stalls of 1 s to 5.6 s and one event handled 24 s after
+  it was sent, nearly all without a slow store lock. The machine had 1.5 GB of 15.7 GB RAM free and was
+  paging up to about 1,000 pages a second; Windows had moved two thirds of the hub's 60 MB to the page
+  file (110,000 page faults in 80 minutes). The stalls are the hub waiting for its own memory to come
+  back from disk, not slow code. The one event `ronda stats` called lost was a timeout logged 7 s late,
+  outside the window stats allowed; hooks now name the event in that line (ADR-0019).
 
 ## 5. Lessons
 
@@ -68,8 +74,8 @@ GitHub Actions ran out of minutes, so CI moved.
 
 ## 6. Still open
 
-1. Fix the hub stalls once `hub.log` shows "event loop was blocked", "waited ... for the store lock"
-   or "sent N s ago" during one.
+1. Hub stalls under memory pressure (see section 4): decide how to keep the hub responsive when
+   Windows pages it out.
 2. Decide on the unused `stop` and `open` capabilities, the pre-M2 hook install compatibility,
    `scripts/spike/` and `.hallmark/`.
 3. Releasing before the beta (25 January 2027): GitHub Actions minutes for `release.yml`, or move it

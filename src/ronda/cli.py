@@ -356,6 +356,27 @@ def service_uninstall():
     typer.secho("Removed. The hub no longer starts at login.", fg="green")
 
 
+@service_app.command("restart")
+def service_restart():
+    """Restart the hub that runs as a service, e.g. after updating Ronda."""
+    from ronda import service
+
+    p = service.plan(config.home())
+    if not service.installed(p):
+        typer.secho("The service is not installed: `ronda service install`.", fg="yellow")
+        raise typer.Exit(1)
+    try:
+        ok = service.restart(p, busy=lambda: service.port_busy(config.HOST, config.port()))
+    except (RuntimeError, OSError) as e:
+        typer.secho(f"Could not restart the hub: {e}", fg="red")
+        raise typer.Exit(1)
+    if not ok:
+        typer.secho(f"The old hub still holds port {config.port()} after 20 s. Stop it (Task Manager: "
+                    "pythonw.exe running ronda) and run this again.", fg="red")
+        raise typer.Exit(1)
+    typer.secho("Restarted.", fg="green")
+
+
 @service_app.command("status")
 def service_status():
     """Is the hub set to start at login?"""
