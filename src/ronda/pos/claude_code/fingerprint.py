@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ronda import config
+
 CHAIN_DEPTH = 8
 
 
@@ -19,7 +21,7 @@ def rules_path() -> Path:
     override = os.environ.get("RONDA_HOSTS")
     if override:
         return Path(override)
-    user = Path(os.environ.get("RONDA_HOME") or Path.home() / ".ronda") / "hosts.yaml"
+    user = config.home() / "hosts.yaml"
     if user.is_file():
         return user
     return Path(__file__).resolve().parents[2] / "hosts.yaml"
@@ -30,7 +32,7 @@ def load_rules(path: Path | None = None) -> dict:
     import json
 
     src = Path(path or rules_path())
-    cache = Path(os.environ.get("RONDA_HOME") or Path.home() / ".ronda") / "hosts.cache.json"
+    cache = config.home() / "hosts.cache.json"
     key = f"{src.resolve()}|{src.stat().st_mtime_ns}"
     try:
         cached = json.loads(cache.read_text(encoding="utf-8"))
