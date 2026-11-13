@@ -190,12 +190,10 @@ class SnoozeIn(BaseModel):
 @router.post("/sessions/{session_id}/snooze")
 async def snooze(request: Request, session_id: str, body: SnoozeIn):
     st = request.app.state
-    s = await run_in_threadpool(st.store.session, session_id)
+    until = datetime.now(timezone.utc) + (timedelta(minutes=body.minutes) if body.minutes else FOREVER)
+    s = await run_in_threadpool(st.store.set_snooze, session_id, until)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    now = datetime.now(timezone.utc)
-    s.snoozed_until = now + (timedelta(minutes=body.minutes) if body.minutes else FOREVER)
-    await run_in_threadpool(st.store.put_session, s)
     st.broadcaster.publish({"type": "session", "session": session_json(s)})
     return {"snoozed_until": s.snoozed_until.isoformat()}
 
@@ -203,11 +201,9 @@ async def snooze(request: Request, session_id: str, body: SnoozeIn):
 @router.delete("/sessions/{session_id}/snooze")
 async def unsnooze(request: Request, session_id: str):
     st = request.app.state
-    s = await run_in_threadpool(st.store.session, session_id)
+    s = await run_in_threadpool(st.store.set_snooze, session_id, None)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    s.snoozed_until = None
-    await run_in_threadpool(st.store.put_session, s)
     st.broadcaster.publish({"type": "session", "session": session_json(s)})
     return {"snoozed_until": None}
 

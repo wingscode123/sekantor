@@ -45,11 +45,11 @@ the same agent (a terminal that now runs something else), do nothing: Ronda fail
 - Never send anything to the internet from a pos unless that is the platform itself.
 - Never approve on your own. A pos only carries out what the person chose.
 
-## In-process pos (Python)
+## A process of its own
 
-A Python pos can also implement the `Pos` protocol in
-[`src/ronda/pos/base.py`](../src/ronda/pos/base.py) (`discover`, `stream`, `act`). The official pos
-are separate processes started by `ronda up`, for isolation: a crash in one never touches the hub.
+Every pos, the official ones too, is a separate process that talks to the hub over HTTP. A crash in
+one never touches the hub, and a pos can be written in any language. `ronda up` starts the official
+ones.
 
 ## Examples in this repo
 

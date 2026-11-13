@@ -213,7 +213,7 @@ Semua pos menerjemahkan sinyal platform ke satu skema event yang sama. Core hany
 | GET | `/v1/sessions/{id}/actions/next` | Long-poll pos untuk mengambil aksi (dipakai hook Claude Code) |
 | WS | `/v1/stream` | Push event ke UI |
 
-**Kontrak pos (adapter)**: satu modul dengan tiga fungsi, yaitu `discover()` (sesi aktif), `stream()` (yield event), dan `act(session_id, action)` (opsional; mendeklarasikan `capabilities`). Pos bisa berjalan in-process (Python) atau sebagai proses terpisah yang cukup POST ke `/v1/events`, sehingga bahasa pemrogramannya bebas.
+**Kontrak pos (adapter)**: proses terpisah yang POST event ke `/v1/events` dan mengambil jawaban dari `/v1/sessions/{id}/actions/next`, dengan `capabilities` per request. Bahasa pemrogramannya bebas; lihat `docs/writing-a-pos.md` dan `examples/pos_minimal.py`.
 
 ## Security & privacy
 

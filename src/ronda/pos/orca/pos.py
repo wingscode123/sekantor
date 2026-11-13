@@ -54,12 +54,16 @@ class OrcaTerminals:
             return None
         return p.stdout if p.returncode == 0 else None
 
-    def panes(self) -> list[Pane]:
-        out = self._run("terminal", "list")
-        if not out:
+    def panes(self) -> list[Pane] | None:
+        """Agent terminals, or None when the orca CLI did not answer in time."""
+        try:
+            p = self.runner([self.cli, "terminal", "list", "--json"], capture_output=True, text=True, timeout=self.timeout)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if p.returncode != 0:
             return []
         try:
-            data = json.loads(out)
+            data = json.loads(p.stdout)
         except ValueError:
             return []
         terms = (data.get("result") or data).get("terminals") or []

@@ -60,12 +60,17 @@ def _api(path: str, timeout: float = 2.0, method: str = "GET", body: dict | None
 
 
 def _hub(path: str, **kw) -> dict:
-    """_api for commands: a hub that is down or has no token ends the command with one clear line."""
+    """_api for commands: a hub that is down, refuses the token or does not answer ends the command with one line."""
     try:
         return _api(path, **kw)
-    except (OSError, RuntimeError) as e:  # urllib's URLError is an OSError
+    except urllib.error.HTTPError as e:
+        why = "refused the token" if e.code in (401, 403) else "answered with an error"
+        typer.secho(f"The hub {why} (HTTP {e.code}). Run `ronda doctor`.", fg="red")
+    except (urllib.error.URLError, RuntimeError) as e:  # could not connect or send, or no token
         typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
-        raise typer.Exit(1)
+    except OSError as e:  # sent, but the answer did not come: it may have been done
+        typer.secho(f"The hub did not answer in time ({e}). Check `ronda audit` before you try again.", fg="red")
+    raise typer.Exit(1)
 
 
 def _session_path(s: dict, suffix: str) -> str:
@@ -118,7 +123,9 @@ def up(
             typer.secho(f"Port {port} is already in use. Is Ronda already up? Try `ronda status`.", fg="red")
             raise typer.Exit(1)
     token = ensure_token(config.token_path())
-    settings = config.settings()
+    settings, problems = config.load()
+    for p in problems:
+        typer.secho(f"config.toml: {p}", fg="yellow")
     if notify is not None:
         settings.notify = notify
     hub_app = create_app(port=port, token=token, settings=settings)
@@ -304,10 +311,10 @@ def service_install(start: bool = typer.Option(True, "--start/--no-start", help=
     from ronda import service
 
     p = service.plan(config.home())
-    for path, content in p.files.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
     try:
+        for path, content in p.files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
         service.run(p.install)
         if start and p.start:
             with socket.socket() as s:
@@ -502,7 +509,10 @@ def snooze(session: str = typer.Argument(..., help="Session id or a unique prefi
 def unsnooze(session: str = typer.Argument(..., help="Session id or a unique prefix.")):
     """Turn notifications back on for a session."""
     s = _find_session(session)
-    _hub(_session_path(s, "snooze"), method="DELETE")
+    res = _hub(_session_path(s, "snooze"), method="DELETE")
+    if "_status" in res:
+        typer.secho(str(res.get("detail") or res), fg="red")
+        raise typer.Exit(1)
     typer.secho(f"Unmuted {s['session_id']}", fg="green")
 
 
@@ -645,6 +655,9 @@ def doctor():
           "Hub does not start at login: `ronda service install` keeps it on", warn=True)
 
     names = configured(config.home())
+    _, config_problems = config.load()
+    check(not config_problems, f"Settings in {config.config_path()}",
+          "config.toml: " + "; ".join(config_problems))
     _, hook_errors = load_webhooks(config.home())
     check(not hook_errors, "Relay: " + (", ".join(names) if names else "not set up (optional)"),
           "Webhook config problems: " + "; ".join(f"#{e.index + 1} {e.message}" for e in hook_errors))
