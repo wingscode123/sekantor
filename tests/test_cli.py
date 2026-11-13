@@ -96,3 +96,30 @@ def test_cli_snooze_and_unsnooze(hub):
     assert hub.session().snoozed_until is not None
     assert runner.invoke(app, ["unsnooze", "ab"]).exit_code == 0
     assert hub.session().snoozed_until is None
+
+
+def test_cli_wrong_token_is_not_called_unreachable(hub, tmp_path):
+    (tmp_path / "token").write_text("wrong-token-" + "x" * 32)
+    r = runner.invoke(app, ["status"])
+    assert r.exit_code == 1 and "refused the token" in r.output and "not reachable" not in r.output
+
+
+def test_cli_unsnooze_reports_a_refusal(monkeypatch):
+    import ronda.cli as cli
+
+    monkeypatch.setattr(cli, "_find_session", lambda ref: {"session_id": "claude:gone"})
+    monkeypatch.setattr(cli, "_api", lambda *a, **kw: {"_status": 404, "detail": "no such session"})
+    r = runner.invoke(app, ["unsnooze", "gone"])
+    assert r.exit_code == 1 and "no such session" in r.output and "Unmuted" not in r.output
+
+
+def test_service_install_reports_a_file_it_cannot_write(tmp_path, monkeypatch):
+    from ronda import service
+
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("")
+    plan = service.plan(tmp_path)
+    plan.files = {blocker / "ronda.xml": "x"}
+    monkeypatch.setattr(service, "plan", lambda home: plan)
+    r = runner.invoke(app, ["service", "install", "--no-start"])
+    assert r.exit_code == 1 and "Could not install the service" in r.output
