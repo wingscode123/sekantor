@@ -149,3 +149,39 @@ def test_sweep_leaves_an_event_in_the_timeline(client):
     run_sweep(client.app.state.store, client.app.state.broadcaster)
     evs = client.get("/v1/sessions/claude:gone/events", headers=AUTH).json()["events"]
     assert evs[-1]["type"] == "session_ended" and evs[-1]["status"] == "ended"
+
+
+def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
+    """The sweep runs in a worker thread; what it ends must still reach WS clients safely."""
+    import asyncio
+
+    from ronda.hub.app import sweep_tick
+    from ronda.hub.store import Store
+    from ronda.hub.stream import Broadcaster
+    from ronda.hub.waiters import Waiters
+    from ronda.schema import Event
+
+    store = Store(tmp_path / "ronda.db")
+    old = (NOW - timedelta(minutes=20)).isoformat()
+    store.add_event(Event.model_validate({**ev(1, "waiting_input", sid="claude:gone"), "ts": old,
+                                          "process": {"pid": 2_000_000_000}}))
+    broadcaster = Broadcaster()
+
+    async def main():
+        client = asyncio.Queue()
+        broadcaster._queues.add(client)
+        waiting = asyncio.create_task(client.get())
+        await asyncio.sleep(0)
+        await sweep_tick(store, broadcaster, Waiters())
+        return await asyncio.wait_for(waiting, 2)
+
+    import threading
+
+    got = []
+    # debug mode rejects loop calls from other threads; a lost wakeup would hang, so bound it
+    t = threading.Thread(target=lambda: got.append(asyncio.run(main(), debug=True)), daemon=True)
+    t.start()
+    t.join(10)
+    store.close()
+    assert got, "the stream client never got the swept session"
+    assert got[0]["session"]["session_id"] == "claude:gone" and got[0]["session"]["status"] == "ended"
