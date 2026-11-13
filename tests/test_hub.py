@@ -185,3 +185,19 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
     store.close()
     assert got, "the stream client never got the swept session"
     assert got[0]["session"]["session_id"] == "claude:gone" and got[0]["session"]["status"] == "ended"
+
+
+def test_a_failing_sweep_is_logged(tmp_path, monkeypatch, caplog):
+    import time
+
+    import ronda.hub.app as hub_app
+
+    def broken(store, now=None):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(hub_app, "SWEEP_EVERY_S", 0.01)
+    monkeypatch.setattr(hub_app, "run_sweep", broken)
+    app = create_app(home=tmp_path, port=7878, token=TOKEN)
+    with TestClient(app, base_url=BASE):
+        time.sleep(0.3)
+    assert any("sweep failed" in r.getMessage() and r.exc_info for r in caplog.records)
