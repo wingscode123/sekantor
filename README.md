@@ -10,7 +10,7 @@ Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local to
 
 **Status:** pre-alpha, feature-complete for 1.0 (M0 to M4). Watches Claude Code (terminal, VS Code,
 Claude desktop, Orca), OpenBot (Local scripts API), and codex/opencode/gemini/aider in tmux or Orca
-terminals. Approve, deny and reply from the inbox, the CLI, or Telegram; phone notifications via ntfy.
+terminals. Approve, deny and reply from the inbox or the CLI.
 Public beta planned for 25 January 2027.
 
 ## Try it from source
@@ -38,7 +38,6 @@ and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; who
 - [Architecture decisions](docs/adr/)
 - [Dogfooding M1](docs/dogfooding.md)
 - [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
-- [Phone notifications, Telegram, webhooks, tmux](docs/channels.md)
 - [Writing a pos](docs/writing-a-pos.md) and the [threat model](docs/threat-model.md)
 - [Releasing](docs/release.md)
 - [Improvement log](docs/improvement-log.md): the pstack audit, cleanup, CI move and dogfooding (November 2026)

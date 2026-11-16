@@ -1,22 +1,24 @@
-"""config.toml: one read serves the hub settings, the Orca opt-in and the webhooks."""
+"""config.toml: one read serves the hub settings and the Orca opt-in."""
 
 from ronda import config
-from ronda.relay.runner import load_webhooks
 
 
-def test_config_toml_feeds_settings_and_webhooks(tmp_path):
-    (tmp_path / "config.toml").write_text(
-        'approval_wait = 30\norca_pos = true\n[[webhooks]]\nurl = "https://ntfy.sh/x"\nformat = "ntfy"\n')
+def test_old_relay_settings_in_config_toml_are_ignored_not_fatal(tmp_path):
+    # an owner's config.toml still has [telegram] / webhooks
+    (tmp_path / "config.toml").write_text('[telegram]\nchat_id = 1\n[[webhooks]]\nurl = "https://ntfy.sh/x"\n')
+    settings, problems = config.load(tmp_path)
+    assert settings is not None and all("telegram" not in p and "webhook" not in p for p in problems)
+
+
+def test_config_toml_feeds_settings(tmp_path):
+    (tmp_path / "config.toml").write_text("approval_wait = 30\norca_pos = true\n")
     s = config.settings(tmp_path)
     assert (s.approval_wait_s, s.reply_wait_s, s.orca_pos) == (30, 1800, True)
-    hooks, errors = load_webhooks(tmp_path)
-    assert [h.url for h in hooks] == ["https://ntfy.sh/x"] and errors == []
 
 
 def test_missing_config_gives_defaults(tmp_path):
     s = config.settings(tmp_path)
     assert (s.approval_wait_s, s.notify, s.orca_pos) == (600, True, False)
-    assert load_webhooks(tmp_path) == ([], [])
 
 
 def test_one_bad_value_keeps_the_others(tmp_path):

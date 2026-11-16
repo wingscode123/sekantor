@@ -1,4 +1,4 @@
-"""Display names for agents, host apps and statuses: the one copy the hub, notifications and relays use."""
+"""Display names for agents, host apps and statuses: the one copy the hub and notifications use."""
 
 SOURCES = {"claude-code": "Claude Code", "codex": "Codex", "opencode": "opencode", "gemini": "Gemini", "aider": "Aider"}
 HOSTS = {

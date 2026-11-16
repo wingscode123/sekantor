@@ -1,11 +1,10 @@
-"""The inbox, desktop toasts and relays name agents and hosts the same way."""
+"""The inbox and desktop toasts name agents and hosts the same way."""
 
 from datetime import datetime, timezone
 
 from ronda.hub.api import session_json
 from ronda.hub.notify import message
 from ronda.hub.status import SessionState
-from ronda.relay.common import who
 from ronda.schema import Host, Status, Workspace
 
 
@@ -21,7 +20,6 @@ def test_every_channel_uses_the_same_names():
     j = session_json(s)
     assert (j["source_label"], j["host_label"]) == ("Codex", "JetBrains")
     assert message(s) == ("Approval needed", "Codex in JetBrains, shop")
-    assert who(j) == "Codex in JetBrains, shop"
 
 
 def test_unknown_ids_show_as_is():
