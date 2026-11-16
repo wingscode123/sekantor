@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 from typing import Callable
-from urllib.parse import quote
 
 
 class HubApi:
@@ -19,11 +18,6 @@ class HubApi:
 
     def post_event(self, event: dict) -> bool:
         return self.client.post(f"{self.base}/v1/events", json=event).status_code == 202
-
-    def next_action(self, session_id: str, kind: str, request_id: str) -> dict | None:
-        r = self.client.get(f"{self.base}/v1/sessions/{quote(session_id, safe='')}/actions/next",
-                            params={"for": kind, "request_id": request_id, "wait": 0})
-        return r.json().get("action") if r.status_code == 200 else None
 
 
 def connect(name: str) -> HubApi:

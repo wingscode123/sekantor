@@ -1,17 +1,12 @@
 """``ronda-hook``: the Claude Code command hook.
 
 Reads the hook payload on stdin, turns it into a Ronda event, adds the host fingerprint and the agent
-PID, and POSTs it to the hub. Two events then wait for an answer from Ronda (ADR-0008):
+PID, and POSTs it to the hub. That is all it does (ADR-0021): Ronda watches and never answers, so every
+hook runs asynchronously and prints nothing.
 
-- PermissionRequest (runs synchronously): long-polls the hub for an approve/deny for this exact
-  request, up to ``approval_wait``. The terminal or host prompt stays usable meanwhile; whoever
-  answers first wins. Only an explicit action prints a decision.
-- Stop (runs async with asyncRewake): long-polls for a reply, up to ``reply_wait``. A reply exits 2
-  with the text on stderr, which wakes the agent.
-
-Everything else, and every failure (hub down, timeout, bad input, crash), prints nothing and exits 0:
-"no decision", so Claude Code behaves exactly as without Ronda (fail closed). A watchdog ends the
-process at its deadline even if something hangs.
+Every failure (hub down, timeout, bad input, crash) prints nothing and exits 0, so Claude Code behaves
+exactly as without Ronda (fail closed). A watchdog ends the process at its deadline even if something
+hangs.
 """
 
 from __future__ import annotations
@@ -28,29 +23,20 @@ from ronda import config
 
 HARD_TIMEOUT_S = 2.0
 HTTP_TIMEOUT_S = 1.0  # Windows takes ~2 s to refuse a closed loopback port; stay under the watchdog
-SESSION_END_HTTP_TIMEOUT_S = 1.5  # install raises SessionEnd's budget to 5 s (default 1.5 s)
-POLL_S = 25.0  # one long-poll request; the hub caps it at 30 s
+SESSION_END_HTTP_TIMEOUT_S = 1.5  # SessionEnd is the one synchronous hook (5 s timeout), so it may wait a little longer
 MAX_STDIN = 4 * 1024 * 1024
 LOG_MAX = 256 * 1024
 SENT_MAX = 2 * 1024 * 1024
-REPLY_PREFIX = "Reply from the user, sent through Ronda:\n"
 
 
 # --- plumbing ---------------------------------------------------------------------
 
 class Watchdog:
-    """Ends the process with "no decision" at the deadline; the deadline can be pushed out once we know
-    the hook is meant to wait."""
+    """Ends the process at the deadline, whatever the hook is stuck on."""
 
     def __init__(self, seconds: float):
         self.deadline = time.monotonic() + seconds
         threading.Thread(target=self._run, daemon=True).start()
-
-    def extend_to(self, seconds_from_now: float) -> None:
-        self.deadline = max(self.deadline, time.monotonic() + seconds_from_now)
-
-    def remaining(self) -> float:
-        return self.deadline - time.monotonic()
 
     def _run(self) -> None:
         while True:
@@ -168,19 +154,7 @@ def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
         return None
 
 
-def capabilities(payload: dict, env: dict[str, str], settings) -> list[str]:
-    """What Ronda may do for this request (FR-25). Reply only where it was verified (ADR-0008)."""
-    name = payload.get("hook_event_name")
-    if name == "PermissionRequest" and payload.get("tool_name") == "AskUserQuestion":
-        return []  # a question to answer in the app; approving would not answer it
-    if name == "PermissionRequest" and settings.approval_wait_s > 0:
-        return ["approve", "deny"]
-    if name == "Stop" and settings.reply_wait_s > 0 and env.get("CLAUDE_CODE_ENTRYPOINT") in settings.reply_entrypoints:
-        return ["reply"]
-    return []
-
-
-def build_event(payload: dict, env: dict[str, str], settings=None) -> dict | None:
+def build_event(payload: dict, env: dict[str, str]) -> dict | None:
     from ronda.pos.claude_code.translate import translate
 
     event = translate(payload)
@@ -192,10 +166,6 @@ def build_event(payload: dict, env: dict[str, str], settings=None) -> dict | Non
     host = _host(payload, env, deep=False)
     if host:
         event["host"] = host
-    if settings is not None:
-        caps = capabilities(payload, env, settings)
-        if caps:
-            event["capabilities"] = caps
     return event
 
 
@@ -223,58 +193,17 @@ def post(event: dict, timeout: float) -> None:
         raise RuntimeError(f"hub answered {status}")
 
 
-# --- waiting for an answer (ADR-0008) --------------------------------------------------
-
-def wait_for_action(event: dict, kind: str, watchdog: Watchdog) -> dict | None:
-    """Long-poll the hub until an action arrives, the request is resolved elsewhere, or time is up."""
-    from urllib.parse import quote
-
-    token = _token()
-    if not token:
-        return None
-    path = (f"/v1/sessions/{quote(event['session_id'], safe='')}/actions/next"
-            f"?for={kind}&request_id={quote(event['request']['id'], safe='')}")
-    while True:
-        left = watchdog.remaining() - 2.0
-        if left <= 0.5:
-            return None
-        wait = min(POLL_S, left)
-        status, body = request("GET", f"{path}&wait={wait:.1f}", token, None, timeout=wait + 5)
-        if status != 200:
-            return None
-        result = json.loads(body)
-        if result.get("action"):
-            return result["action"]
-        if result.get("reason") != "timeout":
-            return None  # answered in the terminal, session moved on, or ended
-
-
-def decision(action: dict) -> dict | None:
-    if action.get("type") == "approve":
-        return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
-    if action.get("type") == "deny":
-        return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {
-            "behavior": "deny", "message": "Denied by the user from Ronda."}}}
-    return None
-
-
-def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog, can_wait: bool = False) -> int:
-    """Returns the exit code: 0, or 2 only to deliver a reply on Stop.
-
-    ``can_wait`` comes from the ``--wait`` argument, which only an install that runs PermissionRequest
-    synchronously and Stop with asyncRewake passes. An older install never waits and never offers
-    approve or reply, so it cannot swallow an answer it has no way to deliver."""
+def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog) -> int:
+    """Send the event and return 0 (always: a hook never changes what the agent does)."""
     payload = json.loads(stdin.decode("utf-8"))
     if not isinstance(payload, dict):
         return 0
-    settings = _settings()
-    if settings.ignored(payload.get("cwd")):
+    if _settings().ignored(payload.get("cwd")):
         return 0  # e.g. OpenBot's own helper runs from its program folder
-    event = build_event(payload, env, settings=settings if can_wait else None)  # env-only fingerprint: fast
+    event = build_event(payload, env)  # env-only fingerprint: fast
     if event is None:
         return 0
     timeout = SESSION_END_HTTP_TIMEOUT_S if event.get("type") == "session_ended" else HTTP_TIMEOUT_S
-    name = payload.get("hook_event_name")
     sending = event
     try:
         post(event, timeout)
@@ -284,41 +213,20 @@ def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog, can_wait: bool = 
                 post(sending, timeout)
     except Exception as e:
         # The event id lets `ronda stats` match this line to the event, however late it is logged.
-        _log(f"{name}: hub unreachable ({type(e).__name__}) {(sending or event)['event_id']}")
-        return 0
-
-    caps = event.get("capabilities") or []
-    try:
-        if name == "PermissionRequest" and "approve" in caps:
-            watchdog.extend_to(settings.approval_wait_s)
-            action = wait_for_action(event, "approval", watchdog)
-            out = decision(action) if action else None
-            if out:
-                sys.stdout.write(json.dumps(out))
-            return 0
-        if name == "Stop" and "reply" in caps:
-            watchdog.extend_to(settings.reply_wait_s)
-            action = wait_for_action(event, "reply", watchdog)
-            text = (action or {}).get("text")
-            if action and action.get("type") == "reply" and text:
-                sys.stderr.buffer.write((REPLY_PREFIX + text).encode("utf-8"))
-                return 2
-    except Exception as e:
-        _log(f"{name}: waiting for Ronda failed ({type(e).__name__})")
+        _log(f"{payload.get('hook_event_name')}: hub unreachable ({type(e).__name__}) {(sending or event)['event_id']}")
     return 0
 
 
 def main() -> None:
     watchdog = Watchdog(HARD_TIMEOUT_S)
-    code = 0
     try:
-        code = run(sys.stdin.buffer.read(MAX_STDIN), dict(os.environ), watchdog, can_wait="--wait" in sys.argv[1:])
+        run(sys.stdin.buffer.read(MAX_STDIN), dict(os.environ), watchdog)
     except Exception as e:
         _log(f"hook error: {type(e).__name__}: {e}")
     finally:
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(code if code in (0, 2) else 0)
+        os._exit(0)
 
 
 if __name__ == "__main__":

@@ -14,15 +14,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-# ADR-0002 / ADR-0008. Observe-only events run async; SessionEnd sync (1.5 s budget); PermissionRequest
-# sync so it can return a decision; Stop async with asyncRewake so a reply can wake the agent.
+# ADR-0002 / ADR-0021. Every handler runs async: Ronda only watches, so no hook can hold an agent up.
 EVENTS = [
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
     "PostToolUseFailure", "PermissionDenied", "Notification", "Stop", "StopFailure", "SessionEnd",
 ]
-SYNC_EVENTS = {"SessionEnd", "PermissionRequest"}
-REWAKE_EVENTS = {"Stop"}
-MARGIN_S = 30
 HOOK_NAMES = {"ronda-hook", "ronda-hook.exe"}
 
 
@@ -50,27 +46,15 @@ def is_ours(handler: dict) -> bool:
     return Path(cmd.replace("\\", "/")).name.lower() in HOOK_NAMES
 
 
-def handler_for(event: str, exe: Path, settings=None) -> dict:
-    from ronda.config import Settings
-
-    settings = settings or Settings()
+def handler_for(event: str, exe: Path) -> dict:
+    # Exec form (`args`): shell form runs in Git Bash on Windows, where a backslash path breaks
+    # (docs/spike/claude-hooks.md). SessionEnd stays synchronous: an async hook may be killed when the
+    # process exits, and a SessionEnd was the one event lost under load in dogfooding (ADR-0017). It only
+    # POSTs with a short timeout and never waits for an answer.
     h = {"type": "command", "command": exe.as_posix(), "args": []}
-    if event == "PermissionRequest":
-        h["args"] = ["--wait"]
-        h["timeout"] = max(10, settings.approval_wait_s + MARGIN_S)
-    elif event in SYNC_EVENTS:
-        # SessionEnd: Claude Code's shared 1.5 s budget was too short under load (one end lost in
-        # dogfooding); a per-hook timeout raises it.
-        h["timeout"] = 5
-    elif event in REWAKE_EVENTS:
-        h["args"] = ["--wait"]
-        h["async"] = True
-        h["asyncRewake"] = True
-        h["timeout"] = max(10, settings.reply_wait_s + MARGIN_S)
-    else:
-        h["async"] = True
-        h["timeout"] = 10
-    return h
+    if event == "SessionEnd":
+        return {**h, "timeout": 5}
+    return {**h, "async": True, "timeout": 10}
 
 
 def _read(path: Path) -> dict:
@@ -133,12 +117,12 @@ class Result:
     changed: int
 
 
-def install(path: Path, exe: Path, settings=None) -> Result:
+def install(path: Path, exe: Path) -> Result:
     data = _read(path)
     hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
     _strip_ours(hooks)
     for event in EVENTS:
-        hooks.setdefault(event, []).append({"hooks": [handler_for(event, exe, settings)]})
+        hooks.setdefault(event, []).append({"hooks": [handler_for(event, exe)]})
     data["hooks"] = hooks
     backup = _backup(path)
     _write(path, data)
@@ -169,14 +153,17 @@ class Installed:
     commands: set[str] = field(default_factory=set)
     handlers: dict[str, dict] = field(default_factory=dict)
 
-    @property
     def current_shape(self) -> bool:
-        """False for an install from before M2 (PermissionRequest async, Stop without asyncRewake)."""
-        perm, stop = self.handlers.get("PermissionRequest", {}), self.handlers.get("Stop", {})
-        end = self.handlers.get("SessionEnd", {})
-        return (not perm.get("async") and "--wait" in (perm.get("args") or [])
-                and bool(stop.get("asyncRewake")) and "--wait" in (stop.get("args") or [])
-                and (end.get("timeout") or 0) >= 5)
+        """False for an install from before ADR-0021: a handler with ``--wait``, a synchronous one (except
+        SessionEnd), one with asyncRewake, or one in shell form. `ronda doctor` then says to reinstall."""
+        def ok(event: str, h: dict) -> bool:
+            if h.get("args") != [] or "asyncRewake" in h:
+                return False
+            if event == "SessionEnd":
+                return "async" not in h and (h.get("timeout") or 0) >= 5
+            return h.get("async") is True
+
+        return all(ok(e, h) for e, h in self.handlers.items())
 
     @property
     def complete(self) -> bool:

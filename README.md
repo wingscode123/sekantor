@@ -26,9 +26,8 @@ uv run ronda doctor
 ```
 
 Start Claude Code in that project and its card appears in the inbox. `uv run ronda status` shows the
-same list in the terminal. Approve, deny or reply from the inbox, or with `uv run ronda approve|deny <session>`
-and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; whoever answers first wins).
-`uv run ronda audit` lists every action. `uv run ronda stats` reports lost events and time spent waiting for you;
+same list in the terminal. Ronda only watches: you answer an agent in its own app, and the inbox says where.
+`uv run ronda stats` reports lost events and time spent waiting for you;
 `uv run ronda uninstall claude` removes only Ronda's hooks.
 
 ## Docs

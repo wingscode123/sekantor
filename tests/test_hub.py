@@ -158,7 +158,6 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
     from ronda.hub.app import sweep_tick
     from ronda.hub.store import Store
     from ronda.hub.stream import Broadcaster
-    from ronda.hub.waiters import Waiters
     from ronda.schema import Event
 
     store = Store(tmp_path / "ronda.db")
@@ -172,7 +171,7 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
         broadcaster._queues.add(client)
         waiting = asyncio.create_task(client.get())
         await asyncio.sleep(0)
-        await sweep_tick(store, broadcaster, Waiters())
+        await sweep_tick(store, broadcaster)
         return await asyncio.wait_for(waiting, 2)
 
     import threading
@@ -201,3 +200,14 @@ def test_a_failing_sweep_is_logged(tmp_path, monkeypatch, caplog):
     with TestClient(app, base_url=BASE):
         time.sleep(0.3)
     assert any("sweep failed" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+def test_actions_routes_are_gone(client):
+    assert client.post("/v1/sessions/x/actions", json={"type": "approve"}, headers=AUTH).status_code in (404, 405)
+    assert client.get("/v1/sessions/x/actions/next?request_id=r&for=approval", headers=AUTH).status_code == 404
+    assert client.get("/v1/actions", headers=AUTH).status_code == 404
+
+
+def test_an_old_event_with_capabilities_is_accepted(client):
+    e = ev(1, "waiting_approval", capabilities=["approve", "deny"], request={"kind": "tool", "id": "r1"})
+    assert client.post("/v1/events", json=e, headers=AUTH).status_code == 202

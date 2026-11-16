@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Action, Connection, Session, StreamMessage } from "./types";
+import type { Connection, Session, StreamMessage } from "./types";
 
 const PRIORITY: Record<Session["status"], number> = {
   waiting_approval: 0, waiting_input: 1, error: 2, running: 3, done: 4, ended: 5,
@@ -14,10 +14,9 @@ export function inboxOrder(sessions: Iterable<Session>): Session[] {
 
 /** Live sessions over WS /v1/stream, reconnecting with backoff. Auth rides on the hub's cookie. */
 export function useInbox(): {
-  sessions: Session[]; connection: Connection; loaded: boolean; actions: Map<string, Action>;
+  sessions: Session[]; connection: Connection; loaded: boolean;
 } {
   const [byId, setById] = useState<Map<string, Session>>(new Map());
-  const [actions, setActions] = useState<Map<string, Action>>(new Map()); // latest action per request id
   const [connection, setConnection] = useState<Connection>("connecting");
   const [loaded, setLoaded] = useState(false);
   const retry = useRef(0);
@@ -38,9 +37,6 @@ export function useInbox(): {
           setLoaded(true);
         } else if (msg.type === "session") {
           setById((prev) => new Map(prev).set(msg.session.session_id, msg.session));
-        } else if (msg.type === "action" && msg.action.request_id) {
-          const a = msg.action;
-          setActions((prev) => new Map(prev).set(a.request_id!, a));
         }
       };
       ws.onclose = async (e) => {
@@ -61,7 +57,7 @@ export function useInbox(): {
     return () => { stopped = true; window.clearTimeout(timer); ws?.close(); };
   }, []);
 
-  return { sessions: inboxOrder(byId.values()), connection, loaded, actions };
+  return { sessions: inboxOrder(byId.values()), connection, loaded };
 }
 
 /** Re-render every `ms` so "time in status" keeps moving. */

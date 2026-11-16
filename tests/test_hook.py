@@ -236,3 +236,28 @@ def test_pre_tool_use_event_carries_activity():
 def test_only_pre_tool_use_sets_activity():
     ev = translate({"hook_event_name": "PostToolUse", "session_id": "x", "tool_name": "Bash"})
     assert "activity" not in ev
+
+
+def test_permission_request_hook_returns_at_once_with_no_output(home):
+    from ronda.hub.app import create_app
+
+    port = free_port()
+    app = create_app(home=home, port=port, token="tok")
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    th = threading.Thread(target=server.run, daemon=True)
+    th.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.05)
+    ask = json.dumps({"hook_event_name": "PermissionRequest", "session_id": "abc", "cwd": str(ROOT),
+                      "tool_name": "Bash", "tool_input": {"command": "npm test"}}).encode()
+    try:
+        p, dt = run_hook(home, port, ask, {"CLAUDE_CODE_ENTRYPOINT": "claude-vscode"})
+        assert p.returncode == 0 and p.stdout == b"" and p.stderr == b""
+        assert dt < hook.HARD_TIMEOUT_S + STARTUP_SLACK_S
+        s = app.state.store.session("claude:abc")
+        assert s.status.value == "waiting_approval" and s.capabilities == []
+    finally:
+        server.should_exit = True
+        th.join(5)

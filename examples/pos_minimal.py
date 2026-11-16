@@ -1,16 +1,15 @@
-"""A minimal Ronda pos, standard library only, about 70 lines. Copy it to start your own.
+"""A minimal Ronda pos, standard library only, about 50 lines. Copy it to start your own.
 
-It reports a pretend agent that works, then asks for approval, and acts on Approve/Deny from Ronda.
-Run `ronda up`, then `python examples/pos_minimal.py`, and answer the card in the inbox.
+It reports a pretend agent that works, then waits for approval, then goes on. Ronda only watches
+(ADR-0021): you answer in the agent's own app, and the pos just reports what happens.
+Run `ronda up`, then `python examples/pos_minimal.py`, and watch the card in the inbox.
 
-A real pos replaces `watch_agent()` with how your platform shows its agent's state, and `answer()`
-with how it hands the answer back (an API call, keys typed into a terminal, ...).
+A real pos replaces `watch_agent()` with how your platform shows its agent's state.
 """
 
 import json
 import os
 import time
-import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -19,6 +18,7 @@ from pathlib import Path
 HUB = os.environ.get("RONDA_URL", "http://127.0.0.1:7878")
 TOKEN = (Path(os.environ.get("RONDA_HOME", Path.home() / ".ronda")) / "token").read_text().strip()
 SESSION = f"example:{uuid.uuid4().hex[:8]}"  # stable for one run of one agent; prefix = your pos
+WAIT_S = float(os.environ.get("EXAMPLE_WAIT_S", "5"))  # how long the pretend agent waits for you
 
 
 def call(method, path, body=None, timeout=10):
@@ -28,21 +28,14 @@ def call(method, path, body=None, timeout=10):
         return json.loads(r.read() or b"null")
 
 
-def event(status, summary, type="status_changed", request=None, capabilities=()):
+def event(status, summary, type="status_changed", request=None):
     """Schema v1: see src/ronda/schema.py. Unknown fields are ignored, so it is safe to add your own."""
     call("POST", "/v1/events", {
         "v": 1, "event_id": uuid.uuid4().hex, "ts": datetime.now(timezone.utc).isoformat(),
         "source": "example", "session_id": SESSION, "agent": {"name": "example-agent"},
         "workspace": {"cwd": os.getcwd()}, "host": {"app": "terminal", "confidence": 1.0, "via": ["example"]},
-        "type": type, "status": status, "summary": summary, "request": request, "capabilities": list(capabilities),
+        "type": type, "status": status, "summary": summary, "request": request,
     })
-
-
-def next_action(request_id, kind="approval"):
-    """Ask the hub for the answer to one request; wait up to 25 s per call."""
-    q = urllib.parse.urlencode({"for": kind, "request_id": request_id, "wait": 25})
-    # the hub may hold the request for up to 25 s, so the client must wait longer than that
-    return call("GET", f"/v1/sessions/{urllib.parse.quote(SESSION, safe='')}/actions/next?{q}", timeout=35)
 
 
 def watch_agent():
@@ -52,24 +45,12 @@ def watch_agent():
     return "npm run deploy"
 
 
-def answer(approved):
-    print("approved, running it" if approved else "denied, skipping it")
-
-
 def main():
     command = watch_agent()
-    rid = uuid.uuid4().hex  # one id per question: an answer always names the question it answers
-    event("waiting_approval", f"Wants to run: {command}", capabilities=["approve", "deny"],
-          request={"kind": "tool", "tool": "shell", "input": command, "id": rid})
-    print(f"Waiting for Approve/Deny on {SESSION} in the inbox ...")
-    while True:
-        result = next_action(rid)
-        if result["action"]:
-            answer(result["action"]["type"] == "approve")
-            break
-        if result["reason"] != "timeout":
-            print("answered elsewhere")
-            break
+    event("waiting_approval", f"Wants to run: {command}",
+          request={"kind": "tool", "tool": "shell", "input": command})
+    print(f"{SESSION} waits for approval in its own app; watch it in the inbox ...")
+    time.sleep(WAIT_S)  # a real pos reports "running" again when the agent's own prompt is answered
     event("running", "Back to work")
     event("ended", "Done", type="session_ended")
 
