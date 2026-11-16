@@ -87,12 +87,31 @@ def test_migrate_copies_token_config_and_db(tmp_path):
         assert os.stat(new / "token").st_mode & 0o777 == 0o600
 
 
-def test_migrate_never_overwrites(tmp_path):
+def test_migrate_never_overwrites_and_fills_only_what_is_missing(tmp_path):
     old, new = _old_home(tmp_path), tmp_path / ".sekantor"
     new.mkdir()
     (new / "token").write_text("mine")
+    assert config.migrate_home(old, new) is True
+    assert (new / "token").read_text() == "mine" and (new / "sekantor.db").exists()
     assert config.migrate_home(old, new) is False
-    assert (new / "token").read_text() == "mine" and not (new / "sekantor.db").exists()
+
+
+def test_migrate_runs_when_the_new_home_only_holds_a_cache_file(tmp_path):
+    old, new = _old_home(tmp_path), tmp_path / ".sekantor"
+    new.mkdir()
+    (new / "hosts.cache.json").write_text("{}")
+    assert config.migrate_home(old, new) is True
+    assert (new / "token").read_text() == "t" and (new / "sekantor.db").exists()
+    assert (new / "hosts.cache.json").read_text() == "{}"
+
+
+def test_migrate_reports_a_failed_item_and_keeps_the_rest(tmp_path):
+    old, new = _old_home(tmp_path), tmp_path / ".sekantor"
+    new.mkdir()
+    (new / "sekantor.db.part").mkdir()  # makes the database copy fail
+    errors: list[str] = []
+    assert config.migrate_home(old, new, errors) is True
+    assert (new / "token").exists() and any("sekantor.db" in e for e in errors)
 
 
 def test_migrate_without_an_old_home_does_nothing(tmp_path):
@@ -113,3 +132,12 @@ def test_legacy_migration_runs_from_the_user_home_unless_sekantor_home_is_set(tm
     assert config.migrate_legacy_home() is True and (tmp_path / ".sekantor" / "token").read_text() == "t"
     monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path / "elsewhere"))
     assert config.migrate_legacy_home() is False and not (tmp_path / "elsewhere").exists()
+
+
+def test_migrate_note_says_what_happened(tmp_path, monkeypatch):
+    _old_home(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("SEKANTOR_HOME", raising=False)
+    assert config.migrate_note() == "Copied ~/.ronda to ~/.sekantor"
+    assert config.migrate_note() == ""

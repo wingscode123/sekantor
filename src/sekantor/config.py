@@ -13,45 +13,70 @@ def home() -> Path:
     return Path(os.environ.get("SEKANTOR_HOME") or Path.home() / ".sekantor")
 
 
-def migrate_home(old: Path, new: Path) -> bool:
-    """Copy a Ronda-era home into the SeKantor one, once (ADR-0023).
+def migrate_home(old: Path, new: Path, errors: list[str] | None = None) -> bool:
+    """Copy a Ronda-era home into the SeKantor one (ADR-0023).
 
-    Only when ``new`` does not exist and ``old`` does. Copies token (mode 600), config.toml,
-    hosts.cache.json and the database (sqlite backup, safe while an old hub writes). Never touches
-    ``old`` and never overwrites anything in ``new``. True when it copied.
+    Skipped when ``old`` is missing or ``new`` already has both its token and its database.
+    Otherwise each item (token with mode 600, config.toml, hosts.cache.json, the database via sqlite
+    backup, safe while an old hub writes) is copied only when ``new`` lacks it, so a folder that
+    something else created first (a cache file, say) still migrates and nothing is overwritten.
+    Never touches ``old``. A failed item is appended to ``errors`` and the rest carry on.
+    True when anything was copied.
     """
     import shutil
     import sqlite3
 
-    if new.exists() or not old.is_dir():
+    if not old.is_dir() or ((new / "token").exists() and (new / "sekantor.db").exists()):
         return False
-    new.mkdir(parents=True)
+    errors = errors if errors is not None else []
+    copied = False
     for name in ("token", "config.toml", "hosts.cache.json"):
-        if (old / name).is_file():
-            shutil.copyfile(old / name, new / name)
-    if (new / "token").exists():
-        os.chmod(new / "token", 0o600)
-    if (old / "ronda.db").is_file():
-        src = sqlite3.connect(f"file:{(old / 'ronda.db').as_posix()}?mode=ro", uri=True)
-        dst = sqlite3.connect(new / "sekantor.db")
+        if (old / name).is_file() and not (new / name).exists():
+            try:
+                new.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(old / name, new / name)
+                if name == "token":
+                    os.chmod(new / name, 0o600)
+                copied = True
+            except OSError as e:
+                errors.append(f"{name}: {e}")
+    if (old / "ronda.db").is_file() and not (new / "sekantor.db").exists():
+        tmp = new / "sekantor.db.part"
         try:
-            src.backup(dst)
-        finally:
-            dst.close()
-            src.close()
-    return True
+            new.mkdir(parents=True, exist_ok=True)
+            src = sqlite3.connect(f"file:{(old / 'ronda.db').as_posix()}?mode=ro", uri=True)
+            dst = sqlite3.connect(tmp)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+            os.replace(tmp, new / "sekantor.db")
+            copied = True
+        except (OSError, sqlite3.Error) as e:
+            errors.append(f"sekantor.db: {e}")
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return copied
 
 
-def migrate_legacy_home() -> bool:
+def migrate_legacy_home(errors: list[str] | None = None) -> bool:
     """migrate_home from ~/.ronda, unless SEKANTOR_HOME points somewhere else on purpose."""
-    import sqlite3
-
     if os.environ.get("SEKANTOR_HOME"):
         return False
-    try:
-        return migrate_home(Path.home() / ".ronda", home())
-    except (OSError, sqlite3.Error):
-        return False
+    return migrate_home(Path.home() / ".ronda", home(), errors)
+
+
+def migrate_note() -> str:
+    """Run the legacy migration; a one-line note for the user when it did something or failed."""
+    errors: list[str] = []
+    copied = migrate_legacy_home(errors)
+    if not copied and not errors:
+        return ""
+    line = "Copied ~/.ronda to ~/.sekantor"
+    return line + (f" (not copied: {'; '.join(errors)})" if errors else "")
 
 
 def token_path() -> Path:

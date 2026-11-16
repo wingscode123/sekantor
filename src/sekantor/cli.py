@@ -107,7 +107,7 @@ def up(
     from sekantor.hub.auth import ensure_token
 
     global _CHILD_OUT
-    config.migrate_legacy_home()  # first run after the rename: copy ~/.ronda over (ADR-0023)
+    _migrate()  # first run after the rename: copy ~/.ronda over (ADR-0023)
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         _rotate_log(log_file)
@@ -211,6 +211,13 @@ _CHILD_OUT = None  # where child processes write when the hub runs as a service
 LOG_MAX_BYTES = 5_000_000
 
 
+def _migrate() -> None:
+    """Copy a Ronda-era home over once, and say so."""
+    note = config.migrate_note()
+    if note:
+        typer.echo(note)
+
+
 def _rotate_log(path: Path, max_bytes: int = LOG_MAX_BYTES) -> None:
     """Move a large log to <name>.1 (replacing the old one) so the service log never grows without bound."""
     try:
@@ -252,7 +259,7 @@ def service_install(start: bool = typer.Option(True, "--start/--no-start", help=
     from sekantor import service
 
     p = service.plan(config.home())
-    config.migrate_legacy_home()
+    _migrate()
     service.run(p.cleanup, check=False)  # the old Ronda service, so it does not start a second hub
     for old in p.cleanup_files:
         old.unlink(missing_ok=True)
@@ -462,7 +469,7 @@ def install_claude(
     """Install sekantor-hook into Claude Code settings (backs the file up first)."""
     from sekantor.pos.claude_code import install as inst
 
-    config.migrate_legacy_home()
+    _migrate()
     path = inst.settings_path(_scope(project, global_))
     exe = inst.hook_executable()
     if not exe:
@@ -503,6 +510,7 @@ def uninstall_claude(
 @app.command()
 def doctor():
     """Check that everything is in place."""
+    _migrate()
     from sekantor.hub.app import web_dist
     from sekantor.hub.auth import read_token, token_mode_ok
     from sekantor.pos.claude_code import install as inst
