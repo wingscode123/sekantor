@@ -142,7 +142,7 @@ def test_install_replaces_ronda_handlers(tmp_path):
 
 
 def test_old_and_new_hook_names_are_ours_in_any_slash_style():
-    for cmd in ("/x/ronda-hook", "C:\a\Ronda-Hook.EXE", "C:/a/sekantor-hook.exe", "sekantor-hook"):
+    for cmd in ("/x/ronda-hook", r"C:\a\Ronda-Hook.EXE", "C:/a/sekantor-hook.exe", "sekantor-hook"):
         assert inst.is_ours({"command": cmd})
     assert not inst.is_ours({"command": "C:/a/orca-agent-hook.exe claude"})
 
