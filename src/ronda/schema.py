@@ -2,6 +2,7 @@
 
 Additions to the PRD example, both optional and backward-compatible:
 - ``process.pid`` (ADR-0006) for FR-07 liveness checks.
+- ``activity`` (ADR-0022): the tool in use and its kind.
 """
 
 from __future__ import annotations
@@ -73,6 +74,13 @@ class Process(_Model):
     pid: int = Field(gt=0)
 
 
+class Activity(_Model):
+    """What the agent is doing right now (ADR-0022): the tool and its kind."""
+
+    tool: str = Field(max_length=100)
+    kind: Literal["read", "edit", "run", "web", "other"]
+
+
 class Event(_Model):
     v: Literal[1] = SCHEMA_VERSION
     event_id: str = Field(min_length=1, max_length=128)
@@ -88,6 +96,7 @@ class Event(_Model):
     request: Request | None = None
     capabilities: list[Capability] = Field(default_factory=list)
     process: Process | None = None
+    activity: Activity | None = None
 
     @field_validator("ts")
     @classmethod

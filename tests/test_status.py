@@ -237,3 +237,21 @@ def test_events_well_after_end_revive_a_session_whose_restart_was_missed():
     # SessionStart, later events from the live process must still bring the session back.
     s = run(ev(Status.running, at=0), ev(Status.ended, at=10, type="session_ended"), ev(Status.running, at=40))
     assert s.status is Status.running and s.ended_at is None
+
+
+# --- activity -------------------------------------------------------------
+
+def test_activity_is_kept_while_running_and_cleared_when_status_changes():
+    s = run(ev(Status.running, at=0, activity={"tool": "Read", "kind": "read"}))
+    assert s.activity == {"tool": "Read", "kind": "read"}
+    s = apply(s, ev(Status.running, at=1))  # PostToolUse: running, no activity
+    assert s.activity == {"tool": "Read", "kind": "read"}
+    s = apply(s, ev(Status.running, at=2, activity={"tool": "Bash", "kind": "run"}))
+    assert s.activity == {"tool": "Bash", "kind": "run"}
+    s = apply(s, ev(Status.done, at=3))
+    assert s.activity is None
+
+
+def test_activity_cleared_when_waiting():
+    s = run(ev(Status.running, at=0, activity={"tool": "Edit", "kind": "edit"}), ev(Status.waiting_input, at=1))
+    assert s.activity is None
