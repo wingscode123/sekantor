@@ -45,6 +45,7 @@ class SessionState(BaseModel):
     request: Request | None = None
     capabilities: list[Capability] = []
     pid: int | None = None
+    activity: dict | None = None  # {"tool", "kind"} of the last tool started while running (ADR-0022)
     snoozed_until: datetime | None = None  # FR-15: no notifications until then
 
     def snoozed(self, now: datetime) -> bool:
@@ -59,6 +60,10 @@ def _merge_workspace(old: Workspace, new: Workspace | None) -> Workspace:
     if new is None:
         return old
     return Workspace(cwd=new.cwd or old.cwd, branch=new.branch or old.branch)
+
+
+def _activity(event: Event) -> dict | None:
+    return event.activity.model_dump() if event.activity else None
 
 
 def apply(state: SessionState | None, event: Event) -> SessionState:
@@ -81,6 +86,7 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             request=event.request if status in WAITING else None,
             capabilities=list(event.capabilities),
             pid=event.process.pid if event.process else None,
+            activity=_activity(event) if status is Status.running else None,
         )
 
     s = state.model_copy(deep=True)
@@ -120,6 +126,10 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             s.status = event.status
             s.status_since = event.ts
         s.status_ts = event.ts
+        if s.status is Status.running:
+            s.activity = _activity(event) or s.activity
+        else:
+            s.activity = None
         if s.status is Status.ended:
             s.ended_at = event.ts
         else:

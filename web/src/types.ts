@@ -20,6 +20,7 @@ export interface Session {
   request?: { kind: string; tool?: string | null; input?: string | null; id?: string | null } | null;
   capabilities: string[];
   pid?: number | null;
+  activity?: { tool: string; kind: "read" | "edit" | "run" | "web" | "other" } | null;
   needs_you: boolean;
   source_label: string;
   host_label?: string | null;

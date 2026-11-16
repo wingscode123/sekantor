@@ -23,6 +23,19 @@ def new_event_id() -> str:
     return f"{time.time_ns():016x}{secrets.token_hex(4)}"
 
 
+ACTIVITY_KINDS = {
+    "Read": "read", "Grep": "read", "Glob": "read", "LS": "read", "NotebookRead": "read",
+    "Edit": "edit", "MultiEdit": "edit", "Write": "edit", "NotebookEdit": "edit",
+    "Bash": "run", "BashOutput": "run", "KillShell": "run", "PowerShell": "run",
+    "WebSearch": "web", "WebFetch": "web",
+}
+
+
+def activity_kind(tool: str) -> str:
+    """The kind of work a tool does; a tool never seen before (MCP, subagent) is ``other``."""
+    return ACTIVITY_KINDS.get(tool, "other")
+
+
 def _clip(text: str | None, n: int) -> str | None:
     if not text:
         return None
@@ -96,6 +109,7 @@ def translate(payload: dict) -> dict | None:
     etype = "status_changed"
     summary: str | None = None
     request: dict | None = None
+    activity: dict | None = None
     tool = payload.get("tool_name")
 
     if name == "SessionStart":
@@ -115,6 +129,8 @@ def translate(payload: dict) -> dict | None:
         status = "running"
         text = tool_input_text(payload.get("tool_input"))
         summary = _clip(f"{tool}: {text}" if text else tool, SUMMARY_MAX)
+        if tool:
+            activity = {"tool": str(tool)[:100], "kind": activity_kind(tool)}
     elif name == "PermissionRequest" and tool == "AskUserQuestion":
         # Claude asks the person something. Approving the tool does not answer it, so this is a
         # question to answer in the app, not an approval (dogfooding 2026-11-11).
@@ -165,5 +181,6 @@ def translate(payload: dict) -> dict | None:
         "summary": summary,
         "request": request,
         "capabilities": [],
+        "activity": activity,
     }
     return {k: v for k, v in event.items() if v is not None}

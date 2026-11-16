@@ -217,3 +217,22 @@ def test_rewake_prompt_gets_a_readable_summary():
     ev = translate({"hook_event_name": "UserPromptSubmit", "session_id": "x",
                     "prompt": "<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>"})
     assert ev["summary"] == "Continuing after your reply" and ev["status"] == "running"
+
+
+@pytest.mark.parametrize("tool,kind", [("Read", "read"), ("Grep", "read"), ("Edit", "edit"), ("Write", "edit"),
+    ("Bash", "run"), ("PowerShell", "run"), ("WebFetch", "web"), ("mcp__github__create_issue", "other"),
+    ("Task", "other"), ("", "other")])
+def test_activity_kind(tool, kind):
+    from ronda.pos.claude_code.translate import activity_kind
+    assert activity_kind(tool) == kind
+
+
+def test_pre_tool_use_event_carries_activity():
+    ev = translate({"hook_event_name": "PreToolUse", "session_id": "x", "tool_name": "Bash",
+                    "tool_input": {"command": "npm test"}})
+    assert ev["activity"] == {"tool": "Bash", "kind": "run"}
+
+
+def test_only_pre_tool_use_sets_activity():
+    ev = translate({"hook_event_name": "PostToolUse", "session_id": "x", "tool_name": "Bash"})
+    assert "activity" not in ev
