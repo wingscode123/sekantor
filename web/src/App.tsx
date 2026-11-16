@@ -1,8 +1,7 @@
 import { useEffect } from "react";
-import { ApprovalControls, ReplyForm } from "./Actions";
 import { Timeline } from "./Timeline";
 import { SessionMenu, isSnoozed } from "./SessionMenu";
-import { STATUS_CLASS, type Action, type Connection, type Session } from "./types";
+import { STATUS_CLASS, type Connection, type Session } from "./types";
 import { useInbox, useNow } from "./useInbox";
 
 const STATUS_TEXT: Record<Session["status"], string> = {
@@ -35,7 +34,7 @@ function Source({ s }: { s: Session }) {
   );
 }
 
-function Card({ s, now, action }: { s: Session; now: number; action?: Action }) {
+function Card({ s, now }: { s: Session; now: number }) {
   const lit = s.status === "waiting_approval" || s.status === "waiting_input";
   const cmd = s.status === "waiting_approval" ? s.request?.input : null;
   return (
@@ -56,13 +55,7 @@ function Card({ s, now, action }: { s: Session; now: number; action?: Action }) 
         <code title={s.workspace.cwd ?? undefined}>{project(s.workspace.cwd)}</code>
         {s.workspace.branch && <code>{s.workspace.branch}</code>}
       </p>
-      {s.status === "waiting_approval" && <ApprovalControls s={s} action={action} />}
-      {s.status === "waiting_input" && <ReplyForm s={s} action={action} />}
-      {s.status === "waiting_input" && s.request?.kind === "question" && !s.capabilities.includes("reply") && (
-        <p className="card__note">
-          Answer it in {s.host_label ?? "the app"}.
-        </p>
-      )}
+      {lit && <p className="card__note">Answer it in {s.host_label ?? "the app"}.</p>}
       <SessionMenu s={s} now={now} />
       <Timeline sessionId={s.session_id} />
     </article>
@@ -109,7 +102,7 @@ const HUB_TEXT: Record<Connection, string> = {
 };
 
 export default function App() {
-  const { sessions, connection, loaded, actions } = useInbox();
+  const { sessions, connection, loaded } = useInbox();
   const now = useNow(1000);
   const awake = sessions.filter((s) => !isSnoozed(s, now) || s.status === "ended");
   const needs = awake.filter((s) => s.needs_you);
@@ -160,7 +153,7 @@ export default function App() {
       <>
         <Group id="g-needs" title="Needs you" count={needs.length} h1>
           {needs.length ? (
-            <div className="needs">{needs.map((s) => <Card key={s.session_id} s={s} now={now} action={s.request?.id ? actions.get(s.request.id) : undefined} />)}</div>
+            <div className="needs">{needs.map((s) => <Card key={s.session_id} s={s} now={now} />)}</div>
           ) : (
             <p className="group__empty">Nobody is waiting for you.</p>
           )}

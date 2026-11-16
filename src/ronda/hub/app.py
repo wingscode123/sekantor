@@ -16,7 +16,6 @@ from fastapi.staticfiles import StaticFiles
 from ronda import config
 from ronda.hub.api import router, session_json
 from ronda.hub.notify import Notifier
-from ronda.hub.waiters import Waiters
 from ronda.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from ronda.hub.store import SLOW_S, Store
 from ronda.hub.status import SessionState, sweep
@@ -58,7 +57,6 @@ def run_sweep(store: Store, now: datetime | None = None) -> list[SessionState]:
                        session_id=s.session_id, type="session_ended", status=Status.ended,
                        summary="Ended: no events for 10 minutes and the process is gone")
             out = store.add_event(ev) or out
-            store.expire_actions(out.session_id, None)
             ended.append(out)
     return ended
 
@@ -74,10 +72,9 @@ async def watch_loop(interval: float = 0.5, threshold: float = SLOW_S) -> None:
             log.warning("event loop was blocked for %.1fs", late)
 
 
-async def sweep_tick(store: Store, broadcaster: Broadcaster, waiters: Waiters) -> None:
-    """Sweep in a worker thread, then wake long-polls and tell stream clients here, on the event loop."""
+async def sweep_tick(store: Store, broadcaster: Broadcaster) -> None:
+    """Sweep in a worker thread, then tell stream clients here, on the event loop."""
     for s in await asyncio.to_thread(run_sweep, store):
-        waiters.notify(s.session_id)
         broadcaster.publish({"type": "session", "session": session_json(s)})
 
 
@@ -89,7 +86,6 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     settings = settings or config.settings(home)
     store = Store(home / "ronda.db")
     broadcaster = Broadcaster()
-    waiters = Waiters()
     notifier = notifier or Notifier(enabled=settings.notify, quiet=settings.quiet)
 
     @asynccontextmanager
@@ -100,7 +96,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
                 try:
-                    await sweep_tick(store, broadcaster, waiters)
+                    await sweep_tick(store, broadcaster)
                 except Exception:
                     log.warning("sweep failed", exc_info=True)
                 if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
@@ -121,7 +117,6 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                   lifespan=lifespan)
     app.state.store = store
     app.state.broadcaster = broadcaster
-    app.state.waiters = waiters
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()

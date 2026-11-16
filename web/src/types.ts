@@ -27,22 +27,8 @@ export interface Session {
   open_label?: string | null;
 }
 
-export interface Action {
-  id: number;
-  session_id: string;
-  request_id: string | null;
-  type: "approve" | "deny" | "reply";
-  text?: string | null;
-  channel: string;
-  actor: string;
-  created_at: string;
-  outcome: "pending" | "delivered" | "superseded" | "expired";
-  outcome_at?: string | null;
-}
-
 export type StreamMessage =
   | { type: "snapshot"; sessions: Session[] }
-  | { type: "session"; session: Session }
-  | { type: "action"; action: Action };
+  | { type: "session"; session: Session };
 
 export type Connection = "connecting" | "live" | "down" | "unauthorized";

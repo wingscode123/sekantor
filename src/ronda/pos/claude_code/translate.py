@@ -164,6 +164,5 @@ def translate(payload: dict) -> dict | None:
         "status": status,
         "summary": summary,
         "request": request,
-        "capabilities": [],
     }
     return {k: v for k, v in event.items() if v is not None}

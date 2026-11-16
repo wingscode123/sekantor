@@ -34,40 +34,15 @@ def hub_url() -> str:
 
 # --- settings: ~/.ronda/config.toml (all optional) ----------------------------
 
-DEFAULT_RISKY = [
-    r"\brm\s+(-\S*\s+)*-\S*[rRf]",            # rm -rf, rm -r, rm -f
-    r"\bgit\s+push\b.*(--force|\s-f\b)",
-    r"\bgit\s+reset\s+--hard\b",
-    r"\bgit\s+clean\s+-\S*f",
-    r"\b(drop|truncate)\s+(table|database|schema)\b",
-    r"\bmkfs\b|\bdd\s+if=|\bformat\s+[a-z]:",
-    r"\bchmod\s+-R\s+777\b",
-    r"\bRemove-Item\b.*-Recurse",
-    r"\b(shutdown|reboot)\b",
-    r"\bsudo\b",
-    r"curl[^|]*\|\s*(ba|z)?sh\b",
-]
-
-
-# Claude Code entrypoints where a reply through an asyncRewake Stop hook was verified to wake the agent
-# (docs/spike/m2-actions.md): a terminal, and an Orca chat (Agent SDK). Others can be added in config.toml.
-DEFAULT_REPLY_ENTRYPOINTS = ["cli", "sdk-ts"]
-
 # Folders whose Claude Code runs are not agent sessions: OpenBot's own helper runs start in its
 # program folder (28 of 37 "OpenBot" sessions in the first dogfooding run).
 DEFAULT_IGNORE_CWD = [r"/Programs/OpenBot(/|$)", r"/OpenBot\.app/", r"^/opt/OpenBot(/|$)"]
 
 
 class Settings:
-    def __init__(self, approval_wait_s: int = 600, reply_wait_s: int = 1800, notify: bool = True,
-                 risky: list[str] | None = None, reply_entrypoints: list[str] | None = None,
-                 quiet_hours: str | None = None, ignore_cwd: list[str] | None = None, orca_pos: bool = False):
-        self.approval_wait_s = max(0, min(int(approval_wait_s), 3600))
-        self.reply_wait_s = max(0, min(int(reply_wait_s), 86400))
+    def __init__(self, notify: bool = True, quiet_hours: str | None = None, ignore_cwd: list[str] | None = None,
+                 orca_pos: bool = False):
         self.notify = bool(notify)
-        self.risky = list(risky) if risky is not None else list(DEFAULT_RISKY)
-        self.reply_entrypoints = (list(DEFAULT_REPLY_ENTRYPOINTS) if reply_entrypoints is None
-                                  else [str(e) for e in reply_entrypoints])
         self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
         self.ignore_cwd = list(ignore_cwd) if ignore_cwd is not None else list(DEFAULT_IGNORE_CWD)
         self.orca_pos = bool(orca_pos)  # opt-in: the orca CLI is heavy to poll
@@ -130,9 +105,9 @@ def read_toml(base: Path | None = None) -> dict:
 
 
 # config.toml key -> Settings argument
-SETTING_KEYS = {"approval_wait": "approval_wait_s", "reply_wait": "reply_wait_s", "notify": "notify",
-                "risky_commands": "risky", "reply_entrypoints": "reply_entrypoints", "quiet_hours": "quiet_hours",
-                "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos"}
+SETTING_KEYS = {"notify": "notify", "quiet_hours": "quiet_hours", "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos"}
+# Keys of the answering era (ADR-0021): an old config.toml still has them, and that is not a problem.
+OLD_KEYS = {"approval_wait", "reply_wait", "risky_commands", "reply_entrypoints"}
 
 
 def load(base: Path | None = None) -> tuple[Settings, list[str]]:
@@ -148,8 +123,8 @@ def load(base: Path | None = None) -> tuple[Settings, list[str]]:
         return Settings(), [f"{config_path(base)} is not read, defaults apply: {e}"]
     good, problems = {}, []
     for key, value in data.items():
-        if key == "webhooks":
-            continue  # checked by the relay (ronda.relay.webhook.parse)
+        if key == "webhooks" or key in OLD_KEYS:
+            continue  # webhooks: checked by the relay (ronda.relay.webhook.parse)
         if key not in SETTING_KEYS:
             problems.append(f"unknown setting {key!r}")
             continue
@@ -164,18 +139,3 @@ def load(base: Path | None = None) -> tuple[Settings, list[str]]:
 def settings(base: Path | None = None) -> Settings:
     """Read config.toml. A missing file gives the defaults; see load() for what was wrong with it."""
     return load(base)[0]
-
-
-def risky_match(command: str | None, patterns: list[str]) -> str | None:
-    """The first risky pattern a command matches, or None."""
-    import re
-
-    if not command:
-        return None
-    for p in patterns:
-        try:
-            if re.search(p, command, re.I):
-                return p
-        except re.error:
-            continue
-    return None

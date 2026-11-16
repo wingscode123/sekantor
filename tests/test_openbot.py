@@ -33,14 +33,11 @@ class FakeOpenBot:
 
 class FakeHub:
     def __init__(self):
-        self.events, self.actions = [], {}
+        self.events = []
 
     def post_event(self, ev):
         self.events.append(ev)
         return True
-
-    def next_action(self, sid, kind, rid):
-        return self.actions.pop((sid, rid), None)
 
 
 def setup(tmp_path, ob=None):
@@ -69,43 +66,39 @@ def test_idle_agent_is_a_done_session(tmp_path):
     assert len(hub.events) == 1  # nothing changed
 
 
-def test_approval_round_trip(tmp_path):
+def test_an_approval_is_reported_and_never_answered(tmp_path):
     pos, ob, hub, _ = setup(tmp_path)
     pos.tick()
     ob.pending["approvals"] = [APPROVAL]
     pos.tick()
     ev = hub.events[-1]
-    assert ev["status"] == "waiting_approval" and ev["capabilities"] == ["approve", "deny"]
+    assert ev["status"] == "waiting_approval" and "capabilities" not in ev
     assert ev["request"] == {"kind": "tool", "tool": "command", "input": "npm publish", "id": "r1"}
     assert ev["workspace"]["cwd"] == "C:/work/lib"
-    hub.actions[("openbot:agent-1", "r1")] = {"type": "deny"}
     pos.tick()
-    assert ob.posts == [("/v1/agents/agent-1/approvals/r1/respond", {"decision": "decline"})]
+    assert ob.posts == []  # ADR-0021: it only reads
     ob.pending["approvals"] = []
     pos.tick()
     assert hub.events[-1]["status"] == "done"
 
 
-def test_single_question_answered_by_reply(tmp_path):
+def test_a_single_question_is_reported(tmp_path):
     pos, ob, hub, _ = setup(tmp_path)
     ob.pending["prompts"] = [{"requestId": "p9", "requiresOpenBot": False, "questions": [
         {"id": "q1", "header": "Branch", "question": "Which branch?", "options": [{"label": "main", "description": ""},
                                                                               {"label": "dev", "description": ""}]}]}]
     pos.tick()
     ev = hub.events[-1]
-    assert ev["status"] == "waiting_input" and ev["capabilities"] == ["reply"] and ev["summary"] == "Which branch? (main, dev)"
-    hub.actions[("openbot:agent-1", "p9")] = {"type": "reply", "text": "dev"}
+    assert ev["status"] == "waiting_input" and ev["summary"] == "Which branch? (main, dev)"
     pos.tick()
-    assert ob.posts == [("/v1/agents/agent-1/prompts/p9/answer", {"answers": {"q1": ["dev"]}})]
+    assert ob.posts == []
 
 
-def test_things_only_openbot_can_answer_get_no_buttons():
+def test_things_only_openbot_can_answer_say_so():
     d = describe({"prompts": [{"requestId": "s", "requiresOpenBot": True, "questions": []}]})
-    assert d["status"] == "waiting_input" and d["capabilities"] == [] and "in OpenBot" in d["summary"]
+    assert d["status"] == "waiting_input" and d["request"]["kind"] == "question" and "in OpenBot" in d["summary"]
     d = describe({"browserTakeovers": [{"requestId": "b", "requiresOpenBot": True}]})
-    assert d["capabilities"] == [] and "browser" in d["summary"]
-    two = {"requestId": "m", "requiresOpenBot": False, "questions": [{"id": "a"}, {"id": "b"}]}
-    assert describe({"prompts": [two]})["capabilities"] == []
+    assert d["request"]["kind"] == "question" and "browser" in d["summary"]
 
 
 def test_new_token_after_openbot_restart(tmp_path):

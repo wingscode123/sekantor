@@ -2,6 +2,9 @@
 
 Additions to the PRD example, both optional and backward-compatible:
 - ``process.pid`` (ADR-0006) for FR-07 liveness checks.
+
+Deprecated (ADR-0021: Ronda watches and does not answer): ``capabilities`` and ``request.id``. They are still
+accepted so an older pos keeps working, and are otherwise ignored.
 """
 
 from __future__ import annotations
@@ -53,20 +56,8 @@ class Request(_Model):
     kind: Literal["tool", "input", "question"] = "tool"
     tool: str | None = None
     input: str | None = Field(default=None, max_length=4000)
-    # ADR-0008: the id actions answer (the asking event's event_id). Optional.
+    # Deprecated (ADR-0021): it named the request an answer was for. Accepted, ignored.
     id: str | None = Field(default=None, max_length=128)
-
-
-ActionType = Literal["approve", "deny", "reply"]
-
-
-class ActionIn(_Model):
-    """POST /v1/sessions/{id}/actions"""
-
-    type: ActionType
-    request_id: str | None = Field(default=None, max_length=128)
-    text: str | None = Field(default=None, max_length=4000)
-    confirm: bool = False  # second confirmation for risky commands
 
 
 class Process(_Model):
@@ -86,7 +77,7 @@ class Event(_Model):
     status: Status | None = None
     summary: str | None = Field(default=None, max_length=2000)
     request: Request | None = None
-    capabilities: list[Capability] = Field(default_factory=list)
+    capabilities: list[Capability] = Field(default_factory=list)  # deprecated, see the module docstring
     process: Process | None = None
 
     @field_validator("ts")

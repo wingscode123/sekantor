@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from ronda.config import Settings
 from ronda.hub.status import apply
 from ronda.pos.claude_code import install as inst
-from ronda.pos.claude_code.hook import capabilities
 from ronda.pos.claude_code.translate import translate
 from ronda.schema import Event, Status
 
@@ -24,7 +23,7 @@ def test_ask_user_question_is_a_question():
     assert ev["status"] == "waiting_input"
     assert ev["request"] == {"kind": "question", "tool": "AskUserQuestion", "id": ev["event_id"]}
     assert ev["summary"] == "Asks: Which channel for the phone? (ntfy, Telegram)"
-    assert capabilities(ASK, {"CLAUDE_CODE_ENTRYPOINT": "cli"}, Settings()) == []  # never Approve/Deny
+    assert "capabilities" not in ev
 
 
 def test_permission_notification_does_not_turn_a_question_into_an_approval():
@@ -47,7 +46,7 @@ def test_session_end_hook_has_a_longer_budget(tmp_path):
     p = tmp_path / "settings.json"
     inst.install(p, inst.Path("/x/ronda-hook"))
     end = json.loads(p.read_text())["hooks"]["SessionEnd"][0]["hooks"][0]
-    assert end["timeout"] >= 5 and "async" not in end
+    assert end["timeout"] >= 5 and end["async"] is True
 
 
 # --- 2: OpenBot's own helper runs are not sessions --------------------------------------

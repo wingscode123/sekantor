@@ -1,6 +1,6 @@
 # ADR-0008: Approve, deny and reply from Ronda (Claude Code)
 
-- Status: Accepted (owner, 2026-11-11)
+- Status: Superseded by ADR-0021
 - Date: 2026-11-11
 - Evidence: docs/spike/m2-actions.md
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ronda import config
 from ronda.relay.common import HubClient, log
-from ronda.relay.telegram import TelegramApi, TelegramChannel, TelegramError, load_config
+from ronda.relay.telegram import DEFAULT_RISKY, TelegramApi, TelegramChannel, TelegramError, load_config
 from ronda.relay.webhook import WebhookChannel, parse
 
 
@@ -73,7 +73,7 @@ async def run(home: Path | None = None, hub_url: str | None = None) -> None:
 
     tg = load_config(home)
     if tg:
-        channel = TelegramChannel(TelegramApi(tg["token"]), tg["chats"], hub, settings.risky)
+        channel = TelegramChannel(TelegramApi(tg["token"]), tg["chats"], hub, DEFAULT_RISKY)
         channels.append(channel)
 
         async def poll():

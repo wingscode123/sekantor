@@ -25,15 +25,14 @@ def test_install_keeps_other_hooks_and_settings(tmp_path):
     assert set(inst.EVENTS) <= set(data["hooks"])
     assert r.backup and json.loads(r.backup.read_text())["theme"] == "dark"
     ours = data["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    assert ours == {"type": "command", "command": EXE.as_posix(), "args": [], "async": True, "timeout": 10}
+    assert ours == {"type": "command", "command": str(EXE), "async": True, "timeout": 10}
     end = data["hooks"]["SessionEnd"][0]["hooks"][0]
-    assert "async" not in end and end["timeout"] == 5
+    assert end["async"] is True and end["timeout"] == 5
     perm = data["hooks"]["PermissionRequest"][0]["hooks"][0]
-    assert "async" not in perm and perm["timeout"] == 600 + inst.MARGIN_S and perm["args"] == ["--wait"]
+    assert perm["async"] is True and perm["timeout"] == 10 and "args" not in perm
     stop = data["hooks"]["Stop"][1]["hooks"][0]
-    assert stop["async"] is True and stop["asyncRewake"] is True and stop["timeout"] == 1800 + inst.MARGIN_S
-    assert stop["args"] == ["--wait"]
-    assert inst.inspect(p).current_shape
+    assert stop["async"] is True and "asyncRewake" not in stop and "args" not in stop
+    assert inst.inspect(p).current_shape()
 
 
 def test_install_is_idempotent(tmp_path):
@@ -74,7 +73,7 @@ def test_missing_file_is_created(tmp_path):
     r = inst.install(p, EXE)
     assert r.backup is None and p.exists()
     info = inst.inspect(p)
-    assert info.complete and info.commands == {EXE.as_posix()}
+    assert info.complete and info.commands == {str(EXE)}
 
 
 def test_windows_exe_name_is_ours():
@@ -87,4 +86,25 @@ def test_old_m1_install_is_flagged(tmp_path):
         "PermissionRequest": [{"hooks": [{"type": "command", "command": EXE.as_posix(), "args": [], "async": True}]}],
         "Stop": [{"hooks": [{"type": "command", "command": EXE.as_posix(), "args": [], "async": True}]}],
     }})
-    assert not inst.inspect(p).current_shape
+    assert not inst.inspect(p).current_shape()
+
+
+def test_every_handler_is_async_and_never_waits(tmp_path):
+    for ev in inst.EVENTS:
+        h = inst.handler_for(ev, tmp_path / "hook.exe")
+        assert h["async"] is True and "args" not in h and "asyncRewake" not in h
+        assert h["timeout"] == (5 if ev == "SessionEnd" else 10)
+
+
+def test_an_install_with_wait_is_not_current(tmp_path):
+    # the hooks Ronda wrote before ADR-0021: PermissionRequest synchronous with --wait
+    old = {"hooks": {ev: [{"hooks": [{"type": "command", "command": EXE.as_posix(), "timeout": 10,
+                                      "async": True}]}] for ev in inst.EVENTS}}
+    old["hooks"]["PermissionRequest"] = [{"hooks": [{"type": "command", "command": EXE.as_posix(),
+                                                     "args": ["--wait"], "timeout": 630}]}]
+    old["hooks"]["Stop"] = [{"hooks": [{"type": "command", "command": EXE.as_posix(), "args": ["--wait"],
+                                        "async": True, "asyncRewake": True, "timeout": 1830}]}]
+    p = settings(tmp_path, old)
+    assert inst.inspect(p).current_shape() is False
+    inst.install(p, EXE)
+    assert inst.inspect(p).current_shape() is True

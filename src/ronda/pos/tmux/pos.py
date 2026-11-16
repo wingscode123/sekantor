@@ -1,8 +1,7 @@
-"""The tmux pos (FR-04, FR-23): CLI agents in tmux panes, read from the screen, answered with send-keys.
+"""The tmux pos (FR-04): CLI agents in tmux panes, read from the screen.
 
 Runs as its own process (`ronda pos tmux`, started by `ronda up` when tmux exists) and talks to the
-hub like any other pos: POST /v1/events, and GET /v1/sessions/{id}/actions/next for answers.
-Before sending keys it checks that the pane still runs the same agent process (FR-23).
+hub like any other pos: POST /v1/events. It only watches (ADR-0021): it never sends keys to a pane.
 """
 
 from __future__ import annotations
@@ -43,15 +42,6 @@ class Tmux:
 
     def capture(self, pane_id: str) -> str | None:
         return self.run("capture-pane", "-p", "-J", "-t", pane_id, "-S", "-80")
-
-    def send_keys(self, pane_id: str, keys: list[str]) -> bool:
-        return self.run("send-keys", "-t", pane_id, *keys) is not None
-
-    def send_text(self, pane_id: str, text: str) -> bool:
-        # -l: literal, so "Enter" in the reply is typed, not pressed
-        return (self.run("send-keys", "-t", pane_id, "-l", "--", text) is not None
-                and self.run("send-keys", "-t", pane_id, "Enter") is not None)
-
 
 def find_agent(pane_pid: int) -> tuple[str, int] | None:
     """(agent, pid) of the agent running in this pane, searching the pane's process tree."""
@@ -132,48 +122,13 @@ class TmuxPos:
             rules = self.rules[agent]
             status, rid, prompt, summary = assess(w, screen, rules, now)
             if status != w.status or rid != w.request_id:
-                caps, request = [], None
+                request = None
                 if status == "waiting_approval":
                     request = {"kind": "tool", "tool": "terminal", "input": prompt, "id": rid}
-                    caps = [c for c, keys in (("approve", rules.approve_keys), ("deny", rules.deny_keys)) if keys]
                 elif status == "waiting_input":
-                    request, caps = {"kind": "input", "id": rid}, ["reply"]
-                if self.hub.post_event(self._event(sid, w, pane, status=status, summary=summary,
-                                                   request=request, capabilities=caps)):
+                    request = {"kind": "input", "id": rid}
+                if self.hub.post_event(self._event(sid, w, pane, status=status, summary=summary, request=request)):
                     w.status, w.request_id = status, rid
-            if w.request_id and w.status in ("waiting_approval", "waiting_input"):
-                kind = "approval" if w.status == "waiting_approval" else "reply"
-                try:
-                    action = self.hub.next_action(sid, kind, w.request_id)
-                except Exception as e:
-                    log.warning("actions: %s", type(e).__name__)
-                    action = None
-                if action:
-                    self.act(sid, action)
-
-    def act(self, session_id: str, action: dict) -> bool:
-        """Send the answer, but only to the pane that still runs the same agent (FR-23)."""
-        w, pane = self.watches.get(session_id), self.panes.get(session_id)
-        if not w or not pane:
-            return False
-        hit = self.find(pane)
-        if not hit or hit[1] != w.agent_pid:
-            log.warning("not sending to %s: the agent there changed", pane.pane_id)
-            return False
-        rules = self.rules[w.agent]
-        if action["type"] == "approve" and rules.approve_keys:
-            ok = self.tmux.send_keys(pane.pane_id, rules.approve_keys)
-        elif action["type"] == "deny" and rules.deny_keys:
-            ok = self.tmux.send_keys(pane.pane_id, rules.deny_keys)
-        elif action["type"] == "reply" and action.get("text"):
-            ok = self.tmux.send_text(pane.pane_id, action["text"])
-        else:
-            return False
-        if ok:
-            w.request_id = None  # the screen will move on; the next tick reports the new state
-        return ok
-
-
 def main(interval: float = 2.0) -> None:
     import shutil
 

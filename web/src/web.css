@@ -4,22 +4,8 @@
 time.card__time { white-space: nowrap; }
 td.list__msg > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-/* M2: approve, deny, reply */
 .card__note { color: var(--color-ink-2); }
 .card__error { color: var(--color-failing); }
-.ctl--danger { border-color: var(--color-failing); color: var(--color-failing); }
-.ctl--danger:hover { background: color-mix(in oklab, var(--color-failing) 12%, transparent); border-color: var(--color-failing); }
-.confirm { display: grid; gap: var(--space-xs); padding-top: var(--space-xs); border-top: var(--rule-hair) solid var(--color-rule); }
-.reply { display: grid; gap: var(--space-2xs); padding-top: var(--space-xs); border-top: var(--rule-hair) solid var(--color-rule); }
-.reply label { color: var(--color-ink-2); font-size: var(--text-sm); }
-.reply__row { display: flex; gap: var(--space-xs); align-items: flex-start; }
-.reply textarea { flex: 1; min-width: 0; min-height: 34px; padding: var(--space-xs) var(--space-sm); resize: vertical; border: var(--rule-hair) solid var(--color-muted); border-radius: var(--radius-control); background: var(--color-paper-2); color: var(--color-ink); font: inherit; outline: 2px solid transparent; outline-offset: -3px; }
-.reply textarea:hover { border-color: var(--color-ink-2); }
-.reply textarea:focus-visible { outline-color: var(--color-focus); }
-.reply textarea[aria-invalid] { border-color: var(--color-error); }
-.reply textarea:disabled { opacity: 0.55; cursor: not-allowed; }
-.reply__help { min-height: 1lh; color: var(--color-muted); font-size: var(--text-sm); }
-@media (max-width: 40rem) { .reply__row { flex-wrap: wrap; } }
 
 /* FR-13: session timeline */
 .timeline { font-size: var(--text-sm); }

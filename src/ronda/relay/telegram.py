@@ -14,13 +14,43 @@ from typing import Any
 
 import httpx
 
-from ronda.config import risky_match
 from ronda.labels import TITLES
 from ronda.relay.common import HubClient, log, pending_request_id, redact, should_notify, who
 
 API = "https://api.telegram.org"
 CMD_LIMIT = 300
 TEXT_LIMIT = 600
+
+
+# The relay is removed in the same release as ADR-0021; until then the risky list lives here, out of config.
+DEFAULT_RISKY = [
+    r"\brm\s+(-\S*\s+)*-\S*[rRf]",            # rm -rf, rm -r, rm -f
+    r"\bgit\s+push\b.*(--force|\s-f\b)",
+    r"\bgit\s+reset\s+--hard\b",
+    r"\bgit\s+clean\s+-\S*f",
+    r"\b(drop|truncate)\s+(table|database|schema)\b",
+    r"\bmkfs\b|\bdd\s+if=|\bformat\s+[a-z]:",
+    r"\bchmod\s+-R\s+777\b",
+    r"\bRemove-Item\b.*-Recurse",
+    r"\b(shutdown|reboot)\b",
+    r"\bsudo\b",
+    r"curl[^|]*\|\s*(ba|z)?sh\b",
+]
+
+
+def risky_match(command: str | None, patterns: list[str]) -> str | None:
+    """The first risky pattern a command matches, or None."""
+    import re
+
+    if not command:
+        return None
+    for p in patterns:
+        try:
+            if re.search(p, command, re.I):
+                return p
+        except re.error:
+            continue
+    return None
 
 
 class TelegramError(Exception):

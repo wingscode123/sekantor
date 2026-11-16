@@ -28,17 +28,14 @@ class FakeCli:
 
 class FakeHub:
     def __init__(self):
-        self.events, self.actions = [], {}
+        self.events = []
 
     def post_event(self, ev):
         self.events.append(ev)
         return True
 
-    def next_action(self, sid, kind, rid):
-        return self.actions.pop((sid, rid), None)
 
-
-def test_orca_pos_watches_only_non_claude_agents_and_answers():
+def test_orca_pos_watches_only_non_claude_agents_and_never_sends():
     cli = FakeCli()
     hub = FakeHub()
     pos = make_pos(hub, OrcaTerminals("orca", runner=cli))
@@ -50,12 +47,9 @@ def test_orca_pos_watches_only_non_claude_agents_and_answers():
     cli.terminals[0]["preview"] = "patch ready\nApply it? (y/n)"
     pos.tick()
     ev = hub.events[-1]
-    assert ev["status"] == "waiting_approval"
-    hub.actions[(ev["session_id"], ev["request"]["id"])] = {"type": "approve"}
+    assert ev["status"] == "waiting_approval" and ev["request"]["kind"] == "tool"
     pos.tick()
-    sends = [c for c in cli.calls if c[:2] == ["terminal", "send"]]
-    assert sends == [["terminal", "send", "--terminal", "term_a", "--text", "y", "--json"],
-                     ["terminal", "send", "--terminal", "term_a", "--enter", "--json"]]
+    assert not [c for c in cli.calls if c[:2] == ["terminal", "send"]]  # ADR-0021: it only watches
 
 
 def test_orca_pos_new_run_in_same_terminal_is_a_new_session():

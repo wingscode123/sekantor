@@ -70,7 +70,7 @@ def _hub(path: str, **kw) -> dict:
     except (urllib.error.URLError, RuntimeError) as e:  # could not connect or send, or no token
         typer.secho(f"Hub not reachable at {config.hub_url()} ({e}). Start it with `ronda up`.", fg="red")
     except OSError as e:  # sent, but the answer did not come: it may have been done
-        typer.secho(f"The hub did not answer in time ({e}). Check `ronda audit` before you try again.", fg="red")
+        typer.secho(f"The hub did not answer in time ({e}). Check `ronda status` before you try again.", fg="red")
     raise typer.Exit(1)
 
 
@@ -144,8 +144,7 @@ def up(
         typer.secho("Web UI not built: run `npm ci && npm run build` in web/. The API works meanwhile.", fg="yellow")
     if open_browser:
         webbrowser.open(url)
-    typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
-               f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
+    typer.echo(f"Notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
     children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None,
                             _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
@@ -496,41 +495,6 @@ def _find_session(ref: str) -> dict:
     return hits[0]
 
 
-def _act(ref: str, body: dict) -> None:
-    s = _find_session(ref)
-    path = _session_path(s, "actions")
-    res = _hub(path, method="POST", body=body, timeout=5)
-    if res.get("error") == "confirm_required":
-        cmd = (s.get("request") or {}).get("input", "")
-        typer.secho(f"Risky command: {cmd}", fg="yellow")
-        if not typer.confirm("Approve it anyway?", default=False):
-            raise typer.Exit(1)
-        res = _hub(path, method="POST", body={**body, "confirm": True}, timeout=5)
-    if "_status" in res:
-        typer.secho(res.get("message") or res.get("detail") or f"Refused ({res['_status']})", fg="red")
-        raise typer.Exit(1)
-    typer.secho(f"Sent: {body['type']} to {s['session_id']}", fg="green")
-
-
-@app.command()
-def approve(session: str = typer.Argument(..., help="Session id or a unique prefix (see `ronda status`).")):
-    """Approve the tool call a session is waiting on."""
-    _act(session, {"type": "approve"})
-
-
-@app.command()
-def deny(session: str = typer.Argument(..., help="Session id or a unique prefix.")):
-    """Deny the tool call a session is waiting on."""
-    _act(session, {"type": "deny"})
-
-
-@app.command()
-def reply(session: str = typer.Argument(..., help="Session id or a unique prefix."),
-          text: str = typer.Argument(..., help="What to tell the agent.")):
-    """Reply to a session that finished its turn and waits for you."""
-    _act(session, {"type": "reply", "text": text})
-
-
 @app.command()
 def snooze(session: str = typer.Argument(..., help="Session id or a unique prefix."),
            minutes: int = typer.Option(60, help="How long, in minutes."),
@@ -555,17 +519,6 @@ def unsnooze(session: str = typer.Argument(..., help="Session id or a unique pre
     typer.secho(f"Unmuted {s['session_id']}", fg="green")
 
 
-@app.command()
-def audit(limit: int = typer.Option(30, help="How many actions to show.")):
-    """Every approve, deny and reply sent through Ronda (FR-24), newest first."""
-    actions = _hub(f"/v1/actions?limit={limit}")["actions"]
-    if not actions:
-        typer.echo("No actions yet.")
-    for a in actions:
-        text = f"  {a['text'][:60]!r}" if a.get("text") else ""
-        typer.echo(f"{a['created_at'][:19]}  {a['type']:<8} {a['outcome']:<10} {a['channel']:<4} {a['actor']}  {a['session_id']}{text}")
-
-
 def _scope(project: bool, global_: bool) -> str:
     if project and global_:
         typer.secho("Pick one of --project or --global.", fg="red")
@@ -587,7 +540,7 @@ def install_claude(
         typer.secho("ronda-hook not found next to this Python or on PATH.", fg="red")
         raise typer.Exit(1)
     try:
-        r = inst.install(path, exe, config.settings())
+        r = inst.install(path, exe)
     except (ValueError, OSError) as e:
         typer.secho(f"Not changed: {path} could not be read ({e}).", fg="red")
         raise typer.Exit(1)
@@ -665,7 +618,7 @@ def doctor():
         check(i.complete, f"All {len(inst.EVENTS)} hook events registered in {i.path.name}",
               f"Some hook events missing in {i.path}: run `ronda install claude` again")
         check(i.commands_exist, "Hook command exists", f"Hook command missing: {', '.join(i.commands)}")
-        check(i.current_shape, "Hooks are up to date (approve, reply, SessionEnd budget)",
+        check(i.current_shape(), "Hooks are up to date (all asynchronous)",
               f"Hooks in {i.path} are from an older Ronda: run `ronda install claude` again")
 
     try:

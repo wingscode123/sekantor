@@ -5,8 +5,9 @@ the other agents Orca can launch in a terminal (codex, opencode, gemini, aider).
 pos's screen logic over a different transport:
 
 - one ``orca terminal list --json`` per cycle (the CLI is slow on a busy machine): ``agentIdentity``
-  names the agent, ``preview`` is the screen tail, ``incarnationId`` identifies the run;
-- answers with ``orca terminal send`` (text and Enter sent separately, as Orca asks for agent menus).
+  names the agent, ``preview`` is the screen tail, ``incarnationId`` identifies the run.
+
+It only watches (ADR-0021): nothing is ever sent to a terminal.
 """
 
 from __future__ import annotations
@@ -81,18 +82,6 @@ class OrcaTerminals:
 
     def capture(self, handle: str) -> str | None:
         return self.preview.get(handle)
-
-    def send_keys(self, handle: str, keys: list[str]) -> bool:
-        for k in keys:
-            args = ["--enter"] if k == "Enter" else ["--text", "\x1b" if k == "Escape" else k]
-            if self._run("terminal", "send", "--terminal", handle, *args) is None:
-                return False
-        return True
-
-    def send_text(self, handle: str, text: str) -> bool:
-        return (self._run("terminal", "send", "--terminal", handle, "--text", text) is not None
-                and self._run("terminal", "send", "--terminal", handle, "--enter") is not None)
-
 
 def make_pos(hub, transport: OrcaTerminals) -> TmuxPos:
     def find(pane: Pane):

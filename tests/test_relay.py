@@ -8,9 +8,8 @@ import json
 import httpx
 import pytest
 
-from ronda.config import DEFAULT_RISKY
 from ronda.relay.runner import Relay
-from ronda.relay.telegram import TelegramChannel, load_config, pair, save_config
+from ronda.relay.telegram import DEFAULT_RISKY, TelegramChannel, load_config, pair, save_config
 from ronda.relay.webhook import Webhook, WebhookChannel, body_for, parse
 
 CHAT = 4242
@@ -272,11 +271,10 @@ def test_webhook_fires_on_the_notification_rule_only():
 # --- integration: real hub, real stream and action API, fake Telegram ------------
 
 def test_relay_against_a_live_hub(tmp_path):
-    from ronda.config import Settings
     from ronda.relay.common import HubClient
-    from tests.test_hook_actions import TOKEN, Hub
+    from tests.live_hub import TOKEN, Hub
 
-    with Hub(tmp_path, Settings()) as hub:
+    with Hub(tmp_path) as hub:
         async def go():
             client = HubClient(f"http://127.0.0.1:{hub.port}", TOKEN)
             ch = TelegramChannel(FakeApi(), [CHAT], client, DEFAULT_RISKY)
@@ -289,13 +287,11 @@ def test_relay_against_a_live_hub(tmp_path):
             await asyncio.to_thread(hub.call, "POST", "/v1/events", ev)
             await relay.handle(await asyncio.wait_for(stream.__anext__(), 5))
             assert buttons(ch.api.sent()[0]) == ["Approve", "Deny"]
-            await ch.handle_update(press(ch, "a"))
+            await ch.handle_update(press(ch, "a"))  # the hub has no actions API now: the press is refused
             await stream.aclose()
             await client.client.aclose()
 
         run(go())
-        [a] = hub.app.state.store.actions("claude:s1")
-        assert a["type"] == "approve" and a["channel"] == "telegram" and a["request_id"] == "p1"
 
 
 def test_cli_pair_and_unpair(tmp_path, monkeypatch):
