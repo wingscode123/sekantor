@@ -1,5 +1,5 @@
 [project]
-name = "ronda"
+name = "sekantor"
 version = "0.1.0"
 description = "One inbox for every AI coding agent on your machine. See who's waiting, approve, and reply from one place."
 readme = "README.md"
@@ -17,8 +17,8 @@ dependencies = [
 ]
 
 [project.scripts]
-ronda = "ronda.cli:main"
-ronda-hook = "ronda.pos.claude_code.hook:main"
+sekantor = "sekantor.cli:main"
+sekantor-hook = "sekantor.pos.claude_code.hook:main"
 
 [dependency-groups]
 dev = [

@@ -1,10 +1,10 @@
-<p align="center"><img src="brand/social/readme-banner.png" width="1280" alt="Ronda: Your agents work all night. Ronda keeps watch."></p>
+<p align="center"><img src="brand/social/readme-banner.png" width="1280" alt="SeKantor: Your agents work all night. SeKantor keeps watch."></p>
 
-# Ronda
+# SeKantor
 
 One inbox for every AI coding agent on your machine. See who's waiting, approve, and reply from one place.
 
-Ronda watches Claude Code (terminal, VS Code, Claude desktop), Orca, OpenBot and any CLI agent in
+SeKantor watches Claude Code (terminal, VS Code, Claude desktop), Orca, OpenBot and any CLI agent in
 tmux, and sorts them by who needs you: waiting for approval, waiting for input, error, running, done.
 Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local token, and sends no telemetry.
 
@@ -19,16 +19,16 @@ Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and Node 18+ (for the web U
 
 ```sh
 uv sync
-(cd web && npm ci && npm run build)   # builds the inbox into src/ronda/hub/static
-uv run ronda up                       # hub on 127.0.0.1:7878, opens the inbox (one-time link; `ronda open` for another)
-uv run ronda install claude --project # in the project you want watched (or --global; backs up first)
-uv run ronda doctor
+(cd web && npm ci && npm run build)   # builds the inbox into src/sekantor/hub/static
+uv run sekantor up                       # hub on 127.0.0.1:7878, opens the inbox (one-time link; `sekantor open` for another)
+uv run sekantor install claude --project # in the project you want watched (or --global; backs up first)
+uv run sekantor doctor
 ```
 
-Start Claude Code in that project and its card appears in the inbox. `uv run ronda status` shows the
-same list in the terminal. Ronda only watches: you answer an agent in its own app, and the inbox says where.
-`uv run ronda stats` reports lost events and time spent waiting for you;
-`uv run ronda uninstall claude` removes only Ronda's hooks.
+Start Claude Code in that project and its card appears in the inbox. `uv run sekantor status` shows the
+same list in the terminal. SeKantor only watches: you answer an agent in its own app, and the inbox says where.
+`uv run sekantor stats` reports lost events and time spent waiting for you;
+`uv run sekantor uninstall claude` removes only SeKantor's hooks.
 
 ## Docs
 

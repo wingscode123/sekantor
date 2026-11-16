@@ -22,17 +22,17 @@ class HubApi:
 
 def connect(name: str) -> HubApi:
     """Start a pos process: end with the hub, log as ``name``, and connect with the hub token."""
-    from ronda import config
-    from ronda.hub.auth import read_token
-    from ronda.lifeline import start_parent_watch
+    from sekantor import config
+    from sekantor.hub.auth import read_token
+    from sekantor.lifeline import start_parent_watch
 
     start_parent_watch()  # end with the hub, even when it is force-stopped
-    from ronda import logs
+    from sekantor import logs
 
     logs.setup(name)
     token = read_token(config.token_path())
     if not token:
-        raise SystemExit("No hub token: run `ronda up` first.")
+        raise SystemExit("No hub token: run `sekantor up` first.")
     return HubApi(config.hub_url(), token)
 
 

@@ -1,6 +1,6 @@
 """config.toml: one read serves the hub settings and the Orca opt-in."""
 
-from ronda import config
+from sekantor import config
 
 
 def test_old_relay_settings_in_config_toml_are_ignored_not_fatal(tmp_path):
@@ -37,10 +37,10 @@ def test_keys_of_the_answering_era_are_ignored_without_a_problem(tmp_path):
 def test_doctor_names_config_problems(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from ronda.cli import app
+    from sekantor.cli import app
 
-    monkeypatch.setenv("RONDA_HOME", str(tmp_path))
-    monkeypatch.setenv("RONDA_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
+    monkeypatch.setenv("SEKANTOR_URL", "http://127.0.0.1:9")
     (tmp_path / "config.toml").write_text('noitfy = true\nignore_cwd = 5\n')
     out = CliRunner().invoke(app, ["doctor"]).output
     assert "noitfy" in out and "ignore_cwd" in out
@@ -49,9 +49,9 @@ def test_doctor_names_config_problems(tmp_path, monkeypatch):
 def test_doctor_names_a_broken_config_file(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from ronda.cli import app
+    from sekantor.cli import app
 
-    monkeypatch.setenv("RONDA_HOME", str(tmp_path))
-    monkeypatch.setenv("RONDA_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
+    monkeypatch.setenv("SEKANTOR_URL", "http://127.0.0.1:9")
     (tmp_path / "config.toml").write_text("notify = \n")
     assert "config.toml" in CliRunner().invoke(app, ["doctor"]).output

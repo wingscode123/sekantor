@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from ronda.hub.store import Store
-from ronda.schema import Event, Status
+from sekantor.hub.store import Store
+from sekantor.schema import Event, Status
 
 T0 = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
 

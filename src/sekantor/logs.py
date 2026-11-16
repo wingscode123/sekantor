@@ -1,4 +1,4 @@
-"""Logging for Ronda's processes (hub, pos): one line per message, tagged with the process."""
+"""Logging for SeKantor's processes (hub, pos): one line per message, tagged with the process."""
 
 from __future__ import annotations
 

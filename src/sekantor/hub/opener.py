@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import quote
 
-from ronda import labels
-from ronda.hub.status import SessionState
+from sekantor import labels
+from sekantor.hub.status import SessionState
 
 
 @dataclass
@@ -36,7 +36,7 @@ def _open_url_or_path(target: str) -> None:
 
 
 def _orca_cli() -> str | None:
-    from ronda.pos.orca.pos import orca_cli
+    from sekantor.pos.orca.pos import orca_cli
 
     return orca_cli()
 

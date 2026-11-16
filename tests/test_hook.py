@@ -1,4 +1,4 @@
-"""ronda-hook: translation, fingerprinting, and the fail-closed guarantees."""
+"""sekantor-hook: translation, fingerprinting, and the fail-closed guarantees."""
 
 import json
 import os
@@ -12,17 +12,17 @@ from pathlib import Path
 import pytest
 import uvicorn
 
-from ronda.pos.claude_code import hook
-from ronda.pos.claude_code.fingerprint import classify, load_rules
-from ronda.pos.claude_code.translate import git_branch, translate
-from ronda.schema import Event
+from sekantor.pos.claude_code import hook
+from sekantor.pos.claude_code.fingerprint import classify, load_rules
+from sekantor.pos.claude_code.translate import git_branch, translate
+from sekantor.schema import Event
 
 ROOT = Path(__file__).resolve().parents[1]
 # The watchdog bounds the hook itself; interpreter start-up comes on top, and on a loaded CI runner or
 # Windows box it can take seconds. Measure it once and allow for it, so the test checks "no hang".
 def _startup_s() -> float:
     t = time.perf_counter()
-    subprocess.run([sys.executable, "-c", "import ronda.pos.claude_code.hook"], capture_output=True)
+    subprocess.run([sys.executable, "-c", "import sekantor.pos.claude_code.hook"], capture_output=True)
     return time.perf_counter() - t
 
 
@@ -137,10 +137,10 @@ def free_port() -> int:
 def run_hook(home: Path, port: int, stdin: bytes, extra_env=None):
     host_vars = ("ORCA_", "OPENBOT", "CLAUDE", "VSCODE", "TERM_PROGRAM", "TMUX", "WT_SESSION", "CURSOR")
     clean = {k: v for k, v in os.environ.items() if not k.upper().startswith(host_vars)}
-    env = {**clean, "RONDA_HOME": str(home), "RONDA_URL": f"http://127.0.0.1:{port}", "CLAUDE_PID": str(os.getpid())}
+    env = {**clean, "SEKANTOR_HOME": str(home), "SEKANTOR_URL": f"http://127.0.0.1:{port}", "CLAUDE_PID": str(os.getpid())}
     env.update(extra_env or {})
     t = time.perf_counter()
-    p = subprocess.run([sys.executable, "-m", "ronda.pos.claude_code.hook"], input=stdin, env=env,
+    p = subprocess.run([sys.executable, "-m", "sekantor.pos.claude_code.hook"], input=stdin, env=env,
                        capture_output=True, timeout=10)
     return p, time.perf_counter() - t
 
@@ -161,7 +161,7 @@ def test_hub_down_exits_zero_fast_and_silent(home):
     log = (home / "hook.log").read_text()
     assert "hub unreachable" in log
     sent_id = (home / "sent.log").read_text().split()[1]
-    assert log.rstrip().endswith(sent_id)  # `ronda stats` matches the failure to its event by id
+    assert log.rstrip().endswith(sent_id)  # `sekantor stats` matches the failure to its event by id
 
 
 def test_hub_hanging_is_cut_by_watchdog(home):
@@ -189,7 +189,7 @@ def test_no_token_is_no_decision(tmp_path):
 
 
 def test_hub_up_receives_event(home):
-    from ronda.hub.app import create_app
+    from sekantor.hub.app import create_app
 
     port = free_port()
     app = create_app(home=home, port=port, token="tok")
@@ -223,7 +223,7 @@ def test_rewake_prompt_gets_a_readable_summary():
     ("Bash", "run"), ("PowerShell", "run"), ("WebFetch", "web"), ("mcp__github__create_issue", "other"),
     ("Task", "other"), ("", "other")])
 def test_activity_kind(tool, kind):
-    from ronda.pos.claude_code.translate import activity_kind
+    from sekantor.pos.claude_code.translate import activity_kind
     assert activity_kind(tool) == kind
 
 
@@ -239,7 +239,7 @@ def test_only_pre_tool_use_sets_activity():
 
 
 def test_permission_request_hook_returns_at_once_with_no_output(home):
-    from ronda.hub.app import create_app
+    from sekantor.hub.app import create_app
 
     port = free_port()
     app = create_app(home=home, port=port, token="tok")

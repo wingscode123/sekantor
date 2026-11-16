@@ -12,10 +12,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ronda.hub.status import SessionState, apply
-from ronda.schema import Event, Status
+from sekantor.hub.status import SessionState, apply
+from sekantor.schema import Event, Status
 
-log = logging.getLogger("ronda.hub")
+log = logging.getLogger("sekantor.hub")
 SLOW_S = 1.0  # the hook stops waiting for the hub after 1 s, so anything slower gets a log line
 RETENTION = timedelta(days=7)
 

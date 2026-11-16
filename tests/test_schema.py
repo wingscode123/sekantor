@@ -3,7 +3,7 @@ from datetime import timezone
 import pytest
 from pydantic import ValidationError
 
-from ronda.schema import Event, Status
+from sekantor.schema import Event, Status
 
 PRD_EXAMPLE = {
     "v": 1,

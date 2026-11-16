@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ronda.schema import Event, Status
-from ronda.hub.status import SessionState, apply, inbox_order, sweep, NEEDS_YOU
+from sekantor.schema import Event, Status
+from sekantor.hub.status import SessionState, apply, inbox_order, sweep, NEEDS_YOU
 
 T0 = datetime(2026, 11, 11, 10, 0, 0, tzinfo=timezone.utc)
 

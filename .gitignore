@@ -6,10 +6,13 @@ build/
 *.egg-info/
 .pytest_cache/
 node_modules/
-src/ronda/hub/static/
+src/sekantor/hub/static/
 # local probe output may contain env vars from the user's machine
 /probe*.json
 .claude/settings.local.json
 docs/spike/payloads/raw/
 site/.hallmark/
+*.sekantor-backup-*
 *.ronda-backup-*
+.claude/
+.superpowers/

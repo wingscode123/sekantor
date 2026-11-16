@@ -3,7 +3,7 @@
 import json
 import subprocess
 
-from ronda.pos.orca.pos import OrcaTerminals, make_pos
+from sekantor.pos.orca.pos import OrcaTerminals, make_pos
 
 
 class FakeCli:

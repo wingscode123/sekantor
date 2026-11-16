@@ -13,22 +13,22 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from ronda import config
-from ronda.hub.api import router, session_json
-from ronda.hub.notify import Notifier
-from ronda.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
-from ronda.hub.store import SLOW_S, Store
-from ronda.hub.status import SessionState, sweep
-from ronda.schema import Event, Status
-from ronda.hub.stream import Broadcaster
+from sekantor import config
+from sekantor.hub.api import router, session_json
+from sekantor.hub.notify import Notifier
+from sekantor.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
+from sekantor.hub.store import SLOW_S, Store
+from sekantor.hub.status import SessionState, sweep
+from sekantor.schema import Event, Status
+from sekantor.hub.stream import Broadcaster
 
-log = logging.getLogger("ronda.hub")
+log = logging.getLogger("sekantor.hub")
 SWEEP_EVERY_S = 30
 PRUNE_EVERY_S = 3600
 
-NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Ronda</title>
+NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>SeKantor</title>
 <body style="background:#14162B;color:#ECEEF7;font:16px system-ui;padding:40px">
-<p>The Ronda hub is running, but the web UI is not built.</p>
+<p>The SeKantor hub is running, but the web UI is not built.</p>
 <p>Run <code>npm ci &amp;&amp; npm run build</code> in <code>web/</code>, then reload.</p></body>"""
 
 
@@ -52,7 +52,7 @@ def run_sweep(store: Store, now: datetime | None = None) -> list[SessionState]:
     for s in store.sessions():
         out = sweep(s, now, pid_alive)
         if out is not None:
-            # An event, not just a state change: the timeline and `ronda stats` then see the end too.
+            # An event, not just a state change: the timeline and `sekantor stats` then see the end too.
             ev = Event(event_id=f"sweep-{now.timestamp():.0f}-{s.session_id}"[:128], ts=now, source=s.source,
                        session_id=s.session_id, type="session_ended", status=Status.ended,
                        summary="Ended: no events for 10 minutes and the process is gone")
@@ -84,7 +84,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     port = port or config.port()
     token = token or ensure_token(home / "token")
     settings = settings or config.settings(home)
-    store = Store(home / "ronda.db")
+    store = Store(home / "sekantor.db")
     broadcaster = Broadcaster()
     notifier = notifier or Notifier(enabled=settings.notify, quiet=settings.quiet)
 
@@ -113,7 +113,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 task.cancel()
             store.close()
 
-    app = FastAPI(title="Ronda hub", version="1", docs_url=None, redoc_url=None, openapi_url=None,
+    app = FastAPI(title="SeKantor hub", version="1", docs_url=None, redoc_url=None, openapi_url=None,
                   lifespan=lifespan)
     app.state.store = store
     app.state.broadcaster = broadcaster

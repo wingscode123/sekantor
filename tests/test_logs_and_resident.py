@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from ronda import logs, resident
+from sekantor import logs, resident
 
 
 def test_http_libraries_log_only_problems():
@@ -25,7 +25,7 @@ def test_http_libraries_log_only_problems():
 def test_the_hub_keeps_a_hard_minimum_working_set():
     # In a child process, so the test run itself is not pinned.
     code = (
-        "import ctypes, ctypes.wintypes as w; from ronda import resident\n"
+        "import ctypes, ctypes.wintypes as w; from sekantor import resident\n"
         "assert resident.keep_resident(64 * 2**20) is None\n"
         "k = ctypes.WinDLL('kernel32'); k.GetCurrentProcess.restype = w.HANDLE\n"
         "k.GetProcessWorkingSetSizeEx.argtypes = [w.HANDLE] + [ctypes.c_void_p] * 3\n"

@@ -12,19 +12,19 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from ronda import __version__, labels
-from ronda.hub.status import SessionState, inbox_order
-from ronda.hub.store import SLOW_S
-from ronda.schema import Event, Status
+from sekantor import __version__, labels
+from sekantor.hub.status import SessionState, inbox_order
+from sekantor.hub.store import SLOW_S
+from sekantor.schema import Event, Status
 
-log = logging.getLogger("ronda.hub")
+log = logging.getLogger("sekantor.hub")
 router = APIRouter(prefix="/v1")
 _events = TypeAdapter(Event | list[Event])
 MAX_BATCH = 100
 
 
 def session_json(s: SessionState) -> dict[str, Any]:
-    from ronda.hub.opener import plan
+    from sekantor.hub.opener import plan
 
     d = s.model_dump(mode="json", exclude={"status_ts"})
     d["needs_you"] = s.needs_you
@@ -123,9 +123,9 @@ async def unsnooze(request: Request, session_id: str):
 @router.post("/sessions/{session_id}/open")
 async def open_in_source(request: Request, session_id: str):
     """Bring the app where the session runs to the front. Only for this computer, never from Telegram."""
-    from ronda.hub import opener
+    from sekantor.hub import opener
 
-    if request.headers.get("x-ronda-channel") == "telegram":
+    if request.headers.get("x-sekantor-channel") == "telegram":
         raise HTTPException(403, detail="opening apps is only for this computer")
     s = await run_in_threadpool(request.app.state.store.session, session_id)
     if s is None:
@@ -142,8 +142,8 @@ async def open_in_source(request: Request, session_id: str):
 
 @router.post("/login-code")
 async def login_code(request: Request):
-    """A one-time browser login link, for `ronda open`. Bearer token only."""
-    if request.scope.get("ronda_auth") != "bearer":
+    """A one-time browser login link, for `sekantor open`. Bearer token only."""
+    if request.scope.get("sekantor_auth") != "bearer":
         raise HTTPException(403, detail="bearer token required")
     return {"path": f"/?login={request.app.state.login_codes.issue()}", "valid_s": int(request.app.state.login_codes.TTL_S)}
 

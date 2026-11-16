@@ -1,6 +1,6 @@
 """The tmux pos (FR-04): CLI agents in tmux panes, read from the screen.
 
-Runs as its own process (`ronda pos tmux`, started by `ronda up` when tmux exists) and talks to the
+Runs as its own process (`sekantor pos tmux`, started by `sekantor up` when tmux exists) and talks to the
 hub like any other pos: POST /v1/events. It only watches (ADR-0021): it never sends keys to a pane.
 """
 
@@ -12,11 +12,11 @@ import time
 from datetime import datetime, timezone
 from typing import Callable
 
-from ronda.pos.claude_code.translate import git_branch, new_event_id
-from ronda.pos.hub import connect, poll
-from ronda.pos.tmux.detect import LIST_FORMAT, Pane, Rules, Watch, agent_of, assess, load_rules, parse_panes
+from sekantor.pos.claude_code.translate import git_branch, new_event_id
+from sekantor.pos.hub import connect, poll
+from sekantor.pos.tmux.detect import LIST_FORMAT, Pane, Rules, Watch, agent_of, assess, load_rules, parse_panes
 
-log = logging.getLogger("ronda.pos.tmux")
+log = logging.getLogger("sekantor.pos.tmux")
 HOST = {"app": "tmux", "confidence": 1.0, "via": ["tmux"]}
 
 

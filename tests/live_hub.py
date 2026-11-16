@@ -8,8 +8,8 @@ import urllib.request
 
 import uvicorn
 
-from ronda.hub.app import create_app
-from ronda.hub.notify import Notifier
+from sekantor.hub.app import create_app
+from sekantor.hub.notify import Notifier
 from tests.test_hook import free_port
 
 TOKEN = "tok"

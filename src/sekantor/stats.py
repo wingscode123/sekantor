@@ -1,5 +1,5 @@
 """Dogfooding numbers from local data only (no telemetry): did any event get lost, and how long did
-agents wait for you? Reads ~/.ronda/sent.log (what hooks tried to deliver), hook.log and the SQLite db.
+agents wait for you? Reads ~/.sekantor/sent.log (what hooks tried to deliver), hook.log and the SQLite db.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def compute(home: Path, since: datetime, until: datetime | None = None) -> Stats
                 else:  # written by an older hook
                     down_at.add(int(ts.timestamp()))
 
-    db = home / "ronda.db"
+    db = home / "sekantor.db"
     if not db.exists():
         _split_lost(st, sorted(attempts.values(), key=lambda x: x.ts), down_at, down_ids)
         return st

@@ -1,7 +1,7 @@
 """End-to-end check for M1: a real Claude Code session must show up in the inbox within 1 s and move
 running -> waiting_input -> ended.
 
-    uv run python scripts/e2e_claude.py           # needs `ronda up` and `ronda install claude --project`
+    uv run python scripts/e2e_claude.py           # needs `sekantor up` and `sekantor install claude --project`
 
 Listens on WS /v1/stream with the local token, runs `claude -p` in this repo, and prints every status
 change with its delay from the hook's own timestamp to arrival in the stream.
@@ -25,7 +25,7 @@ PROMPT = "Run `git log --oneline -3` with your shell tool, then answer in one sh
 
 
 async def main() -> int:
-    token = (Path(os.environ.get("RONDA_HOME") or Path.home() / ".ronda") / "token").read_text().strip()
+    token = (Path(os.environ.get("SEKANTOR_HOME") or Path.home() / ".sekantor") / "token").read_text().strip()
     url = "ws://127.0.0.1:7878/v1/stream"
     async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}) as ws:
         json.loads(await ws.recv())  # snapshot

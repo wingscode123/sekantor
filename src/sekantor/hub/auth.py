@@ -1,8 +1,8 @@
 """Local token auth for every request (HTTP, static files and WebSocket).
 
-- The token lives in ~/.ronda/token, mode 600, created on first use.
+- The token lives in ~/.sekantor/token, mode 600, created on first use.
 - Pos and the CLI send ``Authorization: Bearer <token>``.
-- The browser opens ``/?login=<code>`` once (printed by ``ronda up`` or ``ronda open``): a one-time code,
+- The browser opens ``/?login=<code>`` once (printed by ``sekantor up`` or ``sekantor open``): a one-time code,
   valid 10 minutes, so the token itself never appears in a URL or browser history. The hub sets an
   HttpOnly, SameSite=Strict cookie and redirects to ``/``. Cookie requests that change state or open a
   WebSocket must come from the hub's own origin.
@@ -22,7 +22,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs
 
-COOKIE = "ronda_token"
+COOKIE = "sekantor_token"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
@@ -115,7 +115,7 @@ class TokenAuthMiddleware:
         auth = h.get("authorization", "")
         bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else None
         if self._ok(bearer):
-            scope["ronda_auth"] = "bearer"
+            scope["sekantor_auth"] = "bearer"
             return await self.app(scope, receive, send)
 
         cookie = SimpleCookie(h.get("cookie", ""))
@@ -125,7 +125,7 @@ class TokenAuthMiddleware:
             if scope["type"] == "websocket" or method not in SAFE_METHODS:
                 if h.get("origin") not in self.origins:
                     return await self._deny(scope, send, 403, "Cross-origin request refused")
-            scope["ronda_auth"] = "cookie"
+            scope["sekantor_auth"] = "cookie"
             return await self.app(scope, receive, send)
 
         # One-time login link: /?login=<code> sets the cookie; the code is then spent.
@@ -138,7 +138,7 @@ class TokenAuthMiddleware:
                     (b"cache-control", b"no-store"),
                 ]})
                 return await send({"type": "http.response.body", "body": b""})
-        return await self._deny(scope, send, 401, "Not signed in. Run `ronda open` for a fresh link.")
+        return await self._deny(scope, send, 401, "Not signed in. Run `sekantor open` for a fresh link.")
 
     async def _deny(self, scope, send, status: int, message: str):
         if scope["type"] == "websocket":

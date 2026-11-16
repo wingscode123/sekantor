@@ -1,11 +1,11 @@
-# Ronda host fingerprint rules (FR-08 / FR-09), schema version 1.
+# SeKantor host fingerprint rules (FR-08 / FR-09), schema version 1.
 #
 # A "host" is the app an agent process runs inside (Orca, VS Code, Claude desktop, ...).
 # Each rule lists signals. A signal that matches contributes its weight; confidence is
 #   1 - product(1 - weight) over matched signals
 # so independent weak signals add up but never exceed 1. The host with the highest
 # confidence wins (ties: earlier in this file wins). Below `min_confidence` the host is
-# "terminal" when there is terminal evidence, else no host. Display names live in src/ronda/labels.py.
+# "terminal" when there is terminal evidence, else no host. Display names live in src/sekantor/labels.py.
 #
 # Signal kinds (all optional, all case-insensitive):
 #   env:          name of an env var on the agent process / hook

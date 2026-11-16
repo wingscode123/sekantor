@@ -1,7 +1,7 @@
-"""Install / uninstall ronda-hook in Claude Code settings (ADR-0004).
+"""Install / uninstall sekantor-hook in Claude Code settings (ADR-0004).
 
-Appends Ronda's own handlers and never touches anyone else's (Orca installs hooks too). Backs up
-the file before every change. Our handlers are recognised by the command ending in ``ronda-hook``.
+Appends SeKantor's own handlers and never touches anyone else's (Orca installs hooks too). Backs up
+the file before every change. Our handlers are recognised by the command ending in ``sekantor-hook``.
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-# ADR-0002 / ADR-0021. Every handler runs async: Ronda only watches, so no hook can hold an agent up.
+# ADR-0002 / ADR-0021. Every handler runs async: SeKantor only watches, so no hook can hold an agent up.
 EVENTS = [
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
     "PostToolUseFailure", "PermissionDenied", "Notification", "Stop", "StopFailure", "SessionEnd",
 ]
-HOOK_NAMES = {"ronda-hook", "ronda-hook.exe"}
+HOOK_NAMES = {"sekantor-hook", "sekantor-hook.exe"}
 
 
 def settings_path(scope: str) -> Path:
@@ -32,12 +32,12 @@ def settings_path(scope: str) -> Path:
 
 
 def hook_executable() -> Path | None:
-    """The ronda-hook next to the running Python first (same venv), then PATH."""
-    name = "ronda-hook.exe" if sys.platform == "win32" else "ronda-hook"
+    """The sekantor-hook next to the running Python first (same venv), then PATH."""
+    name = "sekantor-hook.exe" if sys.platform == "win32" else "sekantor-hook"
     sibling = Path(sys.executable).parent / name
     if sibling.is_file():
         return sibling.resolve()
-    found = shutil.which("ronda-hook")
+    found = shutil.which("sekantor-hook")
     return Path(found).resolve() if found else None
 
 
@@ -72,10 +72,10 @@ def _read(path: Path) -> dict:
 def _backup(path: Path) -> Path | None:
     if not path.exists():
         return None
-    dst = path.with_name(f"{path.name}.ronda-backup-{datetime.now():%Y%m%d%H%M%S}")
+    dst = path.with_name(f"{path.name}.sekantor-backup-{datetime.now():%Y%m%d%H%M%S}")
     n = 1
     while dst.exists():
-        dst = path.with_name(f"{path.name}.ronda-backup-{datetime.now():%Y%m%d%H%M%S}-{n}")
+        dst = path.with_name(f"{path.name}.sekantor-backup-{datetime.now():%Y%m%d%H%M%S}-{n}")
         n += 1
     shutil.copy2(path, dst)
     return dst
@@ -83,7 +83,7 @@ def _backup(path: Path) -> Path | None:
 
 def _write(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".ronda-tmp")
+    tmp = path.with_name(path.name + ".sekantor-tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     os.replace(tmp, path)
 
@@ -155,7 +155,7 @@ class Installed:
 
     def current_shape(self) -> bool:
         """False for an install from before ADR-0021: a handler with ``--wait``, a synchronous one (except
-        SessionEnd), one with asyncRewake, or one in shell form. `ronda doctor` then says to reinstall."""
+        SessionEnd), one with asyncRewake, or one in shell form. `sekantor doctor` then says to reinstall."""
         def ok(event: str, h: dict) -> bool:
             if h.get("args") != [] or "asyncRewake" in h:
                 return False

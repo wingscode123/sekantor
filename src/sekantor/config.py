@@ -1,4 +1,4 @@
-"""Paths and defaults. Everything lives in ~/.ronda unless RONDA_HOME says otherwise."""
+"""Paths and defaults. Everything lives in ~/.sekantor unless SEKANTOR_HOME says otherwise."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ DEFAULT_PORT = 7878
 
 
 def home() -> Path:
-    return Path(os.environ.get("RONDA_HOME") or Path.home() / ".ronda")
+    return Path(os.environ.get("SEKANTOR_HOME") or Path.home() / ".sekantor")
 
 
 def token_path() -> Path:
@@ -23,16 +23,16 @@ def hook_log_path() -> Path:
 
 def port() -> int:
     try:
-        return int(os.environ.get("RONDA_PORT", DEFAULT_PORT))
+        return int(os.environ.get("SEKANTOR_PORT", DEFAULT_PORT))
     except ValueError:
         return DEFAULT_PORT
 
 
 def hub_url() -> str:
-    return os.environ.get("RONDA_URL") or f"http://{HOST}:{port()}"
+    return os.environ.get("SEKANTOR_URL") or f"http://{HOST}:{port()}"
 
 
-# --- settings: ~/.ronda/config.toml (all optional) ----------------------------
+# --- settings: ~/.sekantor/config.toml (all optional) ----------------------------
 
 # Folders whose Claude Code runs are not agent sessions: OpenBot's own helper runs start in its
 # program folder (28 of 37 "OpenBot" sessions in the first dogfooding run).

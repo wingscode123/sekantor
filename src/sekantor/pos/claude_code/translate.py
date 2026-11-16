@@ -1,4 +1,4 @@
-"""Claude Code hook payload -> Ronda event v1 (as a plain dict; stdlib only, the hook imports this).
+"""Claude Code hook payload -> SeKantor event v1 (as a plain dict; stdlib only, the hook imports this).
 
 Mapping per ADR-0002. Returns None for hooks that must not change anything (e.g. SubagentStop).
 """
@@ -121,7 +121,7 @@ def translate(payload: dict) -> dict | None:
         status = "running"
         prompt = payload.get("prompt") or ""
         if prompt.lstrip().startswith("<task-notification>"):
-            # A hook woke the agent (asyncRewake), e.g. a reply sent through Ronda
+            # A hook woke the agent (asyncRewake), e.g. a reply sent through SeKantor
             summary = "Continuing after your reply" if "Stop hook" in prompt else "Woken by a hook"
         else:
             summary = _clip(prompt, SUMMARY_MAX)

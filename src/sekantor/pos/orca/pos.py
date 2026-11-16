@@ -20,11 +20,11 @@ import subprocess
 import zlib
 from pathlib import Path
 
-from ronda.pos.hub import connect, poll
-from ronda.pos.tmux.detect import AGENTS, Pane
-from ronda.pos.tmux.pos import TmuxPos
+from sekantor.pos.hub import connect, poll
+from sekantor.pos.tmux.detect import AGENTS, Pane
+from sekantor.pos.tmux.pos import TmuxPos
 
-log = logging.getLogger("ronda.pos.orca")
+log = logging.getLogger("sekantor.pos.orca")
 HOST = {"app": "orca", "confidence": 1.0, "via": ["orca_cli"]}
 
 

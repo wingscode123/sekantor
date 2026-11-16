@@ -2,7 +2,7 @@
 
 API (nightly-labs/openbot docs/automation.md): loopback HTTP, URL and bearer token in
 ``<userData>/automation/{url,token}`` while at least one agent has Local scripts on; new port and
-token on every OpenBot start. Ronda only reads (ADR-0021), and never answers or sends messages to an agent:
+token on every OpenBot start. SeKantor only reads (ADR-0021), and never answers or sends messages to an agent:
 
 - ``GET /v1/agents`` and ``GET /v1/agents/{id}/pending`` (reads are not rate limited)
 """
@@ -18,10 +18,10 @@ from urllib.parse import quote
 
 import httpx
 
-from ronda.pos.claude_code.translate import new_event_id
-from ronda.pos.hub import connect, poll
+from sekantor.pos.claude_code.translate import new_event_id
+from sekantor.pos.hub import connect, poll
 
-log = logging.getLogger("ronda.pos.openbot")
+log = logging.getLogger("sekantor.pos.openbot")
 HOST = {"app": "openbot", "confidence": 1.0, "via": ["openbot_api"]}
 
 

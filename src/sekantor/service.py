@@ -1,7 +1,7 @@
-"""`ronda service`: start the hub at login, so it is not off for hours (dogfooding 2026-11-11).
+"""`sekantor service`: start the hub at login, so it is not off for hours (dogfooding 2026-11-11).
 
 Windows: a Task Scheduler task (XML, so it has no 3-day run limit and restarts on failure) running
-`pythonw -m ronda.cli up --no-open --log-file ~/.ronda/hub.log` with no console window.
+`pythonw -m sekantor.cli up --no-open --log-file ~/.sekantor/hub.log` with no console window.
 macOS: a launchd agent (RunAtLoad, KeepAlive). Linux: a systemd user unit.
 """
 
@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-TASK = "Ronda hub"
-LABEL = "dev.ronda.hub"
+TASK = "SeKantor hub"
+LABEL = "dev.sekantor.hub"
 
 
 @dataclass
@@ -37,15 +37,15 @@ def hub_command(home: Path, platform: str = sys.platform, python: str = sys.exec
         exe = Path(python)
         w = exe.with_name("pythonw.exe")  # no console window
         exe = w if w.exists() or not exe.exists() else exe
-        return [str(exe), "-m", "ronda.cli", "up", "--no-open", "--log-file", str(home / "hub.log")]
-    return [python, "-m", "ronda.cli", "up", "--no-open", "--log-file", (home / "hub.log").as_posix()]
+        return [str(exe), "-m", "sekantor.cli", "up", "--no-open", "--log-file", str(home / "hub.log")]
+    return [python, "-m", "sekantor.cli", "up", "--no-open", "--log-file", (home / "hub.log").as_posix()]
 
 
 def _windows_xml(cmd: list[str], user: str) -> bytes:
     args = " ".join(f'"{a}"' if " " in a else a for a in cmd[1:])
     xml = f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Ronda hub: one inbox for your coding agents (127.0.0.1:7878)</Description></RegistrationInfo>
+  <RegistrationInfo><Description>SeKantor hub: one inbox for your coding agents (127.0.0.1:7878)</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{escape(user)}</UserId></LogonTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>{escape(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
@@ -78,7 +78,7 @@ def _launchd_plist(cmd: list[str], home: Path) -> str:
 
 def _systemd_unit(cmd: list[str]) -> str:
     return f"""[Unit]
-Description=Ronda hub (one inbox for your coding agents)
+Description=SeKantor hub (one inbox for your coding agents)
 After=default.target
 
 [Service]
@@ -97,7 +97,7 @@ def plan(home: Path, platform: str = sys.platform, python: str = sys.executable,
     p = Plan()
     if platform == "win32":
         user = user or os.environ.get("USERNAME", "")
-        xml = (scratch or home) / "ronda-task.xml"
+        xml = (scratch or home) / "sekantor-task.xml"
         p.files[xml] = _windows_xml(cmd, user)
         p.install = [["schtasks", "/Create", "/TN", TASK, "/XML", str(xml), "/F"]]
         p.start = [["schtasks", "/Run", "/TN", TASK]]
@@ -115,12 +115,12 @@ def plan(home: Path, platform: str = sys.platform, python: str = sys.executable,
         p.status = ["launchctl", "print", f"gui/{uid}/{LABEL}"]
         p.remove = [plist]
     else:
-        unit = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user" / "ronda.service"
+        unit = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user" / "sekantor.service"
         p.files[unit] = _systemd_unit(cmd)
-        p.install = [["systemctl", "--user", "daemon-reload"], ["systemctl", "--user", "enable", "--now", "ronda.service"]]
-        p.uninstall = [["systemctl", "--user", "disable", "--now", "ronda.service"]]
-        p.restart = [["systemctl", "--user", "restart", "ronda.service"]]
-        p.status = ["systemctl", "--user", "is-active", "ronda.service"]
+        p.install = [["systemctl", "--user", "daemon-reload"], ["systemctl", "--user", "enable", "--now", "sekantor.service"]]
+        p.uninstall = [["systemctl", "--user", "disable", "--now", "sekantor.service"]]
+        p.restart = [["systemctl", "--user", "restart", "sekantor.service"]]
+        p.status = ["systemctl", "--user", "is-active", "sekantor.service"]
         p.remove = [unit]
     return p
 

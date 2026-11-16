@@ -14,7 +14,7 @@ EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "pos_minimal.py"
 def test_example_pos_reports_a_wait_and_then_ends(tmp_path):
     (tmp_path / "token").write_text(TOKEN)
     with Hub(tmp_path) as hub:
-        env = {**os.environ, "RONDA_HOME": str(tmp_path), "RONDA_URL": f"http://127.0.0.1:{hub.port}",
+        env = {**os.environ, "SEKANTOR_HOME": str(tmp_path), "SEKANTOR_URL": f"http://127.0.0.1:{hub.port}",
                "EXAMPLE_WAIT_S": "1"}
         p = subprocess.Popen([sys.executable, str(EXAMPLE)], env=env, stdout=subprocess.PIPE, text=True)
         waiting = []

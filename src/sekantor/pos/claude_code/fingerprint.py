@@ -12,13 +12,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ronda import config
+from sekantor import config
 
 CHAIN_DEPTH = 8
 
 
 def rules_path() -> Path:
-    override = os.environ.get("RONDA_HOSTS")
+    override = os.environ.get("SEKANTOR_HOSTS")
     if override:
         return Path(override)
     user = config.home() / "hosts.yaml"

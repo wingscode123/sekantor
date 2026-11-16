@@ -111,16 +111,16 @@ export default function App() {
   const done = awake.filter((s) => s.status === "done" || s.status === "ended");
 
   useEffect(() => {
-    document.title = needs.length ? `(${needs.length}) Ronda` : "Ronda";
+    document.title = needs.length ? `(${needs.length}) SeKantor` : "SeKantor";
   }, [needs.length]);
 
   let body: React.ReactNode;
   if (connection === "unauthorized") {
     body = (
       <section className="state" aria-labelledby="st">
-        <h1 id="st" className="state__title">Open Ronda from its link.</h1>
+        <h1 id="st" className="state__title">Open SeKantor from its link.</h1>
         <p>Sign-in links work once and expire after 10 minutes. Run the command below for a fresh one.</p>
-        <pre className="state__cmd"><code>ronda open</code></pre>
+        <pre className="state__cmd"><code>sekantor open</code></pre>
       </section>
     );
   } else if (connection === "down" && !loaded) {
@@ -128,7 +128,7 @@ export default function App() {
       <section className="state" aria-labelledby="st">
         <h1 id="st" className="state__title">The hub is not answering.</h1>
         <p>Nothing on {location.host}. Your agents keep working and show their own prompts. Start the hub and this page reconnects by itself.</p>
-        <pre className="state__cmd"><code>ronda up</code></pre>
+        <pre className="state__cmd"><code>sekantor up</code></pre>
       </section>
     );
   } else if (!loaded) {
@@ -145,7 +145,7 @@ export default function App() {
       <section className="state" aria-labelledby="st">
         <h1 id="st" className="state__title">Nobody needs you.</h1>
         <p>Sessions appear here on their first event. If an agent is running and nothing shows, the hooks are not installed in that project yet.</p>
-        <pre className="state__cmd"><code>ronda install claude --project</code></pre>
+        <pre className="state__cmd"><code>sekantor install claude --project</code></pre>
       </section>
     );
   } else {
@@ -176,7 +176,7 @@ export default function App() {
       <a className="skip" href="#main">Skip to the inbox</a>
       <header className="bar">
         <div className="shell bar__inner">
-          <a className="bar__home" href="/" aria-label="Ronda, home"><img src="/lockup.svg" width="97" height="24" alt="" /></a>
+          <a className="bar__home" href="/" aria-label="SeKantor, home"><img src="/lockup.svg" width="97" height="24" alt="" /></a>
           <p className={connection === "down" || connection === "unauthorized" ? "bar__hub bar__hub--down" : "bar__hub"} role="status">
             {HUB_TEXT[connection]}
           </p>

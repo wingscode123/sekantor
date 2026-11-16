@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from ronda.hub.app import create_app, run_sweep
+from sekantor.hub.app import create_app, run_sweep
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -155,12 +155,12 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
     """The sweep runs in a worker thread; what it ends must still reach WS clients safely."""
     import asyncio
 
-    from ronda.hub.app import sweep_tick
-    from ronda.hub.store import Store
-    from ronda.hub.stream import Broadcaster
-    from ronda.schema import Event
+    from sekantor.hub.app import sweep_tick
+    from sekantor.hub.store import Store
+    from sekantor.hub.stream import Broadcaster
+    from sekantor.schema import Event
 
-    store = Store(tmp_path / "ronda.db")
+    store = Store(tmp_path / "sekantor.db")
     old = (NOW - timedelta(minutes=20)).isoformat()
     store.add_event(Event.model_validate({**ev(1, "waiting_input", sid="claude:gone"), "ts": old,
                                           "process": {"pid": 2_000_000_000}}))
@@ -189,7 +189,7 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
 def test_a_failing_sweep_is_logged(tmp_path, monkeypatch, caplog):
     import time
 
-    import ronda.hub.app as hub_app
+    import sekantor.hub.app as hub_app
 
     def broken(store, now=None):
         raise RuntimeError("disk gone")

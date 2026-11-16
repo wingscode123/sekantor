@@ -1,8 +1,8 @@
-"""A minimal Ronda pos, standard library only, about 50 lines. Copy it to start your own.
+"""A minimal SeKantor pos, standard library only, about 50 lines. Copy it to start your own.
 
-It reports a pretend agent that works, then waits for approval, then goes on. Ronda only watches
+It reports a pretend agent that works, then waits for approval, then goes on. SeKantor only watches
 (ADR-0021): you answer in the agent's own app, and the pos just reports what happens.
-Run `ronda up`, then `python examples/pos_minimal.py`, and watch the card in the inbox.
+Run `sekantor up`, then `python examples/pos_minimal.py`, and watch the card in the inbox.
 
 A real pos replaces `watch_agent()` with how your platform shows its agent's state.
 """
@@ -15,8 +15,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-HUB = os.environ.get("RONDA_URL", "http://127.0.0.1:7878")
-TOKEN = (Path(os.environ.get("RONDA_HOME", Path.home() / ".ronda")) / "token").read_text().strip()
+HUB = os.environ.get("SEKANTOR_URL", "http://127.0.0.1:7878")
+TOKEN = (Path(os.environ.get("SEKANTOR_HOME", Path.home() / ".sekantor")) / "token").read_text().strip()
 SESSION = f"example:{uuid.uuid4().hex[:8]}"  # stable for one run of one agent; prefix = your pos
 WAIT_S = float(os.environ.get("EXAMPLE_WAIT_S", "5"))  # how long the pretend agent waits for you
 
@@ -29,7 +29,7 @@ def call(method, path, body=None, timeout=10):
 
 
 def event(status, summary, type="status_changed", request=None):
-    """Schema v1: see src/ronda/schema.py. Unknown fields are ignored, so it is safe to add your own."""
+    """Schema v1: see src/sekantor/schema.py. Unknown fields are ignored, so it is safe to add your own."""
     call("POST", "/v1/events", {
         "v": 1, "event_id": uuid.uuid4().hex, "ts": datetime.now(timezone.utc).isoformat(),
         "source": "example", "session_id": SESSION, "agent": {"name": "example-agent"},

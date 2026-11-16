@@ -4,7 +4,7 @@ Additions to the PRD example, both optional and backward-compatible:
 - ``process.pid`` (ADR-0006) for FR-07 liveness checks.
 - ``activity`` (ADR-0022): the tool in use and its kind.
 
-Deprecated (ADR-0021: Ronda watches and does not answer): ``capabilities`` and ``request.id``. They are still
+Deprecated (ADR-0021: SeKantor watches and does not answer): ``capabilities`` and ``request.id``. They are still
 accepted so an older pos keeps working, and are otherwise ignored.
 """
 

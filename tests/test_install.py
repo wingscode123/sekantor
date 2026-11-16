@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from ronda.pos.claude_code import install as inst
+from sekantor.pos.claude_code import install as inst
 
-EXE = Path("/opt/ronda/bin/ronda-hook")
+EXE = Path("/opt/sekantor/bin/sekantor-hook")
 ORCA = {"type": "command", "command": "C:/Users/u/.orca/agent-hooks/orca-agent-hook.exe claude", "timeout": 10}
 
 
@@ -77,7 +77,7 @@ def test_missing_file_is_created(tmp_path):
 
 
 def test_windows_exe_name_is_ours():
-    assert inst.is_ours({"command": r"C:\venv\Scripts\ronda-hook.exe"})
+    assert inst.is_ours({"command": r"C:\venv\Scripts\sekantor-hook.exe"})
     assert not inst.is_ours(ORCA)
 
 
@@ -101,7 +101,7 @@ def test_every_handler_is_async_and_never_waits(tmp_path):
 
 
 def test_an_install_with_wait_is_not_current(tmp_path):
-    # the hooks Ronda wrote before ADR-0021: PermissionRequest synchronous with --wait
+    # the hooks SeKantor wrote before ADR-0021: PermissionRequest synchronous with --wait
     old = {"hooks": {ev: [{"hooks": [{"type": "command", "command": EXE.as_posix(), "timeout": 10,
                                       "async": True}]}] for ev in inst.EVENTS}}
     old["hooks"]["PermissionRequest"] = [{"hooks": [{"type": "command", "command": EXE.as_posix(),

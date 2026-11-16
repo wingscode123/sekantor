@@ -17,9 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from ronda import labels
-from ronda.hub.status import SessionState
-from ronda.schema import Status
+from sekantor import labels
+from sekantor.hub.status import SessionState
+from sekantor.schema import Status
 
 MIN_GAP_S = 10.0
 
@@ -30,10 +30,10 @@ $ErrorActionPreference = 'Stop'
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
 $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
 $t = $xml.GetElementsByTagName('text')
-$null = $t.Item(0).AppendChild($xml.CreateTextNode($env:RONDA_TITLE))
-$null = $t.Item(1).AppendChild($xml.CreateTextNode($env:RONDA_BODY))
+$null = $t.Item(0).AppendChild($xml.CreateTextNode($env:SEKANTOR_TITLE))
+$null = $t.Item(1).AppendChild($xml.CreateTextNode($env:SEKANTOR_BODY))
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:RONDA_APP_ID).Show($toast)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:SEKANTOR_APP_ID).Show($toast)
 """
 
 
@@ -58,7 +58,7 @@ def send_native(title: str, body: str) -> None:
     """Fire and forget. Raises nothing."""
     try:
         if sys.platform == "win32":
-            env = {**os.environ, "RONDA_TITLE": title, "RONDA_BODY": body, "RONDA_APP_ID": _PS_APP_ID}
+            env = {**os.environ, "SEKANTOR_TITLE": title, "SEKANTOR_BODY": body, "SEKANTOR_APP_ID": _PS_APP_ID}
             subprocess.Popen(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", _PS_TOAST],
                 env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -71,7 +71,7 @@ def send_native(title: str, body: str) -> None:
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         elif shutil.which("notify-send"):
-            subprocess.Popen(["notify-send", "--app-name=Ronda", title, body],
+            subprocess.Popen(["notify-send", "--app-name=SeKantor", title, body],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         pass

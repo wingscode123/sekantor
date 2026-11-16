@@ -2,10 +2,10 @@
 
 from datetime import datetime, timezone
 
-from ronda.hub.api import session_json
-from ronda.hub.notify import message
-from ronda.hub.status import SessionState
-from ronda.schema import Host, Status, Workspace
+from sekantor.hub.api import session_json
+from sekantor.hub.notify import message
+from sekantor.hub.status import SessionState
+from sekantor.schema import Host, Status, Workspace
 
 
 def state(source: str, app: str | None) -> SessionState:

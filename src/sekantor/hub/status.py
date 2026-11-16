@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from pydantic import BaseModel
 
-from ronda.schema import Agent, Capability, Event, Host, Request, Status, Workspace
+from sekantor.schema import Agent, Capability, Event, Host, Request, Status, Workspace
 
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
 WAITING = {Status.waiting_approval, Status.waiting_input}

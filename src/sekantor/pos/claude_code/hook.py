@@ -1,11 +1,11 @@
-"""``ronda-hook``: the Claude Code command hook.
+"""``sekantor-hook``: the Claude Code command hook.
 
-Reads the hook payload on stdin, turns it into a Ronda event, adds the host fingerprint and the agent
-PID, and POSTs it to the hub. That is all it does (ADR-0021): Ronda watches and never answers, so every
+Reads the hook payload on stdin, turns it into a SeKantor event, adds the host fingerprint and the agent
+PID, and POSTs it to the hub. That is all it does (ADR-0021): SeKantor watches and never answers, so every
 hook runs asynchronously and prints nothing.
 
 Every failure (hub down, timeout, bad input, crash) prints nothing and exits 0, so Claude Code behaves
-exactly as without Ronda (fail closed). A watchdog ends the process at its deadline even if something
+exactly as without SeKantor (fail closed). A watchdog ends the process at its deadline even if something
 hangs.
 """
 
@@ -19,7 +19,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from ronda import config
+from sekantor import config
 
 HARD_TIMEOUT_S = 2.0
 HTTP_TIMEOUT_S = 1.0  # Windows takes ~2 s to refuse a closed loopback port; stay under the watchdog
@@ -58,7 +58,7 @@ def _log(message: str) -> None:
 
 
 def _record_sent(event: dict) -> None:
-    """One line per event the hook tries to deliver; `ronda stats` compares it with what the hub stored."""
+    """One line per event the hook tries to deliver; `sekantor stats` compares it with what the hub stored."""
     try:
         path = str(config.home() / "sent.log")
         if os.path.exists(path) and os.path.getsize(path) > SENT_MAX:
@@ -145,7 +145,7 @@ def _pid(env: dict[str, str]) -> int | None:
 
 def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
     try:
-        from ronda.pos.claude_code.fingerprint import classify, collect, load_rules
+        from sekantor.pos.claude_code.fingerprint import classify, collect, load_rules
 
         chain, exe, cmdline = collect(_pid(env), deep)
         return classify(load_rules(), env, chain, exe, payload.get("cwd"), cmdline)
@@ -155,7 +155,7 @@ def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
 
 
 def build_event(payload: dict, env: dict[str, str]) -> dict | None:
-    from ronda.pos.claude_code.translate import translate
+    from sekantor.pos.claude_code.translate import translate
 
     event = translate(payload)
     if event is None:
@@ -171,7 +171,7 @@ def build_event(payload: dict, env: dict[str, str]) -> dict | None:
 
 def host_update(event: dict, payload: dict, env: dict[str, str]) -> dict | None:
     """After SessionStart: the parent chain and agent exe (slow on Windows) as a follow-up event."""
-    from ronda.pos.claude_code.translate import new_event_id
+    from sekantor.pos.claude_code.translate import new_event_id
 
     host = _host(payload, env, deep=True)
     if not host or (event.get("host") and host["confidence"] <= event["host"]["confidence"]):
@@ -185,7 +185,7 @@ def host_update(event: dict, payload: dict, env: dict[str, str]) -> dict | None:
 def post(event: dict, timeout: float) -> None:
     token = _token()
     if not token:
-        _log("no token: run `ronda up` once")
+        _log("no token: run `sekantor up` once")
         raise RuntimeError("no token")
     _record_sent(event)
     status, _ = request("POST", "/v1/events", token, event, timeout)
@@ -212,7 +212,7 @@ def run(stdin: bytes, env: dict[str, str], watchdog: Watchdog) -> int:
             if sending:
                 post(sending, timeout)
     except Exception as e:
-        # The event id lets `ronda stats` match this line to the event, however late it is logged.
+        # The event id lets `sekantor stats` match this line to the event, however late it is logged.
         _log(f"{payload.get('hook_event_name')}: hub unreachable ({type(e).__name__}) {(sending or event)['event_id']}")
     return 0
 

@@ -5,12 +5,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from ronda.config import Settings, in_quiet_hours, parse_quiet_hours
-from ronda.hub import opener
-from ronda.hub.app import create_app
-from ronda.hub.notify import Notifier
-from ronda.hub.status import SessionState
-from ronda.schema import Event, Host, Status, Workspace
+from sekantor.config import Settings, in_quiet_hours, parse_quiet_hours
+from sekantor.hub import opener
+from sekantor.hub.app import create_app
+from sekantor.hub.notify import Notifier
+from sekantor.hub.status import SessionState
+from sekantor.schema import Event, Host, Status, Workspace
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -80,7 +80,7 @@ def test_open_endpoint(client):
     r = client.post("/v1/sessions/claude:s1/open", headers=AUTH)
     assert r.status_code == 200 and r.json() == {"opened": "Open in VS Code"}
     assert client.opened[0].kind == "url"
-    r = client.post("/v1/sessions/claude:s1/open", headers={**AUTH, "X-Ronda-Channel": "telegram"})
+    r = client.post("/v1/sessions/claude:s1/open", headers={**AUTH, "X-SeKantor-Channel": "telegram"})
     assert r.status_code == 403
 
 

@@ -9,8 +9,8 @@ import uuid
 
 import pytest
 
-from ronda.pos.tmux.detect import Pane, Watch, agent_of, assess, load_rules, parse_panes
-from ronda.pos.tmux.pos import Tmux, TmuxPos
+from sekantor.pos.tmux.detect import Pane, Watch, agent_of, assess, load_rules, parse_panes
+from sekantor.pos.tmux.pos import Tmux, TmuxPos
 
 RULES = load_rules()
 
@@ -126,7 +126,7 @@ def test_real_tmux_pane_is_reported_and_left_alone(tmp_path):
     agent_dir.mkdir()
     script = agent_dir / "codex"  # named after an agent: found through the python process's cmdline
     script.write_text(FAKE_AGENT)
-    sock = f"ronda-test-{uuid.uuid4().hex[:8]}"
+    sock = f"sekantor-test-{uuid.uuid4().hex[:8]}"
     tmux = Tmux(extra=["-L", sock])
     subprocess.run(["tmux", "-L", sock, "new-session", "-d", "-s", "t", "-x", "120", "-y", "30",
                     f"{sys.executable} {script}"], check=True)
