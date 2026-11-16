@@ -130,3 +130,24 @@ def test_an_async_session_end_is_not_current(tmp_path):
     data["hooks"]["SessionEnd"][0]["hooks"][0]["async"] = True
     p.write_text(json.dumps(data))
     assert inst.inspect(p).current_shape() is False
+
+
+def test_install_replaces_ronda_handlers(tmp_path):
+    old = {"type": "command", "command": r"D:\Ronda\.venv\Scripts\ronda-hook.exe", "timeout": 10}
+    p = settings(tmp_path, {"hooks": {ev: [{"hooks": [old]}] for ev in inst.EVENTS}})
+    inst.install(p, tmp_path / "sekantor-hook.exe")
+    data = json.loads(p.read_text())
+    cmds = [h["command"] for ev in data["hooks"].values() for g in ev for h in g["hooks"]]
+    assert not any("ronda-hook" in c for c in cmds) and len(cmds) == len(inst.EVENTS)
+
+
+def test_old_and_new_hook_names_are_ours_in_any_slash_style():
+    for cmd in ("/x/ronda-hook", "C:\a\Ronda-Hook.EXE", "C:/a/sekantor-hook.exe", "sekantor-hook"):
+        assert inst.is_ours({"command": cmd})
+    assert not inst.is_ours({"command": "C:/a/orca-agent-hook.exe claude"})
+
+
+def test_uninstall_also_removes_ronda_handlers(tmp_path):
+    old = {"type": "command", "command": "/x/ronda-hook", "timeout": 10}
+    p = settings(tmp_path, {"hooks": {"Stop": [{"hooks": [old]}]}})
+    assert inst.uninstall(p).changed == 1

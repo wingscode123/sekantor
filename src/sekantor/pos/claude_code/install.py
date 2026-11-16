@@ -19,7 +19,8 @@ EVENTS = [
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
     "PostToolUseFailure", "PermissionDenied", "Notification", "Stop", "StopFailure", "SessionEnd",
 ]
-HOOK_NAMES = {"sekantor-hook", "sekantor-hook.exe"}
+# The old ronda-hook names count as ours too, so an upgrade replaces them instead of adding a second set.
+HOOK_NAMES = {"sekantor-hook", "sekantor-hook.exe", "ronda-hook", "ronda-hook.exe"}
 
 
 def settings_path(scope: str) -> Path:

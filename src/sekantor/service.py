@@ -18,6 +18,7 @@ from xml.sax.saxutils import escape
 
 TASK = "SeKantor hub"
 LABEL = "dev.sekantor.hub"
+OLD_TASK, OLD_LABEL, OLD_UNIT = "Ronda hub", "dev.ronda.hub", "ronda.service"  # ADR-0023
 
 
 @dataclass
@@ -30,6 +31,8 @@ class Plan:
     uninstall: list[list[str]] = field(default_factory=list)
     status: list[str] = field(default_factory=list)
     remove: list[Path] = field(default_factory=list)
+    cleanup: list[list[str]] = field(default_factory=list)         # the old Ronda service, removed on install
+    cleanup_files: list[Path] = field(default_factory=list)
 
 
 def hub_command(home: Path, platform: str = sys.platform, python: str = sys.executable) -> list[str]:
@@ -105,6 +108,7 @@ def plan(home: Path, platform: str = sys.platform, python: str = sys.executable,
         p.uninstall = [["schtasks", "/End", "/TN", TASK], ["schtasks", "/Delete", "/TN", TASK, "/F"]]
         p.status = ["schtasks", "/Query", "/TN", TASK]
         p.remove = [xml]
+        p.cleanup = [["schtasks", "/End", "/TN", OLD_TASK], ["schtasks", "/Delete", "/TN", OLD_TASK, "/F"]]
     elif platform == "darwin":
         plist = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
         p.files[plist] = _launchd_plist(cmd, home)
@@ -114,6 +118,8 @@ def plan(home: Path, platform: str = sys.platform, python: str = sys.executable,
         p.restart = [["launchctl", "kickstart", "-k", f"gui/{uid}/{LABEL}"]]
         p.status = ["launchctl", "print", f"gui/{uid}/{LABEL}"]
         p.remove = [plist]
+        p.cleanup = [["launchctl", "bootout", f"gui/{uid}/{OLD_LABEL}"]]
+        p.cleanup_files = [plist.with_name(f"{OLD_LABEL}.plist")]
     else:
         unit = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user" / "sekantor.service"
         p.files[unit] = _systemd_unit(cmd)
@@ -122,6 +128,8 @@ def plan(home: Path, platform: str = sys.platform, python: str = sys.executable,
         p.restart = [["systemctl", "--user", "restart", "sekantor.service"]]
         p.status = ["systemctl", "--user", "is-active", "sekantor.service"]
         p.remove = [unit]
+        p.cleanup = [["systemctl", "--user", "disable", "--now", OLD_UNIT]]
+        p.cleanup_files = [unit.with_name(OLD_UNIT)]
     return p
 
 

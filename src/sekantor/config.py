@@ -13,6 +13,47 @@ def home() -> Path:
     return Path(os.environ.get("SEKANTOR_HOME") or Path.home() / ".sekantor")
 
 
+def migrate_home(old: Path, new: Path) -> bool:
+    """Copy a Ronda-era home into the SeKantor one, once (ADR-0023).
+
+    Only when ``new`` does not exist and ``old`` does. Copies token (mode 600), config.toml,
+    hosts.cache.json and the database (sqlite backup, safe while an old hub writes). Never touches
+    ``old`` and never overwrites anything in ``new``. True when it copied.
+    """
+    import shutil
+    import sqlite3
+
+    if new.exists() or not old.is_dir():
+        return False
+    new.mkdir(parents=True)
+    for name in ("token", "config.toml", "hosts.cache.json"):
+        if (old / name).is_file():
+            shutil.copyfile(old / name, new / name)
+    if (new / "token").exists():
+        os.chmod(new / "token", 0o600)
+    if (old / "ronda.db").is_file():
+        src = sqlite3.connect(f"file:{(old / 'ronda.db').as_posix()}?mode=ro", uri=True)
+        dst = sqlite3.connect(new / "sekantor.db")
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+    return True
+
+
+def migrate_legacy_home() -> bool:
+    """migrate_home from ~/.ronda, unless SEKANTOR_HOME points somewhere else on purpose."""
+    import sqlite3
+
+    if os.environ.get("SEKANTOR_HOME"):
+        return False
+    try:
+        return migrate_home(Path.home() / ".ronda", home())
+    except (OSError, sqlite3.Error):
+        return False
+
+
 def token_path() -> Path:
     return home() / "token"
 

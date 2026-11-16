@@ -76,3 +76,16 @@ def test_macos_and_linux_restart_in_one_command():
     ran = []
     assert service.restart(linux, busy=lambda: True, run_=lambda cmds, check=True: ran.append(cmds))
     assert ran == [linux.restart]
+
+
+def test_service_install_removes_the_old_ronda_task(tmp_path):
+    p = service.plan(HOME, platform="win32", python=str(tmp_path / "python.exe"), user="me", scratch=tmp_path)
+    assert ["schtasks", "/End", "/TN", "Ronda hub"] in p.cleanup
+    assert ["schtasks", "/Delete", "/TN", "Ronda hub", "/F"] in p.cleanup
+
+
+def test_old_ronda_units_are_cleaned_up_on_macos_and_linux():
+    mac = service.plan(HOME, platform="darwin", python="/p/python")
+    assert any("dev.ronda.hub" in c[-1] for c in mac.cleanup)
+    lin = service.plan(HOME, platform="linux", python="/p/python")
+    assert ["systemctl", "--user", "disable", "--now", "ronda.service"] in lin.cleanup
