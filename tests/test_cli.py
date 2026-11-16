@@ -126,3 +126,27 @@ def test_up_has_no_relay_option():
 def test_no_pair_or_relay_commands():
     names = set(typer.main.get_command(app).commands)
     assert not {"relay", "pair", "unpair"} & names
+
+
+def test_service_install_waits_for_the_old_hub_to_let_go_of_the_port(tmp_path, monkeypatch):
+    import subprocess
+
+    from sekantor import service
+
+    plan = service.plan(tmp_path, platform="win32", user="u")
+    plan.files = {}
+    calls = []
+
+    def fake_run(commands, check=True):
+        calls.extend(c[1] for c in commands)
+        return [subprocess.CompletedProcess(c, 0, "", "") for c in commands]
+
+    polls = iter([True, True, False])
+    monkeypatch.setattr(service, "plan", lambda home: plan)
+    monkeypatch.setattr(service, "run", fake_run)
+    monkeypatch.setattr(service, "port_busy", lambda host, port: next(polls, False))
+    monkeypatch.setattr(service.time, "sleep", lambda s: None)
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over" not in r.output
+    assert calls[-1] == "/Run"  # the new task is started once the port is free
+    assert next(polls, "drained") == "drained"

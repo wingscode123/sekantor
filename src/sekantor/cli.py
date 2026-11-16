@@ -260,7 +260,9 @@ def service_install(start: bool = typer.Option(True, "--start/--no-start", help=
 
     p = service.plan(config.home())
     _migrate()
-    service.run(p.cleanup, check=False)  # the old Ronda service, so it does not start a second hub
+    # the old Ronda service, so it does not start a second hub
+    cleaned = service.run(p.cleanup, check=False)
+    old_hub_ended = bool(p.stop) and bool(cleaned) and cleaned[0].returncode == 0
     for old in p.cleanup_files:
         old.unlink(missing_ok=True)
     try:
@@ -269,9 +271,13 @@ def service_install(start: bool = typer.Option(True, "--start/--no-start", help=
             (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
         service.run(p.install)
         if start and p.start:
-            with socket.socket() as s:
-                busy = s.connect_ex((config.HOST, config.DEFAULT_PORT)) == 0
-            if busy:
+            def busy() -> bool:
+                return service.port_busy(config.HOST, config.port())
+
+            # schtasks /End returns before the old hub has exited: give it time to let go of the port
+            if old_hub_ended:
+                service.wait_free(busy)
+            if busy():
                 typer.secho("A hub is already running; the service takes over at the next login.", fg="yellow")
             else:
                 service.run(p.start)

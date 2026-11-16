@@ -156,18 +156,26 @@ def port_busy(host: str, port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
-def restart(p: Plan, busy, run_=run, wait_s: float = 20.0, clock=time.monotonic, sleep=time.sleep) -> bool:
-    """Restart the service's hub. Task Scheduler's End returns before the hub has exited, and a hub
-    started meanwhile finds the port busy and exits, so on Windows wait until the port is free.
-    False when the old hub is still there after ``wait_s``: nothing is started then."""
-    if not p.stop:
-        run_(p.restart)
-        return True
-    run_(p.stop, check=False)
+def wait_free(busy, wait_s: float = 20.0, clock=time.monotonic, sleep=time.sleep) -> bool:
+    """Poll until ``busy()`` is False. Task Scheduler's End returns before the hub has exited, so
+    callers wait here before starting a new one. False when still busy after ``wait_s``."""
     end = clock() + wait_s
     while busy():
         if clock() >= end:
             return False
         sleep(0.25)
+    return True
+
+
+def restart(p: Plan, busy, run_=run, wait_s: float = 20.0, clock=time.monotonic, sleep=time.sleep) -> bool:
+    """Restart the service's hub. A hub started before the old one let go of the port finds it busy
+    and exits, so on Windows wait until the port is free.
+    False when the old hub is still there after ``wait_s``: nothing is started then."""
+    if not p.stop:
+        run_(p.restart)
+        return True
+    run_(p.stop, check=False)
+    if not wait_free(busy, wait_s, clock, sleep):
+        return False
     run_(p.start)
     return True
