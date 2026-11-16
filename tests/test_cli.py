@@ -101,6 +101,7 @@ def test_service_install_reports_a_file_it_cannot_write(tmp_path, monkeypatch):
     plan = service.plan(tmp_path)
     plan.files = {blocker / "sekantor.xml": "x"}
     monkeypatch.setattr(service, "plan", lambda home: plan)
+    monkeypatch.setattr(service, "run", lambda commands, check=True: [])
     r = runner.invoke(app, ["service", "install", "--no-start"])
     assert r.exit_code == 1 and "Could not install the service" in r.output
 
