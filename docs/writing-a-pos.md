@@ -10,7 +10,7 @@ only.
 
 ## Report what your agents are doing
 
-`POST /v1/events` with schema v1 events `POST /v1/events` with schema v1 events
+`POST /v1/events` with schema v1 events
 ([`src/ronda/schema.py`](../src/ronda/schema.py)).
 
 | Field | What to put there |

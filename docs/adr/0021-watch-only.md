@@ -16,8 +16,8 @@ answer in the agent's own app.
 ## Decision
 Ronda only watches. It never answers an agent and never waits for one.
 
-- Every hook handler is `async` with `timeout` 10 (SessionEnd 5), with no arguments and no
-  `asyncRewake`. The hook posts the event and prints nothing. PermissionRequest and Notification still
+- Every hook handler is `async` with `timeout` 10, with no arguments and no `asyncRewake`; SessionEnd is
+  the one exception (below). The hook posts the event and prints nothing. PermissionRequest and Notification still
   report `waiting_approval` and `waiting_input`, now asynchronously.
 - The hub has no `/actions` routes, no waiters and no audit log. A new database gets no `actions`
   table; an existing table is left alone.
@@ -29,6 +29,12 @@ Ronda only watches. It never answers an agent and never waits for one.
   instead of answer buttons.
 - `Event.capabilities` and `Request.id` stay in the schema as deprecated fields: an older pos can still
   post them (the hub answers 202) and they are ignored.
+
+Hook shape: handlers stay in exec form (`"args": []`), because shell form runs in Git Bash on Windows,
+where a backslash path breaks and every event would be lost silently. SessionEnd is the exception to
+`async`: it is synchronous with `timeout` 5, since an async hook may be killed when the process exits and a
+lost SessionEnd was the one lost event of dogfooding day 1 (ADR-0017). It only POSTs with a short timeout and
+never waits for an answer, so it cannot hold an agent up in any way that matters.
 
 ## Consequences
 - No hook can hang an agent, and the "fail closed" promise gets simpler: there is nothing to fail.

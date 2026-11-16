@@ -23,7 +23,7 @@ from ronda import config
 
 HARD_TIMEOUT_S = 2.0
 HTTP_TIMEOUT_S = 1.0  # Windows takes ~2 s to refuse a closed loopback port; stay under the watchdog
-SESSION_END_HTTP_TIMEOUT_S = 1.5  # install raises SessionEnd's budget to 5 s (default 1.5 s)
+SESSION_END_HTTP_TIMEOUT_S = 1.5  # SessionEnd is the one synchronous hook (5 s timeout), so it may wait a little longer
 MAX_STDIN = 4 * 1024 * 1024
 LOG_MAX = 256 * 1024
 SENT_MAX = 2 * 1024 * 1024

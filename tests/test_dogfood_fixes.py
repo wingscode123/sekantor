@@ -46,16 +46,13 @@ def test_session_end_hook_has_a_longer_budget(tmp_path):
     p = tmp_path / "settings.json"
     inst.install(p, inst.Path("/x/ronda-hook"))
     end = json.loads(p.read_text())["hooks"]["SessionEnd"][0]["hooks"][0]
-    assert end["timeout"] >= 5 and end["async"] is True
+    assert end["timeout"] >= 5 and "async" not in end
 
 
 # --- 2: OpenBot's own helper runs are not sessions --------------------------------------
 
 class FakeWatchdog:
     """A real Watchdog calls os._exit at its deadline, which would end the test run."""
-
-    def extend_to(self, seconds):
-        pass
 
     def remaining(self):
         return 60.0

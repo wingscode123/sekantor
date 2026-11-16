@@ -47,8 +47,14 @@ def is_ours(handler: dict) -> bool:
 
 
 def handler_for(event: str, exe: Path) -> dict:
-    # SessionEnd gets a shorter timeout: nothing is waiting for it, and it only reports the end.
-    return {"type": "command", "command": str(exe), "async": True, "timeout": 5 if event == "SessionEnd" else 10}
+    # Exec form (`args`): shell form runs in Git Bash on Windows, where a backslash path breaks
+    # (docs/spike/claude-hooks.md). SessionEnd stays synchronous: an async hook may be killed when the
+    # process exits, and a SessionEnd was the one event lost under load in dogfooding (ADR-0017). It only
+    # POSTs with a short timeout and never waits for an answer.
+    h = {"type": "command", "command": exe.as_posix(), "args": []}
+    if event == "SessionEnd":
+        return {**h, "timeout": 5}
+    return {**h, "async": True, "timeout": 10}
 
 
 def _read(path: Path) -> dict:
@@ -148,12 +154,16 @@ class Installed:
     handlers: dict[str, dict] = field(default_factory=dict)
 
     def current_shape(self) -> bool:
-        """False for an install from before ADR-0021: a handler that waits (``--wait``), is synchronous or
-        asks to wake the agent. `ronda doctor` then says to reinstall."""
-        end = self.handlers.get("SessionEnd", {})
-        return (all(h.get("async") is True and "--wait" not in (h.get("args") or []) and not h.get("asyncRewake")
-                    for h in self.handlers.values())
-                and (end.get("timeout") or 0) >= 5)
+        """False for an install from before ADR-0021: a handler with ``--wait``, a synchronous one (except
+        SessionEnd), one with asyncRewake, or one in shell form. `ronda doctor` then says to reinstall."""
+        def ok(event: str, h: dict) -> bool:
+            if h.get("args") != [] or "asyncRewake" in h:
+                return False
+            if event == "SessionEnd":
+                return "async" not in h and (h.get("timeout") or 0) >= 5
+            return h.get("async") is True
+
+        return all(ok(e, h) for e, h in self.handlers.items())
 
     @property
     def complete(self) -> bool:
