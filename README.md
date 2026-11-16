@@ -36,6 +36,7 @@ and `uv run ronda reply <session> "text"` (the terminal prompt stays usable; who
 - [Product requirements](docs/PRD.md)
 - [M0 spike summary](docs/spike/summary.md) and [Claude Code hooks findings](docs/spike/claude-hooks.md)
 - [Architecture decisions](docs/adr/)
+- [Quiet hours, snooze, tmux](docs/watching.md)
 - [Dogfooding M1](docs/dogfooding.md)
 - [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
 - [Writing a pos](docs/writing-a-pos.md) and the [threat model](docs/threat-model.md)
