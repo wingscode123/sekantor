@@ -13,7 +13,7 @@ def test_http_libraries_log_only_problems():
     # httpx logs every request at INFO: the OpenBot pos wrote 16,845 lines to hub.log in 1.5 h.
     saved = {n: logging.getLogger(n).level for n in ("httpx", "httpcore")}
     try:
-        logs.setup("relay")
+        logs.setup("pos")
         assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
         assert logging.getLogger("httpcore").getEffectiveLevel() == logging.WARNING
     finally:

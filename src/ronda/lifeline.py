@@ -1,4 +1,4 @@
-"""Child processes of `ronda up` (relay, pos) end when the hub process is gone.
+"""Child processes of `ronda up` (pos) end when the hub process is gone.
 
 A force-stopped hub (Task Scheduler's End, a crash, TerminateProcess) runs no cleanup, so its
 children would keep running. `ronda up` passes its PID and start time; each child checks them.

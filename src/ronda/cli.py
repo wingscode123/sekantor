@@ -25,10 +25,6 @@ install_app = typer.Typer(no_args_is_help=True, help="Install Ronda's hooks into
 uninstall_app = typer.Typer(no_args_is_help=True, help="Remove Ronda's hooks from an agent.")
 app.add_typer(install_app, name="install")
 app.add_typer(uninstall_app, name="uninstall")
-pair_app = typer.Typer(no_args_is_help=True, help="Connect a remote channel (Telegram).")
-unpair_app = typer.Typer(no_args_is_help=True, help="Disconnect a remote channel.")
-app.add_typer(pair_app, name="pair")
-app.add_typer(unpair_app, name="unpair")
 pos_app = typer.Typer(no_args_is_help=True, help="Run a pos (platform adapter) by hand.")
 app.add_typer(pos_app, name="pos")
 
@@ -100,7 +96,6 @@ def up(
     port: int = typer.Option(config.DEFAULT_PORT, help="Port on 127.0.0.1."),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the inbox in a browser."),
     notify: bool = typer.Option(None, "--notify/--no-notify", help="Desktop notifications (default: config.toml, on)."),
-    relay: bool = typer.Option(True, "--relay/--no-relay", help="Start the relay when Telegram or webhooks are set up."),
     tmux: bool = typer.Option(True, "--tmux/--no-tmux", help="Watch CLI agents in tmux panes when tmux is installed."),
     openbot: bool = typer.Option(True, "--openbot/--no-openbot", help="Watch OpenBot agents when OpenBot is installed."),
     log_file: Path = typer.Option(None, "--log-file", help="Write output here instead of the console (used by `ronda service`)."),
@@ -146,7 +141,7 @@ def up(
         webbrowser.open(url)
     typer.echo(f"Approvals wait {settings.approval_wait_s}s, replies {settings.reply_wait_s}s, "
                f"notifications {'on' if settings.notify else 'off'} ({config.config_path()})")
-    children = [c for c in (_start_relay(port) if relay else None, _start_tmux(port) if tmux else None,
+    children = [c for c in (_start_tmux(port) if tmux else None,
                             _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
         uvicorn.run(hub_app, host=config.HOST, port=port, log_level="warning")
@@ -232,78 +227,6 @@ def _spawn(args: list[str], port: int):
     if _CHILD_OUT is not None:
         return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT)
     return subprocess.Popen(args, env=env)
-
-
-def _start_relay(port: int):
-    """The relay is a separate process (ADR-0011): the hub itself never talks to the internet."""
-    from ronda.relay.runner import configured
-
-    names = configured(config.home())
-    if not names:
-        return None
-    typer.echo(f"Relay: {', '.join(names)} (separate process)")
-    return _spawn([sys.executable, "-m", "ronda.cli", "relay"], port)
-
-
-@app.command()
-def relay(test: bool = typer.Option(False, "--test", help="Send one sample notification to every channel and exit.")):
-    """Forward 'needs you' moments to Telegram and webhooks, and take answers back (runs with `ronda up`)."""
-    if test:
-        import asyncio
-
-        from ronda.relay.runner import send_test
-
-        results = asyncio.run(send_test())
-        if not results:
-            typer.secho("Nothing to test: run `ronda pair telegram` or add [[webhooks]] to config.toml.", fg="yellow")
-            raise typer.Exit(1)
-        for name, ok in results:
-            typer.secho(f"  {'sent' if ok else 'FAILED'}  {name}", fg="green" if ok else "red")
-        raise typer.Exit(0 if all(ok for _, ok in results) else 1)
-    from ronda.relay.runner import main as relay_main
-
-    relay_main()
-
-
-@pair_app.command("telegram")
-def pair_telegram():
-    """Connect a Telegram bot (make one with @BotFather first). The token is never shown or logged."""
-    import asyncio
-    import secrets as _secrets
-
-    from ronda.relay.telegram import TelegramApi, TelegramError, pair, save_config
-
-    token = typer.prompt("Bot token from @BotFather", hide_input=True).strip()
-    api = TelegramApi(token)
-    try:
-        me = asyncio.run(api.call("getMe"))
-    except TelegramError:
-        typer.secho("Telegram did not accept that token.", fg="red")
-        raise typer.Exit(1)
-    code = f"{_secrets.randbelow(10**6):06d}"
-    typer.echo(f"Send this to @{me.get('username')} in Telegram within 5 minutes:")
-    typer.secho(f"    /pair {code}", bold=True)
-    try:
-        chat, name = asyncio.run(pair(api, code))
-    except TimeoutError:
-        typer.secho("No /pair message arrived. Nothing was saved.", fg="red")
-        raise typer.Exit(1)
-    path = save_config(config.home(), token, [chat], me.get("username") or "")
-    typer.secho(f"Paired with {name}. Saved to {path} (owner only).", fg="green")
-    typer.echo("Restart `ronda up` to start the relay.")
-
-
-@unpair_app.command("telegram")
-def unpair_telegram():
-    """Forget the Telegram bot and chat."""
-    from ronda.relay.telegram import config_path
-
-    path = config_path(config.home())
-    if path.exists():
-        path.unlink()
-        typer.secho(f"Removed {path}. Restart `ronda up` to stop the relay.", fg="green")
-    else:
-        typer.echo("Telegram is not paired.")
 
 
 @app.command("open")
@@ -677,9 +600,6 @@ def doctor():
     dist = web_dist()
     check(dist is not None, f"Web UI built ({dist})", "Web UI not built: `npm ci && npm run build` in web/", warn=True)
 
-    from ronda.relay.runner import configured, load_webhooks
-    from ronda.relay.telegram import config_path as tg_path
-
     from ronda.pos.openbot.pos import automation_dir, installed as openbot_installed
 
     if openbot_installed():
@@ -693,16 +613,9 @@ def doctor():
     check(_service.installed(_service.plan(config.home())), "Hub starts at login (ronda service)",
           "Hub does not start at login: `ronda service install` keeps it on", warn=True)
 
-    names = configured(config.home())
     _, config_problems = config.load()
     check(not config_problems, f"Settings in {config.config_path()}",
           "config.toml: " + "; ".join(config_problems))
-    _, hook_errors = load_webhooks(config.home())
-    check(not hook_errors, "Relay: " + (", ".join(names) if names else "not set up (optional)"),
-          "Webhook config problems: " + "; ".join(f"#{e.index + 1} {e.message}" for e in hook_errors))
-    if tg_path(config.home()).exists():
-        check(token_mode_ok(tg_path(config.home())), "Telegram config readable by you only",
-              f"{tg_path(config.home())} is readable by others")
 
     if exe:
         sample = json.dumps({"hook_event_name": "Notification", "session_id": "ronda-doctor",

@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import typer.main
 from typer.testing import CliRunner
 
 from ronda.cli import app
@@ -135,3 +136,13 @@ def test_a_large_service_log_is_rotated_at_start(tmp_path):
     log.write_text("small")
     _rotate_log(log, max_bytes=50)
     assert log.read_text() == "small"
+
+
+def test_up_has_no_relay_option():
+    up = typer.main.get_command(app).commands["up"]
+    assert not any("--relay" in p.opts for p in up.params)
+
+
+def test_no_pair_or_relay_commands():
+    names = set(typer.main.get_command(app).commands)
+    assert not {"relay", "pair", "unpair"} & names

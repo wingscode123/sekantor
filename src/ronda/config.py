@@ -135,6 +135,9 @@ SETTING_KEYS = {"approval_wait": "approval_wait_s", "reply_wait": "reply_wait_s"
                 "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos"}
 
 
+REMOVED_KEYS = {"webhooks", "telegram"}
+
+
 def load(base: Path | None = None) -> tuple[Settings, list[str]]:
     """The settings from config.toml and what is wrong with it. A bad value keeps its default, the rest still apply."""
     import tomllib
@@ -148,8 +151,8 @@ def load(base: Path | None = None) -> tuple[Settings, list[str]]:
         return Settings(), [f"{config_path(base)} is not read, defaults apply: {e}"]
     good, problems = {}, []
     for key, value in data.items():
-        if key == "webhooks":
-            continue  # checked by the relay (ronda.relay.webhook.parse)
+        if key in REMOVED_KEYS:
+            continue  # the relay is gone; an old config.toml may still have these
         if key not in SETTING_KEYS:
             problems.append(f"unknown setting {key!r}")
             continue
