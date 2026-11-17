@@ -366,3 +366,29 @@ def test_setup_endpoint_refuses_cookie(client):
     code = client.app.state.login_codes.issue()
     client.get(f"/?login={code}", follow_redirects=False)
     assert client.get("/v1/setup").status_code == 403
+
+
+@pytest.mark.parametrize("cwd", [5, ["/w"], {"a": 1}])
+def test_hook_endpoint_non_string_cwd_is_422(client, cwd):
+    r = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body({**PRE_TOOL, "cwd": cwd}))
+    assert r.status_code == 422
+
+
+def test_hook_endpoint_duplicate_id_is_not_stored_twice_nor_followed_up(client, monkeypatch):
+    calls = []
+
+    def collect(pid, deep, **kw):
+        calls.append(deep)
+        return [], None, None
+
+    monkeypatch.setattr("sekantor.pos.claude_code.fingerprint.collect", collect)
+    start = {"hook_event_name": "SessionStart", "session_id": "abc", "cwd": "/w", "source": "startup"}
+    first = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(start, env={"CLAUDE_PID": "1"}))
+    for _ in range(100):
+        if True in calls:
+            break
+        time.sleep(0.05)
+    again = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(start, env={"CLAUDE_PID": "1"}))
+    time.sleep(0.5)
+    assert first.json()["stored"] is True and again.status_code == 202 and again.json() == {"stored": False}
+    assert calls.count(True) == 1

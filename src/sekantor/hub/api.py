@@ -128,7 +128,10 @@ async def post_claude_hook(request: Request):
     if len(raw) > MAX_HOOK_PAYLOAD and len(json.dumps(body.payload)) > MAX_HOOK_PAYLOAD:
         raise HTTPException(413, detail="hook payload too large")
     st = request.app.state
-    if st.settings.ignored(body.payload.get("cwd")):
+    cwd = body.payload.get("cwd")
+    if cwd is not None and not isinstance(cwd, str):
+        raise HTTPException(422, detail="payload.cwd must be a string")
+    if st.settings.ignored(cwd):
         return {"stored": False}  # e.g. OpenBot's own helper runs from its program folder
     from sekantor.pos.claude_code import hook
 
@@ -139,7 +142,8 @@ async def post_claude_hook(request: Request):
         ev = Event.model_validate(event)
     except (ValidationError, ValueError, TypeError, KeyError):
         raise HTTPException(422, detail="not a Claude Code hook payload") from None
-    await _store(st, ev)
+    if not await _store(st, ev):
+        return {"stored": False}  # a duplicate event id: nothing new, so no second follow-up
     if event.get("type") == "session_started":
         task = asyncio.create_task(_host_follow_up(st, event, body.payload, body.env))
         st.background.add(task)
