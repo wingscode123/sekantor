@@ -7,9 +7,11 @@ import "@fontsource/jetbrains-mono/800.css";
 import "../../site/app.css";
 import "./web.css";
 import App from "./App";
+import { MiniView } from "./office/MiniView";
+const mini = new URLSearchParams(window.location.search).get("view") === "mini";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {mini ? <MiniView /> : <App />}
   </StrictMode>,
 );
