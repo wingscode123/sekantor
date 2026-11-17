@@ -82,8 +82,18 @@ def main(argv: list[str]) -> int:
           f"setup --apply -> {report}", r.stdout + r.stderr)
     settings = Path.home() / ".claude" / "settings.json"
     text = settings.read_text(encoding="utf-8") if settings.is_file() else ""
-    check(str(inst).lower().replace("\\", "/") in text.lower().replace("\\\\", "/"),
-          "hooks point at the installed sekantor-hook.exe", f"{settings} missing" if not text else text[:500])
+    # The native forwarder (hook/, ADR-0026) that CI copied into dist/sekantor/ before `tauri build`.
+    hook = (inst / "sekantor" / "sekantor-hook.exe").as_posix().lower()
+    commands = {str(h.get("command", "")).replace("\\", "/").lower()
+                for groups in (json.loads(text).get("hooks", {}) if text else {}).values()
+                for group in groups for h in group.get("hooks", [])
+                if "sekantor-hook" in str(h.get("command", ""))}
+    check(commands == {hook}, "hooks point at the installed sekantor-hook.exe",
+          f"{settings} missing" if not text else f"commands {sorted(commands)}")
+    r = subprocess.run([str(inst / "sekantor" / "sekantor-hook.exe")], input=b"", capture_output=True,
+                       timeout=10)
+    check(r.returncode == 0 and not r.stdout and not r.stderr, "installed sekantor-hook.exe exits 0 silently",
+          f"exit {r.returncode}, stdout {r.stdout[:200]!r}, stderr {r.stderr[:200]!r}")
 
     # The uninstaller must cope with a running hub (its files are locked while it runs). The login task
     # was started by --apply; if Task Scheduler did not start it here, start the hub the way the app does.

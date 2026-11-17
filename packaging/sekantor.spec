@@ -1,7 +1,8 @@
-# PyInstaller spec: one folder (dist/sekantor/) with three exes sharing one runtime.
+# PyInstaller spec: one folder (dist/sekantor/) with two exes sharing one runtime.
 #   sekantor.exe       console   the CLI (setup, doctor, stop, service, install/uninstall ...)
 #   sekantor-hub.exe   windowed  `up`, started by the app and the login task without a console window
-#   sekantor-hook.exe  console   the Claude Code hook (reads stdin, prints nothing)
+# The Claude Code hook is the native forwarder (hook/, ADR-0026): CI builds it with cargo and copies
+# sekantor-hook.exe into this folder after PyInstaller, before `tauri build`.
 # Build from the repo root after `npm run build` in web/:
 #   uv run pyinstaller packaging/sekantor.spec --distpath dist --workpath build/pyi
 # The Tauri bundle copies dist/sekantor/ into the installer (desktop/src-tauri/tauri.conf.json).
@@ -37,11 +38,9 @@ def exe(a, name, console):
 
 cli = analysis("entry_cli.py")
 hub = analysis("entry_hub.py")
-hook = analysis("entry_hook.py")
 
 COLLECT(
     exe(cli, "sekantor", True), cli.binaries, cli.datas,
     exe(hub, "sekantor-hub", False), hub.binaries, hub.datas,
-    exe(hook, "sekantor-hook", True), hook.binaries, hook.datas,
     name="sekantor", upx=False, strip=False,
 )

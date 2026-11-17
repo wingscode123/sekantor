@@ -63,7 +63,7 @@ jobs:
           name: Build
           command: npm run build
 
-  # The Windows desktop app: PyInstaller folder (dist/sekantor) + Tauri shell -> unsigned NSIS installer.
+  # The Windows desktop app: PyInstaller folder (dist/sekantor) + native hook (hook/) + Tauri shell -> unsigned NSIS installer.
   # Order matters: tauri-build (also run by `cargo test`) needs the generated icons and dist/sekantor/.
   desktop-windows:
     executor:
@@ -99,7 +99,7 @@ jobs:
             - win-npm-v1-{{ checksum "web/package-lock.json" }}-{{ checksum "desktop/package-lock.json" }}
       - restore_cache:
           keys:
-            - win-cargo-v1-{{ checksum "desktop/src-tauri/Cargo.toml" }}
+            - win-cargo-v2-{{ checksum "desktop/src-tauri/Cargo.toml" }}-{{ checksum "hook/Cargo.toml" }}
       - run:
           shell: bash.exe
           name: Build the web UI
@@ -115,6 +115,18 @@ jobs:
             set -euxo pipefail
             python -m uv sync --locked --group packaging
             python -m uv run pyinstaller packaging/sekantor.spec --distpath dist --workpath build/pyi --noconfirm 2>&1 | tee logs/pyinstaller.log
+      - run:
+          shell: bash.exe
+          name: Native hook (cargo test, release build into dist/sekantor)
+          no_output_timeout: 30m
+          command: |
+            set -euxo pipefail
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cd hook
+            cargo test 2>&1 | tee ../logs/hook-cargo-test.log
+            cargo build --release 2>&1 | tee ../logs/hook-cargo-build.log
+            cp target/release/sekantor-hook.exe ../dist/sekantor/
+            ls -l ../dist/sekantor/sekantor-hook.exe
       - run:
           shell: bash.exe
           name: Smoke test the PyInstaller folder
@@ -160,7 +172,7 @@ jobs:
             cp src-tauri/target/release/bundle/nsis/*.exe ../installer/
             ls -l ../installer
       - save_cache:
-          key: win-cargo-v1-{{ checksum "desktop/src-tauri/Cargo.toml" }}
+          key: win-cargo-v2-{{ checksum "desktop/src-tauri/Cargo.toml" }}-{{ checksum "hook/Cargo.toml" }}
           paths:
             - ~/.cargo/registry
             - ~/.cargo/git
@@ -180,6 +192,7 @@ jobs:
           command: |
             mkdir -p logs
             cp desktop/src-tauri/Cargo.lock logs/ 2>/dev/null || true
+            cp hook/Cargo.lock logs/hook-Cargo.lock 2>/dev/null || true
             cp -r build/pyi/sekantor/warn-*.txt logs/ 2>/dev/null || true
             true
       - store_artifacts:

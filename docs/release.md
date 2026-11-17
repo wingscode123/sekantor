@@ -36,9 +36,12 @@ workflow, not committed). Install the wheel attached to a GitHub Release instead
 
 ## Desktop installer (Windows)
 
-The app (Tauri shell plus the hub frozen by PyInstaller, ADR-0024 and ADR-0025) is built only on
-CircleCI, by the `desktop-windows` job. It runs on `main` and on branches named `desktop-*`; on any
-other branch, trigger a pipeline with the parameter `desktop` set to `true`.
+The app (Tauri shell, the hub frozen by PyInstaller and the native hook forwarder; ADR-0024,
+ADR-0025 and ADR-0026) is built only on CircleCI, by the `desktop-windows` job. The PyInstaller folder
+holds `sekantor.exe` and `sekantor-hub.exe`; the job then builds `hook/` with cargo and copies
+`sekantor-hook.exe` into the same folder before the smoke test and `tauri build`. It runs on `main`
+and on branches named `desktop-*`; on any other
+branch, trigger a pipeline with the parameter `desktop` set to `true`.
 
 1. Open the pipeline in CircleCI, job `desktop-windows`, tab Artifacts.
 2. Download `installer/SeKantor_<version>_x64-setup.exe`. It is unsigned: Windows SmartScreen asks
@@ -55,10 +58,12 @@ Uninstalling (Settings, Apps) stops the hub and removes the hooks and the login 
 (token, events, logs) stays. Upgrading or uninstalling while agents run can hit a locked
 `sekantor-hook.exe` (a running hook holds it open): close the agents, or retry.
 
-The job also stores `logs/` (PyInstaller, cargo test, tauri build and installer check output, the
+The job also stores `logs/` (PyInstaller, hook and app cargo test, hook build, tauri build and
+installer check output, the
 smoke test's temporary home without its token) for debugging a failed run.
 
 To build the PyInstaller folder by hand, in a worktree (never in a checkout whose `.venv` runs your hub):
 `(cd web && npm ci && npm run build)`, `uv sync --group packaging`,
 `uv run pyinstaller packaging/sekantor.spec --distpath dist --workpath build/pyi`, then
-`uv run python packaging/smoke.py dist/sekantor`.
+`uv run python packaging/smoke.py dist/sekantor`. Without a Rust toolchain the folder has no
+`sekantor-hook.exe`, and the smoke test skips the hook checks (it says so); CI runs them.
