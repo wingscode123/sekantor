@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from sekantor import selfexe
+
 TASK = "SeKantor hub"
 LABEL = "dev.sekantor.hub"
 OLD_TASK, OLD_LABEL, OLD_UNIT = "Ronda hub", "dev.ronda.hub", "ronda.service"  # ADR-0023
@@ -36,12 +38,8 @@ class Plan:
 
 
 def hub_command(home: Path, platform: str = sys.platform, python: str = sys.executable) -> list[str]:
-    if platform == "win32":
-        exe = Path(python)
-        w = exe.with_name("pythonw.exe")  # no console window
-        exe = w if w.exists() or not exe.exists() else exe
-        return [str(exe), "-m", "sekantor.cli", "up", "--no-open", "--log-file", str(home / "hub.log")]
-    return [python, "-m", "sekantor.cli", "up", "--no-open", "--log-file", (home / "hub.log").as_posix()]
+    log = str(home / "hub.log") if platform == "win32" else (home / "hub.log").as_posix()
+    return [*selfexe.hub_exe(platform, python), "up", "--no-open", "--log-file", log]
 
 
 def _windows_xml(cmd: list[str], user: str) -> bytes:

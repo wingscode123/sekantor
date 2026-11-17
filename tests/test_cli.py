@@ -255,3 +255,20 @@ def test_setup_apply_fails_when_no_hook_binary(tmp_path, monkeypatch):
     monkeypatch.setattr(inst, "hook_executable", lambda: None)
     r = runner.invoke(app, ["setup", "--apply"])
     assert r.exit_code == 1 and "sekantor-hook not found" in r.output
+
+
+def test_spawned_children_get_no_console_window_on_windows(monkeypatch):
+    import subprocess
+    import sys
+
+    from sekantor import cli
+
+    seen = []
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **k: seen.append(k))
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(cli, "_CHILD_OUT", None)
+    cli._spawn(["x"], 7878)
+    monkeypatch.setattr(cli, "_CHILD_OUT", object())
+    cli._spawn(["x"], 7878)
+    assert [k["creationflags"] for k in seen] == [0x08000000, 0x08000000]
