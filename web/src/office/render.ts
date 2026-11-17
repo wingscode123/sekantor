@@ -10,18 +10,50 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
   let stopped = false, frame = 0, last = performance.now();
   let positions = new Map<string, Pt>();
   const retained = new Map<string, Avatar>(), departures = new Departures(), finished = new Set<string>();
+  const live = new Set<string>(), targets = new Map<string, Pt>(), sorted: Avatar[] = [];
+  const layer = document.createElement("canvas"), layerCtx = layer.getContext("2d");
+  const layout: number[] = [], previousLayout: number[] = [];
+  function addDesk(point: Pt) {
+    for (let i = 10; i < layout.length; i += 2) if (layout[i] === point.x && layout[i + 1] === point.y) return;
+    layout.push(point.x, point.y);
+  }
+  function staticLayer(office: Office) {
+    layout.length = 0;
+    layout.push(office.width, office.height, office.yourDesk.x, office.yourDesk.y,
+      office.rack.x, office.rack.y, office.pantry.x, office.pantry.y, office.door.x, office.door.y);
+    for (const cluster of office.clusters) for (const desk of cluster.desks) addDesk(desk);
+    for (const avatar of retained.values()) addDesk(avatar.deskTile);
+    let changed = layout.length !== previousLayout.length;
+    for (let i = 0; !changed && i < layout.length; i++) changed = layout[i] !== previousLayout[i];
+    if (!changed || !layerCtx) return;
+    previousLayout.length = 0;
+    for (const value of layout) previousLayout.push(value);
+    layer.width = office.width * 16; layer.height = office.height * 16;
+    layerCtx.imageSmoothingEnabled = false;
+    for (let y = 0; y < office.height; y++) for (let x = 0; x < office.width; x++)
+      theme.tile(y === 0 ? "wall" : "floor", layerCtx, x * 16, y * 16);
+    for (let i = 10; i < layout.length; i += 2) {
+      theme.furniture("chair", layerCtx, layout[i] * 16, layout[i + 1] * 16 + 8);
+      theme.furniture("desk", layerCtx, layout[i] * 16, layout[i + 1] * 16);
+    }
+    theme.furniture("your_desk", layerCtx, office.yourDesk.x * 16, office.yourDesk.y * 16);
+    theme.furniture("coffee", layerCtx, office.pantry.x * 16, office.pantry.y * 16);
+    theme.furniture("door", layerCtx, office.door.x * 16, office.door.y * 16);
+    theme.furniture("plant", layerCtx, Math.max(0, office.width - 2) * 16, 16);
+  }
   function tick() {
     timer = undefined;
     if (stopped || document.hidden) return;
     const office = getOffice(), now = performance.now(), dt = Math.min(250, now - last);
     last = now;
-    const live = new Set(office.avatars.map(a => a.key));
+    live.clear();
+    for (const avatar of office.avatars) live.add(avatar.key);
     for (const key of finished) if (!live.has(key)) finished.delete(key);
     for (const avatar of office.avatars) {
       if (avatar.pose !== "leave") { finished.delete(avatar.key); departures.cancel(avatar.key); }
       if (!finished.has(avatar.key)) retained.set(avatar.key, avatar);
     }
-    const targets = new Map<string, Pt>();
+    targets.clear();
     for (const [key, avatar] of retained) {
       const leaving = !live.has(key) || avatar.pose === "leave";
       if (leaving) departures.mark(key);
@@ -42,21 +74,15 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     const scale = Math.max(1, Math.floor(Math.min(canvas.width / (office.width * 16), canvas.height / (office.height * 16))));
     ctx!.setTransform(1, 0, 0, 1, 0, 0); ctx!.clearRect(0, 0, canvas.width, canvas.height);
     ctx!.setTransform(scale, 0, 0, scale, 0, 0); ctx!.imageSmoothingEnabled = false;
-    for (let y = 0; y < office.height; y++) for (let x = 0; x < office.width; x++) theme.tile(y === 0 ? "wall" : "floor", ctx!, x * 16, y * 16);
-    for (const cluster of office.clusters) for (const desk of cluster.desks) {
-      theme.furniture("chair", ctx!, desk.x * 16, desk.y * 16 + 8);
-      theme.furniture("desk", ctx!, desk.x * 16, desk.y * 16);
-    }
-    const drawnDesks = new Set(office.clusters.flatMap(c => c.desks.map(d => `${d.x},${d.y}`)));
-    for (const avatar of retained.values()) if (!drawnDesks.has(`${avatar.deskTile.x},${avatar.deskTile.y}`)) {
-      theme.furniture("desk", ctx!, avatar.deskTile.x * 16, avatar.deskTile.y * 16);
-      drawnDesks.add(`${avatar.deskTile.x},${avatar.deskTile.y}`);
-    }
-    for (const [kind, point] of [["your_desk", office.yourDesk], ["rack", office.rack], ["coffee", office.pantry], ["door", office.door]] as const)
-      theme.furniture(kind, ctx!, point.x * 16, point.y * 16, frame);
-    theme.furniture("plant", ctx!, Math.max(0, office.width - 2) * 16, 16);
-    for (const [key, avatar] of [...retained].sort((a, b) => positions.get(a[0])!.y - positions.get(b[0])!.y)) {
-      const p = positions.get(key)!, target = targets.get(key)!;
+    staticLayer(office);
+    ctx!.drawImage(layer, 0, 0);
+    // Only the rack blinks; all other furniture is part of the static layer.
+    theme.furniture("rack", ctx!, office.rack.x * 16, office.rack.y * 16, frame);
+    sorted.length = 0;
+    for (const avatar of retained.values()) sorted.push(avatar);
+    sorted.sort((a, b) => positions.get(a.key)!.y - positions.get(b.key)!.y);
+    for (const avatar of sorted) {
+      const p = positions.get(avatar.key)!, target = targets.get(avatar.key)!;
       const moving = p.x !== target.x || p.y !== target.y;
       theme.character(avatar.look, moving ? "run" : avatar.pose, frame, ctx!, p.x * 16, p.y * 16 - 8);
     }

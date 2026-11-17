@@ -64,9 +64,10 @@ export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
   return g.done();
 }
 const cache = new Map<string, HTMLCanvasElement>();
-function paint(key: string, rows: Grid, ctx: CanvasRenderingContext2D, x: number, y: number) {
+function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x: number, y: number) {
   let sprite = cache.get(key);
   if (!sprite) {
+    const rows = build();
     sprite = document.createElement("canvas"); sprite.width = rows[0].length; sprite.height = rows.length;
     const off = sprite.getContext("2d"); if (!off) return;
     rows.forEach((row, j) => [...row].forEach((c, i) => {
@@ -79,7 +80,7 @@ function paint(key: string, rows: Grid, ctx: CanvasRenderingContext2D, x: number
 }
 export const defaultTheme: Theme = {
   palette,
-  tile: (kind, ctx, x, y) => paint(kind, tileGrid(kind), ctx, x, y),
-  furniture: (kind, ctx, x, y, frame = 0) => paint(`${kind}:${frame % 2}`, furnitureGrid(kind, frame), ctx, x, y),
-  character: (look, pose, frame, ctx, x, y) => paint(`${look.body},${look.hair},${look.shirt},${look.accessory}:${pose}:${frame % 4}`, characterGrid(look, pose, frame), ctx, x, y),
+  tile: (kind, ctx, x, y) => paint(kind, () => tileGrid(kind), ctx, x, y),
+  furniture: (kind, ctx, x, y, frame = 0) => paint(`${kind}:${frame % 2}`, () => furnitureGrid(kind, frame), ctx, x, y),
+  character: (look, pose, frame, ctx, x, y) => paint(`${look.body},${look.hair},${look.shirt},${look.accessory}:${pose}:${frame % 4}`, () => characterGrid(look, pose, frame), ctx, x, y),
 };
