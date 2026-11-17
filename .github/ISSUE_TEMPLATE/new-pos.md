@@ -13,6 +13,6 @@ labels: pos
 its process name, env vars. A `scripts/probe_hosts.py -o probe.json` run while it waits for you
 helps a lot (check the file for secrets first).
 
-**How could SeKantor answer it?** (approve/deny, reply text, keys in a terminal, an API call)
+**How could SeKantor tell when it is waiting, working or done?** (a hook event, a prompt on screen, an API field, a process state)
 
 **Will you write it?** See docs/writing-a-pos.md.

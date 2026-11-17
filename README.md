@@ -11,7 +11,7 @@ Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local to
 **Status:** pre-alpha, feature-complete for 1.0 (M0 to M4). Watches Claude Code (terminal, VS Code,
 Claude desktop, Orca), OpenBot (Local scripts API), and codex/opencode/gemini/aider in tmux or Orca
 terminals.
-SeKantor was called Ronda until 2026-11-16 (ADR-0023); upgrading keeps your token, settings and history.
+SeKantor was called Ronda until 2026-11-16 (ADR-0023); upgrading keeps your token, settings and history. After upgrading, run `sekantor open` once: the browser login cookie is new.
 
 A pixel office is coming: each agent gets a desk, and you see who is working, who is waiting and who left.
 Today SeKantor detects your agents and shows the inbox.

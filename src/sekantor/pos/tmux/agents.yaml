@@ -2,8 +2,8 @@
 #
 # Patterns are regular expressions (case-insensitive) matched against the last `tail` lines of the
 # pane. They are UNVERIFIED best guesses until someone captures each agent's real prompts: send a
-# fix with `tmux capture-pane -p` output. `approve_keys` / `deny_keys` are tmux key names sent with
-# `send-keys` (Enter, Escape, y, n, 1, ...). An agent without them gets no Approve/Deny buttons.
+# fix with `tmux capture-pane -p` output. `approve_keys` / `deny_keys` are unused: SeKantor only
+# watches and never sends keys (ADR-0021). They are kept so existing files still load.
 
 version: 1
 idle_s: 4          # screen unchanged this long = the agent waits for input
