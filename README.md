@@ -41,7 +41,7 @@ same list in the terminal. SeKantor only watches: you answer an agent in its own
 - [Architecture decisions](docs/adr/)
 - [Quiet hours, snooze, tmux](docs/watching.md)
 - [Dogfooding M1](docs/dogfooding.md)
-- [Approve and reply (M2 spike)](docs/spike/m2-actions.md)
+- [M2 spike notes (historical, answering was removed)](docs/spike/m2-actions.md)
 - [Writing a pos](docs/writing-a-pos.md) and the [threat model](docs/threat-model.md)
 - [Releasing](docs/release.md)
 - [Improvement log](docs/improvement-log.md): the pstack audit, cleanup, CI move and dogfooding (November 2026)
