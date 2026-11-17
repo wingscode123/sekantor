@@ -1,24 +1,23 @@
 # Threat model
 
-SeKantor can approve shell commands and type into agents on the user's behalf. Whoever can drive SeKantor
-can act roughly like someone at the user's terminal. This document lists what SeKantor protects, from
-whom, how, and what is left over. Version: M4 (pre-alpha), 2026-11-11.
+SeKantor watches coding agents and reports their status. It approves nothing and sends nothing to agents
+(ADR-0021): there is no path from the hub back to an agent. What it can still do is show session data,
+mute or snooze sessions, and bring the app a session runs in to the front on this computer. This
+document lists what SeKantor protects, from whom, how, and what is left over.
 
 ## What is worth attacking
 
 | Asset | Why it matters |
 | --- | --- |
-| The ability to approve, deny or reply | Approve runs a command; reply instructs an agent |
-| `~/.sekantor/token` | Full access to the hub API |
-| OpenBot's automation token (read, not stored) | Answer OpenBot approvals |
-| Session data: commands, summaries, paths | Can contain secrets and business details |
-| Audit log | Proof of who approved what |
+| `~/.sekantor/token` | Full access to the hub API (read sessions, mute, snooze, open an app) |
+| OpenBot's automation token (read, never stored) | Lets the OpenBot pos list agents |
+| Session data: summaries, paths, tool names | Can contain secrets and business details |
 
 ## Who might try
 
 1. **A web page** in the user's browser (CSRF, DNS rebinding against `127.0.0.1:7878`).
 2. **Another OS user** on the same machine.
-3. **Text produced by an agent or a repo** (prompt injection through summaries or commands).
+3. **Text produced by an agent or a repo** (prompt injection through summaries).
 4. **Malware running as the user.** Out of scope: it can already run commands and read every file.
 
 ## Boundaries
@@ -28,29 +27,35 @@ agents --hooks / screen / OpenBot API--> pos (same user) --loopback HTTP + token
 browser --cookie + Origin + Host checks--> hub
 ```
 
+Nothing flows from the hub to an agent.
+
 ## Threats and controls
 
 | # | Threat | Controls | Where |
 | --- | --- | --- | --- |
-| T1 | A web page approves a command | Token on every request; browser uses an HttpOnly SameSite=Strict cookie; state-changing cookie requests and every WebSocket need the hub's own `Origin`; `Host` must be `127.0.0.1:<port>`/`localhost:<port>` (DNS rebinding) | ADR-0007, `hub/auth.py` |
+| T1 | A web page reads or changes hub state | Token on every request; browser uses an HttpOnly SameSite=Strict cookie; state-changing cookie requests and every WebSocket need the hub's own `Origin`; `Host` must be `127.0.0.1:<port>`/`localhost:<port>` (DNS rebinding) | ADR-0007, `hub/auth.py` |
 | T2 | Another user reads the token | `~/.sekantor/token` mode 600 on POSIX; on Windows the user profile ACL | `hub/auth.py`, doctor |
-| T3 | SeKantor approves something nobody chose | Never auto-approves. Hooks print a decision only for an explicit action on the exact request id; every failure, timeout or doubt prints nothing and the agent asks in its own prompt | ADR-0003, ADR-0008, `hook.py` |
-| T4 | An old or replayed approval lands on a new question | Request ids; an action is delivered once; pending actions expire as soon as the session moves on; the hub refuses actions for requests that are not pending | `hub/api.py`, `store.py` |
-| T5 | A dangerous command approved by mistake | Denylist (`rm -rf`, `git push --force`, `sudo`, `curl ... \| sh`, ...) needs a second confirmation in the UI and CLI | `config.DEFAULT_RISKY` |
-| T6 | Answer typed into the wrong terminal | tmux/Orca pos check the pane still runs the same agent process/run before sending keys | ADR-0013, ADR-0015 |
-| T7 | Secrets leave the machine | SeKantor makes no outbound calls: the hub binds to 127.0.0.1 and nothing forwards to the internet; desktop notifications carry no command text | ADR-0003 |
-| T9 | Logs leak data | `hook.log` has event names and error types only; `sent.log` has ids and statuses; tokens are never logged | `hook.py`, OpenBot pos |
-| T10 | SeKantor slows or blocks agents | Hooks async except PermissionRequest (waits, but the agent's own prompt stays usable) and SessionEnd (0.5 s); 2 s watchdog otherwise; hub limits batch and field sizes | ADR-0003, ADR-0008 |
+| T3 | Secrets leave the machine | SeKantor makes no outbound calls: the hub binds to 127.0.0.1 and nothing forwards to the internet; desktop notifications carry no command text | ADR-0003 |
+| T4 | Logs leak data | `hook.log` has event names and error types only; tokens are never logged | `hook.py`, OpenBot pos |
+| T5 | SeKantor slows or blocks agents | Every hook runs async in exec form (no shell) except SessionEnd, which is synchronous with a 5 s hook timeout and a 1.5 s HTTP timeout; a watchdog ends a hung hook; the hub limits batch and field sizes | ADR-0003, ADR-0021 |
+
+### Removed with the answer path
+
+The earlier threats about approving or replying are gone because the controls and the feature are gone
+(ADR-0021): approving something nobody chose, replayed approvals, a risky-command denylist, and answers
+typed into the wrong terminal. With no answer path there is no request id to replay, no keys sent to a
+pane, and no decision printed by a hook. A SeKantor hook never prints a decision, so the agent always
+shows its own prompt.
 
 ## Residual risks
 
 - **The login link** is a one-time code valid for 10 minutes (`/?login=...`, from `sekantor up` or
   `sekantor open`); the token itself never appears in a URL. Whoever opens an unspent link first gets a
   session cookie. If a token may have leaked, `sekantor token rotate` and restart `sekantor up`.
-- **Screen-reading pos can be wrong** (ADR-0013): a "question" SeKantor detects may not be one. The
-  person still decides; the keys sent are the configured ones only.
-- **Replies are instructions.** Whoever can reply (inbox, CLI) can steer the agent; SeKantor
-  treats them as the user's own words.
+- **Screen-reading pos can be wrong** (ADR-0013): a "waiting" status SeKantor detects may not be one.
+  The status is a hint; nothing is sent to the pane.
+- **Agent-written text is shown as is.** Summaries come from the agent or repo and are rendered as text,
+  never as instructions to SeKantor.
 - **Windows file permissions** rely on the profile ACL, not on mode bits.
 - **Same-user malware** is not something SeKantor can defend against.
 
