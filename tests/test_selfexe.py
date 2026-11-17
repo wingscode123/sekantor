@@ -29,7 +29,7 @@ def test_self_command_frozen_has_no_exe_suffix_off_windows(monkeypatch, tmp_path
 
 def test_hub_exe_frozen_is_the_windowed_exe(monkeypatch, tmp_path):
     folder = _frozen(monkeypatch, tmp_path, name="sekantor.exe")
-    assert selfexe.hub_exe() == [str(folder / "sekantor-hub.exe")]
+    assert selfexe.hub_exe("win32") == [str(folder / "sekantor-hub.exe")]
 
 
 def test_hub_exe_from_source_keeps_pythonw(monkeypatch, tmp_path):
