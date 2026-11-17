@@ -6,8 +6,8 @@ import "./office/office.css";
 
 export default function App() {
   const { sessions, connection, loaded } = useSessions();
-  const now = useNow(1000, sessions.length > 0);
-  const awake = sessions.filter(s => !isSnoozed(s, now));
+  const now = useNow(1000, sessions.some(s => s.status !== "ended" && isSnoozed(s, Date.now())));
+  const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const needs = awake.filter(s => s.needs_you).length;
   useEffect(() => { document.title = needs ? `(${needs}) SeKantor` : "SeKantor"; }, [needs]);
   return <>
@@ -21,7 +21,7 @@ export default function App() {
       {connection === "down" && <div className="office-banner" role="alert">The hub is not answering. Reconnecting; showing the last office.{!loaded && <p>Start the hub with <code>sekantor up</code>.</p>}</div>}
       {connection === "unauthorized" && <div className="office-banner" role="alert">Open SeKantor from its link. Sign-in links work once and expire after 10 minutes. Run <code>sekantor open</code> for a fresh one.</div>}
       {!loaded && <p role="status">Waiting for sessions…</p>}
-      <OfficeView sessions={sessions} loaded={loaded} needsCount={needs} />
+      <OfficeView sessions={sessions} loaded={loaded} now={now} />
     </main>
   </>;
 }

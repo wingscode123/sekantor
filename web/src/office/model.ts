@@ -51,11 +51,9 @@ export function layoutOffice(sessions: Session[]): Office {
   const avatars: Avatar[] = [];
   const seats = new Map<string, number>();
   const assigned = new Map<string, number>();
-  // Live colleagues take the lowest seats. Ended sessions remain in this snapshot
-  // for the renderer to animate leaving, without reserving a live identity seat.
+  // Only live colleagues reserve desks. The renderer retains departures until they exit.
   const ordered = sessions.filter(s => s.status !== "ended").sort((a, b) => compare(a.started_at, b.started_at) || compare(a.session_id, b.session_id));
   for (const s of ordered) {
-    if (s.status === "ended") continue;
     const identity = identityOf(s);
     const seat = seats.get(identity) || 0;
     assigned.set(s.session_id, seat);

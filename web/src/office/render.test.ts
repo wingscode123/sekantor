@@ -71,8 +71,8 @@ it("reuses the static layer across frames and equivalent office objects", () => 
 
 it("publishes key-based native positions in paint order across office replacement", () => {
   const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
-  const avatar = { key: "front", sessionId: "front", identity: "i", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk" as const, pose: "type" as const, deskTile: { x: 5, y: 4 }, name: "a", app: "a", project: "a" };
-  let current: Office = { ...office, avatars: [avatar, { ...avatar, key: "back", deskTile: { x: 5, y: 3 } }] };
+  const avatar = { key: "front", sessionId: "front", identity: "i", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk" as const, pose: "type" as const, deskTile: { x: 5, y: 1 }, targetTile: { x: 5, y: 4 }, name: "a", app: "a", project: "a" };
+  let current: Office = { ...office, avatars: [avatar, { ...avatar, key: "back", targetTile: { x: 5, y: 3 } }] };
   const onFrame = vi.fn();
   const stop = startRenderer(canvas, () => current, theme, onFrame);
   vi.advanceTimersByTime(2500);

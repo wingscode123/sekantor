@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Timeline } from "../Timeline";
-import { SessionMenu } from "../SessionMenu";
+import { isSnoozed, SessionMenu } from "../SessionMenu";
 import { useNow } from "../useSessions";
 import { STATUS_CLASS, type Session } from "../types";
 import type { Avatar } from "./model";
 
 export const statusText = (s: Session) => ({ waiting_approval: "Waiting for approval", waiting_input: "Waiting for you", running: "Running", error: "Error", done: "Done", ended: "Ended" })[s.status];
 export function AvatarCard({ session: s, avatar, onClose }: { session: Session; avatar: Avatar; onClose: () => void }) {
-  const now = useNow(1000);
+  const now = useNow(1000, isSnoozed(s, Date.now()));
   const card = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;

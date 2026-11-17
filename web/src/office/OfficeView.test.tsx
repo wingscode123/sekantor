@@ -94,4 +94,25 @@ describe("office page", () => {
     view.rerender(<OfficeView sessions={[session()]} />);
     expect(wake).toHaveBeenCalledOnce();
   });
+  it("keeps plates visible at 1200px width with three cluster rows", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+    const sessions = Array.from({ length: 25 }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i % 6}` } }));
+    render(<OfficeView sessions={sessions} />);
+    expect(screen.getAllByTestId("name-plate").every(p => !(p as HTMLButtonElement).hidden)).toBe(true);
+  });
+  it("excludes ended and snoozed agents from canvas counts but keeps snoozed live avatars", () => {
+    mocks.state.sessions = [session(), { ...session("ended"), status: "ended" }, { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, { ...session("waiting"), status: "waiting_input", needs_you: true }];
+    render(<App />);
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe("Office with 2 agents: 1 busy, 1 needs you, 0 errors");
+    expect(screen.getAllByTestId("name-plate")).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /ended, claude/ })).toBeNull();
+  });
+  it("does not wake the office for summary-only updates", () => {
+    const view = render(<OfficeView sessions={[session()]} />);
+    const wake = vi.fn();
+    screen.getByRole("img").addEventListener("officechange", wake);
+    view.rerender(<OfficeView sessions={[{ ...session(), summary: "Only text changed" }]} />);
+    expect(wake).not.toHaveBeenCalled();
+  });
 });

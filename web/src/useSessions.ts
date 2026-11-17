@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Connection, Session, StreamMessage } from "./types";
 
 const PRIORITY: Record<Session["status"], number> = {
@@ -57,7 +57,8 @@ export function useSessions(): {
     return () => { stopped = true; window.clearTimeout(timer); ws?.close(); };
   }, []);
 
-  return { sessions: sessionOrder(byId.values()), connection, loaded };
+  const sessions = useMemo(() => sessionOrder(byId.values()), [byId]);
+  return { sessions, connection, loaded };
 }
 
 /** Re-render every `ms` so "time in status" keeps moving. */
@@ -68,5 +69,5 @@ export function useNow(ms = 1000, enabled = true): number {
     const id = window.setInterval(() => setNow(Date.now()), ms);
     return () => window.clearInterval(id);
   }, [ms, enabled]);
-  return now;
+  return enabled ? now : Date.now();
 }
