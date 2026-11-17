@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,12 +79,28 @@ async def sweep_tick(store: Store, broadcaster: Broadcaster) -> None:
         broadcaster.publish({"type": "session", "session": session_json(s)})
 
 
+def write_hook_env(home: Path) -> None:
+    """``hook-env.txt``: the env var names the native forwarder may send (every ``env:`` name in the host
+    rules, plus CLAUDE_PID), one per line, so a secret in the environment never leaves the process."""
+    from sekantor.pos.claude_code.fingerprint import env_names, load_rules
+
+    try:
+        names = sorted(env_names(load_rules()) | {"CLAUDE_PID"})
+        home.mkdir(parents=True, exist_ok=True)
+        tmp = home / f"hook-env.txt.{os.getpid()}"
+        tmp.write_bytes("\n".join(names).encode("utf-8") + b"\n")
+        os.replace(tmp, home / "hook-env.txt")
+    except Exception:
+        log.warning("hook-env.txt not written", exc_info=True)
+
+
 def create_app(home: Path | None = None, port: int | None = None, token: str | None = None,
                settings: config.Settings | None = None, notifier: Notifier | None = None) -> FastAPI:
     home = home or config.home()
     port = port or config.port()
     token = token or ensure_token(home / "token")
     settings = settings or config.settings(home)
+    write_hook_env(home)
     store = Store(home / "sekantor.db")
     broadcaster = Broadcaster()
     notifier = notifier or Notifier(enabled=settings.notify, quiet=settings.quiet)
@@ -120,6 +137,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()
+    app.state.background = set()  # strong refs to fire-and-forget tasks (the SessionStart follow-up)
     app.state.should_exit = False  # set by POST /v1/shutdown; `sekantor up` hands it to uvicorn
     app.include_router(router)
 

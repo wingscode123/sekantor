@@ -144,23 +144,29 @@ def _pid(env: dict[str, str]) -> int | None:
     return pid if pid > 0 else None
 
 
-def _host(payload: dict, env: dict[str, str], deep: bool) -> dict | None:
+def _host(payload: dict, env: dict[str, str], deep: bool, from_agent: bool = False) -> dict | None:
+    """``from_agent``: the hub is asking, so the parent chain starts at the agent, not at this process."""
     try:
         from sekantor.pos.claude_code.fingerprint import classify, collect, load_rules
 
-        chain, exe, cmdline = collect(_pid(env), deep)
+        chain, exe, cmdline = collect(_pid(env), deep, from_agent=True) if from_agent else collect(_pid(env), deep)
         return classify(load_rules(), env, chain, exe, payload.get("cwd"), cmdline)
     except Exception as e:  # a broken rules file must not lose the event
         _log(f"fingerprint failed: {type(e).__name__}: {e}")
         return None
 
 
-def build_event(payload: dict, env: dict[str, str]) -> dict | None:
+def build_event(payload: dict, env: dict[str, str], event_id: str | None = None, ts: str | None = None) -> dict | None:
+    """The SeKantor event for a hook payload. The hub passes the forwarder's own ``event_id`` and ``ts``."""
     from sekantor.pos.claude_code.translate import translate
 
     event = translate(payload)
     if event is None:
         return None
+    if event_id:
+        event["event_id"] = event_id
+    if ts:
+        event["ts"] = ts
     pid = _pid(env)
     if pid:
         event["process"] = {"pid": pid}
@@ -170,11 +176,11 @@ def build_event(payload: dict, env: dict[str, str]) -> dict | None:
     return event
 
 
-def host_update(event: dict, payload: dict, env: dict[str, str]) -> dict | None:
+def host_update(event: dict, payload: dict, env: dict[str, str], from_agent: bool = False) -> dict | None:
     """After SessionStart: the parent chain and agent exe (slow on Windows) as a follow-up event."""
     from sekantor.pos.claude_code.translate import new_event_id
 
-    host = _host(payload, env, deep=True)
+    host = _host(payload, env, deep=True, from_agent=from_agent)
     if not host or (event.get("host") and host["confidence"] <= event["host"]["confidence"]):
         return None
     return {k: event[k] for k in ("v", "source", "session_id", "agent", "workspace") if k in event} | {

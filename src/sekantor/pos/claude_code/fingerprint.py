@@ -114,8 +114,19 @@ def classify(rules: dict, env: dict[str, str], chain: list[str] | None = None, e
     return None
 
 
-def collect(agent_pid: int | None, deep: bool) -> tuple[list[str], str | None, str | None]:
-    """(parent chain names, agent exe, agent cmdline) for the hook process. Empty unless ``deep``."""
+def env_names(rules: dict) -> set[str]:
+    """Every env var name the rules look at: what a forwarder must send for the hub to classify."""
+    groups = [h.get("signals", []) for h in rules.get("hosts", [])]
+    groups.append(((rules.get("fallback") or {}).get("terminal") or {}).get("signals", []))
+    return {s["env"] for signals in groups for s in signals if "env" in s}
+
+
+def collect(agent_pid: int | None, deep: bool, from_agent: bool = False) -> tuple[list[str], str | None, str | None]:
+    """(parent chain names, agent exe, agent cmdline) for the hook process. Empty unless ``deep``.
+
+    ``from_agent``: the hub runs this for a hook it did not spawn, so the chain is the agent's own
+    (the agent first, then its parents) and nothing is known without ``agent_pid``.
+    """
     if not deep:
         return [], None, None
     try:
@@ -125,8 +136,14 @@ def collect(agent_pid: int | None, deep: bool) -> tuple[list[str], str | None, s
     chain: list[str] = []
     exe = cmdline = None
     try:
-        p = psutil.Process()
-        for parent in p.parents()[:CHAIN_DEPTH + 2]:
+        if from_agent:
+            if not agent_pid:
+                return [], None, None
+            p = psutil.Process(agent_pid)
+            walk = [p, *p.parents()]
+        else:
+            walk = psutil.Process().parents()
+        for parent in walk[:CHAIN_DEPTH + 2]:
             try:
                 chain.append(parent.name())
             except psutil.Error:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -10,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException, Query, Request, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, StrictInt, TypeAdapter, ValidationError
 
 from sekantor import __version__, labels
 from sekantor.hub.status import SessionState, inbox_order
@@ -68,6 +70,95 @@ async def post_events(request: Request, body: Any = Body(...)):
     if took > SLOW_S or late > SLOW_S:
         log.warning("POST /v1/events: %d event(s) sent %.1fs ago, handled in %.2fs", len(events), late, took)
     return {"accepted": accepted, "duplicates": len(events) - accepted}
+
+
+# --- the native forwarder: the raw Claude Code hook payload ------------------------------
+
+MAX_HOOK_PAYLOAD = 4 * 1024 * 1024  # what the hook reads from stdin, at most
+MAX_HOOK_BODY = MAX_HOOK_PAYLOAD + 256 * 1024  # room for the envelope and the whitelisted env
+
+
+class HookIn(BaseModel):
+    v: StrictInt = Field(ge=1, le=1)
+    id: str = Field(min_length=1, max_length=128)
+    ts: datetime
+    payload: dict[str, Any]
+    env: dict[str, str] = {}
+
+
+async def _store(st, ev: Event, notify: bool = True) -> bool:
+    prev = await run_in_threadpool(st.store.session, ev.session_id)
+    state = await run_in_threadpool(st.store.add_event, ev)
+    if state is None:
+        return False
+    if notify:
+        st.notifier.maybe(prev, state)
+    st.broadcaster.publish({"type": "session", "session": session_json(state),
+                            "event": ev.model_dump(mode="json", exclude_none=True)})
+    return True
+
+
+async def _host_follow_up(st, event: dict, payload: dict, env: dict[str, str]) -> None:
+    """SessionStart: the parent chain and agent exe are slow to read, so they follow as a second event."""
+    from sekantor.pos.claude_code import hook
+
+    try:
+        update = await asyncio.to_thread(hook.host_update, event, payload, env, True)
+        if update:
+            await _store(st, Event.model_validate(update), notify=False)
+    except Exception:
+        log.warning("host follow-up failed", exc_info=True)
+
+
+@router.post("/hooks/claude", status_code=202)
+async def post_claude_hook(request: Request):
+    """A Claude Code hook payload as the native forwarder sends it; builds the event the Python hook would."""
+    if request.scope.get("sekantor_auth") != "bearer":
+        raise HTTPException(403, detail="bearer token required")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_HOOK_BODY:
+        raise HTTPException(413, detail="hook payload too large")
+    raw = await request.body()
+    if len(raw) > MAX_HOOK_BODY:
+        raise HTTPException(413, detail="hook payload too large")
+    try:
+        body = HookIn.model_validate_json(raw)
+    except ValidationError as e:
+        raise HTTPException(422, detail=e.errors(include_url=False, include_input=False, include_context=False)) from None
+    if len(raw) > MAX_HOOK_PAYLOAD and len(json.dumps(body.payload)) > MAX_HOOK_PAYLOAD:
+        raise HTTPException(413, detail="hook payload too large")
+    st = request.app.state
+    cwd = body.payload.get("cwd")
+    if cwd is not None and not isinstance(cwd, str):
+        raise HTTPException(422, detail="payload.cwd must be a string")
+    if st.settings.ignored(cwd):
+        return {"stored": False}  # e.g. OpenBot's own helper runs from its program folder
+    from sekantor.pos.claude_code import hook
+
+    try:
+        event = await run_in_threadpool(hook.build_event, body.payload, body.env, body.id, body.ts.isoformat())
+        if event is None:
+            return {"stored": False}
+        ev = Event.model_validate(event)
+    except (ValidationError, ValueError, TypeError, KeyError):
+        raise HTTPException(422, detail="not a Claude Code hook payload") from None
+    if not await _store(st, ev):
+        return {"stored": False}  # a duplicate event id: nothing new, so no second follow-up
+    if event.get("type") == "session_started":
+        task = asyncio.create_task(_host_follow_up(st, event, body.payload, body.env))
+        st.background.add(task)
+        task.add_done_callback(st.background.discard)
+    return {"stored": True, "event_id": ev.event_id}
+
+
+@router.get("/setup")
+async def get_setup(request: Request):
+    """What `sekantor setup --json` prints, for the desktop app's first run. Bearer token only."""
+    if request.scope.get("sekantor_auth") != "bearer":
+        raise HTTPException(403, detail="bearer token required")
+    from sekantor import cli
+
+    return await run_in_threadpool(cli._setup_report)
 
 
 @router.get("/sessions")

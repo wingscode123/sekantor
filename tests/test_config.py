@@ -141,3 +141,19 @@ def test_migrate_note_says_what_happened(tmp_path, monkeypatch):
     monkeypatch.delenv("SEKANTOR_HOME", raising=False)
     assert config.migrate_note() == "Copied ~/.ronda to ~/.sekantor"
     assert config.migrate_note() == ""
+
+
+def test_keep_in_ram_defaults_on_from_source_and_off_when_frozen(monkeypatch):
+    monkeypatch.setattr("sys.frozen", False, raising=False)
+    assert config.Settings().keep_in_ram is True
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    assert config.Settings().keep_in_ram is False
+
+
+def test_keep_in_ram_from_config_toml(tmp_path, monkeypatch):
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    (tmp_path / "config.toml").write_text("keep_in_ram = true\n")
+    assert config.load(tmp_path) [0].keep_in_ram is True
+    (tmp_path / "config.toml").write_text("keep_in_ram = 'x'\n")
+    s, problems = config.load(tmp_path)
+    assert s.keep_in_ram is False and problems
