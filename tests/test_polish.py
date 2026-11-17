@@ -1,17 +1,16 @@
 """FR-14 open in source, FR-15 snooze, FR-33 quiet hours."""
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ronda.config import Settings, in_quiet_hours, parse_quiet_hours
-from ronda.hub import opener
-from ronda.hub.app import create_app
-from ronda.hub.notify import Notifier
-from ronda.hub.status import SessionState
-from ronda.schema import Event, Host, Status, Workspace
+from sekantor.config import Settings, in_quiet_hours, parse_quiet_hours
+from sekantor.hub import opener
+from sekantor.hub.app import create_app
+from sekantor.hub.notify import Notifier
+from sekantor.hub.status import SessionState
+from sekantor.schema import Event, Host, Status, Workspace
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -81,8 +80,6 @@ def test_open_endpoint(client):
     r = client.post("/v1/sessions/claude:s1/open", headers=AUTH)
     assert r.status_code == 200 and r.json() == {"opened": "Open in VS Code"}
     assert client.opened[0].kind == "url"
-    r = client.post("/v1/sessions/claude:s1/open", headers={**AUTH, "X-Ronda-Channel": "telegram"})
-    assert r.status_code == 403
 
 
 def test_open_unknown_is_409(client):
@@ -155,22 +152,3 @@ def test_quiet_hours():
     assert not in_quiet_hours(night, datetime(2026, 1, 1, 7, 0, tzinfo=local))
     n = Notifier(sender=lambda t, b: None, min_gap_s=0, quiet=lambda: True)
     assert n.maybe(state(status=Status.running), state(status=Status.error)) is False
-
-
-def test_relay_holds_announcements_but_still_closes():
-    from ronda.relay.runner import Relay
-
-    calls = []
-
-    class Ch:
-        name = "x"
-
-        async def on_change(self, prev, s, announce=True):
-            calls.append(announce)
-
-    r = Relay([Ch()], quiet=lambda: False)
-    s = {"session_id": "a", "status": "waiting_input", "snoozed_until": (NOW + timedelta(hours=1)).isoformat()}
-    asyncio.run(r.handle({"type": "session", "session": s}))
-    asyncio.run(r.handle({"type": "session", "session": {**s, "snoozed_until": None}}))
-    asyncio.run(Relay([Ch()], quiet=lambda: True).handle({"type": "session", "session": {**s, "snoozed_until": None}}))
-    assert calls == [False, True, False]

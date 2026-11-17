@@ -1,4 +1,4 @@
-"""ronda-hook: translation, fingerprinting, and the fail-closed guarantees."""
+"""sekantor-hook: translation, fingerprinting, and the fail-closed guarantees."""
 
 import json
 import os
@@ -12,17 +12,17 @@ from pathlib import Path
 import pytest
 import uvicorn
 
-from ronda.pos.claude_code import hook
-from ronda.pos.claude_code.fingerprint import classify, load_rules
-from ronda.pos.claude_code.translate import git_branch, translate
-from ronda.schema import Event
+from sekantor.pos.claude_code import hook
+from sekantor.pos.claude_code.fingerprint import classify, load_rules
+from sekantor.pos.claude_code.translate import git_branch, translate
+from sekantor.schema import Event
 
 ROOT = Path(__file__).resolve().parents[1]
 # The watchdog bounds the hook itself; interpreter start-up comes on top, and on a loaded CI runner or
 # Windows box it can take seconds. Measure it once and allow for it, so the test checks "no hang".
 def _startup_s() -> float:
     t = time.perf_counter()
-    subprocess.run([sys.executable, "-c", "import ronda.pos.claude_code.hook"], capture_output=True)
+    subprocess.run([sys.executable, "-c", "import sekantor.pos.claude_code.hook"], capture_output=True)
     return time.perf_counter() - t
 
 
@@ -60,8 +60,7 @@ def test_translate_real_payloads(rel, type_, status):
 
 def test_permission_request_carries_the_command():
     ev = translate(payload("cli-headless/10_PermissionRequest.json")["stdin"])
-    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt",
-                             "id": ev["event_id"]}
+    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt"}
     assert ev["summary"] == "Wants to run: echo ronda-spike > spike-tmp.txt"
 
 
@@ -137,10 +136,10 @@ def free_port() -> int:
 def run_hook(home: Path, port: int, stdin: bytes, extra_env=None):
     host_vars = ("ORCA_", "OPENBOT", "CLAUDE", "VSCODE", "TERM_PROGRAM", "TMUX", "WT_SESSION", "CURSOR")
     clean = {k: v for k, v in os.environ.items() if not k.upper().startswith(host_vars)}
-    env = {**clean, "RONDA_HOME": str(home), "RONDA_URL": f"http://127.0.0.1:{port}", "CLAUDE_PID": str(os.getpid())}
+    env = {**clean, "SEKANTOR_HOME": str(home), "SEKANTOR_URL": f"http://127.0.0.1:{port}", "CLAUDE_PID": str(os.getpid())}
     env.update(extra_env or {})
     t = time.perf_counter()
-    p = subprocess.run([sys.executable, "-m", "ronda.pos.claude_code.hook"], input=stdin, env=env,
+    p = subprocess.run([sys.executable, "-m", "sekantor.pos.claude_code.hook"], input=stdin, env=env,
                        capture_output=True, timeout=10)
     return p, time.perf_counter() - t
 
@@ -161,7 +160,7 @@ def test_hub_down_exits_zero_fast_and_silent(home):
     log = (home / "hook.log").read_text()
     assert "hub unreachable" in log
     sent_id = (home / "sent.log").read_text().split()[1]
-    assert log.rstrip().endswith(sent_id)  # `ronda stats` matches the failure to its event by id
+    assert log.rstrip().endswith(sent_id)  # `sekantor stats` matches the failure to its event by id
 
 
 def test_hub_hanging_is_cut_by_watchdog(home):
@@ -189,7 +188,7 @@ def test_no_token_is_no_decision(tmp_path):
 
 
 def test_hub_up_receives_event(home):
-    from ronda.hub.app import create_app
+    from sekantor.hub.app import create_app
 
     port = free_port()
     app = create_app(home=home, port=port, token="tok")
@@ -213,7 +212,51 @@ def test_hub_up_receives_event(home):
         th.join(5)
 
 
-def test_rewake_prompt_gets_a_readable_summary():
+def test_hook_wake_prompt_gets_a_readable_summary():
     ev = translate({"hook_event_name": "UserPromptSubmit", "session_id": "x",
                     "prompt": "<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>"})
-    assert ev["summary"] == "Continuing after your reply" and ev["status"] == "running"
+    assert ev["summary"] == "Woken by a hook" and ev["status"] == "running"
+
+
+@pytest.mark.parametrize("tool,kind", [("Read", "read"), ("Grep", "read"), ("Edit", "edit"), ("Write", "edit"),
+    ("Bash", "run"), ("PowerShell", "run"), ("WebFetch", "web"), ("mcp__github__create_issue", "other"),
+    ("Task", "other"), ("", "other"), (None, "other"), (["x"], "other"), (7, "other")])
+def test_activity_kind(tool, kind):
+    from sekantor.pos.claude_code.translate import activity_kind
+    assert activity_kind(tool) == kind
+
+
+def test_pre_tool_use_event_carries_activity():
+    ev = translate({"hook_event_name": "PreToolUse", "session_id": "x", "tool_name": "Bash",
+                    "tool_input": {"command": "npm test"}})
+    assert ev["activity"] == {"tool": "Bash", "kind": "run"}
+
+
+def test_only_pre_tool_use_sets_activity():
+    ev = translate({"hook_event_name": "PostToolUse", "session_id": "x", "tool_name": "Bash"})
+    assert "activity" not in ev
+
+
+def test_permission_request_hook_returns_at_once_with_no_output(home):
+    from sekantor.hub.app import create_app
+
+    port = free_port()
+    app = create_app(home=home, port=port, token="tok")
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    th = threading.Thread(target=server.run, daemon=True)
+    th.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.05)
+    ask = json.dumps({"hook_event_name": "PermissionRequest", "session_id": "abc", "cwd": str(ROOT),
+                      "tool_name": "Bash", "tool_input": {"command": "npm test"}}).encode()
+    try:
+        p, dt = run_hook(home, port, ask, {"CLAUDE_CODE_ENTRYPOINT": "claude-vscode"})
+        assert p.returncode == 0 and p.stdout == b"" and p.stderr == b""
+        assert dt < hook.HARD_TIMEOUT_S + STARTUP_SLACK_S
+        s = app.state.store.session("claude:abc")
+        assert s.status.value == "waiting_approval" and s.capabilities == []
+    finally:
+        server.should_exit = True
+        th.join(5)

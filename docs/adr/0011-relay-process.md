@@ -1,6 +1,6 @@
 # ADR-0011: Telegram and webhooks live in a separate relay process
 
-- Status: Accepted (owner, 2026-11-11)
+- Status: Superseded by ADR-0021
 - Date: 2026-11-11
 
 ## Context

@@ -1,7 +1,7 @@
 version: 2.1
 
 jobs:
-  # The ronda Python package: uv, tests with pytest, wheel build as in release.yml. No linter is set up.
+  # The sekantor Python package: uv, tests with pytest, wheel build as in release.yml. No linter is set up.
   python:
     docker:
       - image: cimg/python:3.12
