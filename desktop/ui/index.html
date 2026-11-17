@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SeKantor</title>
+  <link rel="stylesheet" href="setup.css">
+  <script src="setup.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>SeKantor</h1>
+
+    <p id="starting" role="status">Opening your office…</p>
+
+    <section id="first-run" hidden>
+      <p>SeKantor watches your coding agents. To see Claude Code at work, it adds its hooks to
+        Claude Code and starts the SeKantor hub when you sign in to Windows.</p>
+      <ul id="checks"></ul>
+      <button id="connect" type="button">Connect Claude Code</button>
+    </section>
+
+    <section id="problem" hidden>
+      <p id="problem-text" role="alert"></p>
+      <button id="retry" type="button">Try again</button>
+    </section>
+  </main>
+</body>
+</html>

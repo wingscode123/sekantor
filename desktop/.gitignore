@@ -1,0 +1,6 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+# Generated in CI by `npm run icons` from brand/logo (ADR-0024).
+src-tauri/icons/*
+!src-tauri/icons/.gitkeep
