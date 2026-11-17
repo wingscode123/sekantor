@@ -69,21 +69,29 @@ fn navigate_main(app: &AppHandle, url: &str) -> Result<(), String> {
     win.navigate(url).map_err(|e| e.to_string())
 }
 
+fn hub_client() -> hub::Hub {
+    hub::Hub::new(hub::hub_port(), hub::home_dir())
+}
+
+/// Start the bundled hub if `client`'s does not answer, and wait for it.
+fn ensure_hub(bundle: &Bundle, client: &hub::Hub) -> Result<(), String> {
+    hub::ensure_hub(
+        || hub::spawn_hub(&bundle.hub(), client.port, &client.home),
+        || client.healthy(),
+        std::thread::sleep,
+        hub::monotonic(),
+    )
+}
+
 /// Make sure a hub runs, then load the office in the main window with a one-time login link.
 /// `grace`: wait this long for a hub someone else is starting (the service) before starting one.
 fn open_office_now(app: &AppHandle, grace: Duration) -> Result<(), String> {
     let bundle = bundle(app)?;
-    let (port, home) = (hub::hub_port(), hub::home_dir());
-    let client = hub::Hub::new(port, home.clone());
+    let client = hub_client();
     if !grace.is_zero() {
         hub::wait_for(|| client.healthy(), std::thread::sleep, hub::monotonic(), grace);
     }
-    hub::ensure_hub(
-        || hub::spawn_hub(&bundle.hub(), port, &home),
-        || client.healthy(),
-        std::thread::sleep,
-        hub::monotonic(),
-    )?;
+    ensure_hub(&bundle, &client)?;
     navigate_main(app, &client.login_url()?)?;
     app.state::<Shell>().attached.store(true, Ordering::SeqCst);
     show_main(app);
@@ -99,7 +107,7 @@ fn open_from_tray(app: &AppHandle) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        if hub::Hub::new(hub::hub_port(), hub::home_dir()).healthy() {
+        if hub_client().healthy() {
             return;
         }
         app.state::<Shell>().attached.store(false, Ordering::SeqCst);
@@ -116,7 +124,7 @@ fn quit(app: &AppHandle) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        if let Err(e) = hub::Hub::new(hub::hub_port(), hub::home_dir()).shutdown() {
+        if let Err(e) = hub_client().shutdown() {
             log(&format!("Quit: the hub did not stop: {e}"));
         }
         app.exit(0);
@@ -129,11 +137,20 @@ async fn blocking<T: Send + 'static>(
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// Called by the page on load: `sekantor.exe setup --json`.
+/// Called by the page on load: start the hub if needed and ask it (`GET /v1/setup`); run
+/// `sekantor.exe setup --json` only when no hub answers.
 #[tauri::command]
 async fn status(app: AppHandle) -> Result<Start, String> {
     blocking(move || {
-        Ok(match bundle(&app)?.status() {
+        let bundle = bundle(&app)?;
+        let client = hub_client();
+        let found = setup::first_run_status(
+            || ensure_hub(&bundle, &client),
+            || client.setup_status(),
+            || bundle.status(),
+            log,
+        );
+        Ok(match found {
             Ok(s) => Start { first_run: s.needs_first_run(), status: Some(s), error: None },
             Err(e) => Start { first_run: true, status: None, error: Some(e) },
         })

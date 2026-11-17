@@ -232,6 +232,14 @@ impl Hub {
         Ok(login_url(self.port, &code))
     }
 
+    /// The first-run state (`GET /v1/setup`, bearer only): the JSON `sekantor setup --json` prints.
+    pub fn setup_status(&self) -> Result<crate::setup::SetupStatus, String> {
+        let v = self
+            .with_retry(|| self.get_once("/v1/setup"))
+            .map_err(|e| e.to_string())?;
+        crate::setup::status_from_json(v)
+    }
+
     /// `POST /v1/shutdown`; the hub exits within about a second.
     pub fn shutdown(&self) -> Result<(), String> {
         match self.with_retry(|| self.post_once("/v1/shutdown")) {
@@ -521,6 +529,8 @@ mod tests {
         let hub = Hub::new(port, home.clone());
         assert_eq!(hub.get_once("/v1/health"), Err(HttpError::Refused));
         assert!(!hub.healthy());
+        assert_eq!(hub.get_once("/v1/setup"), Err(HttpError::Refused));
+        assert!(hub.setup_status().unwrap_err().contains("not running"));
         assert_eq!(hub.shutdown(), Ok(()));
         let _ = std::fs::remove_dir_all(&home);
     }

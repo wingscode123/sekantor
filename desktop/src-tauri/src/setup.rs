@@ -1,5 +1,7 @@
-//! First run: ask the bundled `sekantor.exe setup` whether hooks and the service are in place, and
-//! install them when the user presses "Connect Claude Code".
+//! First run: ask the hub (`GET /v1/setup`) whether hooks and the service are in place, and install
+//! them with the bundled `sekantor.exe setup --apply` when the user presses "Connect Claude Code".
+//! `sekantor.exe setup --json` is only the fallback when no hub answers: endpoint protection flags
+//! each run of the unsigned CLI, so a normal start does not run it.
 //!
 //! No Tauri types here, so `cargo test` covers it.
 
@@ -15,7 +17,7 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(60);
 pub const APPLY_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// What `sekantor.exe setup --json` (and `--apply`) prints.
+/// What `GET /v1/setup` answers and `sekantor.exe setup --json` (and `--apply`) prints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetupStatus {
     /// "missing" | "outdated" | "ok"
@@ -73,6 +75,32 @@ impl Bundle {
     pub fn apply(&self) -> Result<SetupStatus, String> {
         parse_status(&run(&self.cli(), &["setup", "--apply"], APPLY_TIMEOUT)?)
     }
+}
+
+/// The first-run state for the page. `ensure_hub` makes sure a hub answers (starting one if needed),
+/// then `from_hub` asks it. Only when no hub answers, or it cannot report (an older hub without
+/// `/v1/setup`), does `from_cli` run `sekantor.exe setup --json`. The fallback is logged.
+pub fn first_run_status(
+    ensure_hub: impl FnOnce() -> Result<(), String>,
+    from_hub: impl FnOnce() -> Result<SetupStatus, String>,
+    from_cli: impl FnOnce() -> Result<SetupStatus, String>,
+    log: impl Fn(&str),
+) -> Result<SetupStatus, String> {
+    let why = match ensure_hub() {
+        Ok(()) => match from_hub() {
+            Ok(s) => return Ok(s),
+            Err(e) => format!("the hub could not report the setup: {e}"),
+        },
+        Err(e) => e,
+    };
+    log(&format!("first run: {why}; asking sekantor setup --json instead"));
+    from_cli().map_err(|e| format!("{why}; {e}"))
+}
+
+/// The setup state from the hub's JSON answer.
+pub fn status_from_json(v: serde_json::Value) -> Result<SetupStatus, String> {
+    let shown = v.to_string();
+    serde_json::from_value(v).map_err(|e| format!("unexpected setup answer from the hub ({e}): {shown}"))
 }
 
 /// A command that opens no console window on Windows.
@@ -164,6 +192,7 @@ pub fn parse_status(stdout: &str) -> Result<SetupStatus, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
 
     const OK: &str = r#"{"hooks": "ok", "hook_path": "C:\\Users\\First Last\\AppData\\Local\\SeKantor\\sekantor\\sekantor-hook.exe", "service": true, "openbot": "absent", "orca": false, "tmux": false}"#;
 
@@ -223,6 +252,94 @@ mod tests {
         let applied = OK.replace("\"tmux\": false}", "\"tmux\": false, \"service_current\": false, \"hub\": \"restart_needed\"}");
         let s = parse_status(&applied).unwrap();
         assert!(!s.service_current && s.needs_first_run());
+    }
+
+    fn ok_status() -> SetupStatus {
+        parse_status(OK).unwrap()
+    }
+
+    #[test]
+    fn a_healthy_hub_answers_and_the_cli_does_not_run() {
+        let cli_runs = Cell::new(0);
+        let logs = RefCell::new(Vec::<String>::new());
+        let r = first_run_status(
+            || Ok(()),
+            || Ok(ok_status()),
+            || {
+                cli_runs.set(cli_runs.get() + 1);
+                Err("must not run".to_string())
+            },
+            |m| logs.borrow_mut().push(m.to_string()),
+        );
+        assert_eq!(r, Ok(ok_status()));
+        assert_eq!(cli_runs.get(), 0);
+        assert!(logs.borrow().is_empty());
+    }
+
+    #[test]
+    fn no_hub_falls_back_to_the_cli() {
+        let hub_asked = Cell::new(false);
+        let cli_runs = Cell::new(0);
+        let logs = RefCell::new(Vec::<String>::new());
+        let r = first_run_status(
+            || Err("the SeKantor hub did not answer within 30 s".to_string()),
+            || {
+                hub_asked.set(true);
+                Ok(ok_status())
+            },
+            || {
+                cli_runs.set(cli_runs.get() + 1);
+                Ok(SetupStatus { hooks: "missing".into(), ..ok_status() })
+            },
+            |m| logs.borrow_mut().push(m.to_string()),
+        );
+        assert_eq!(r.unwrap().hooks, "missing");
+        assert!(!hub_asked.get());
+        assert_eq!(cli_runs.get(), 1);
+        assert_eq!(logs.borrow().len(), 1);
+        assert!(logs.borrow()[0].contains("did not answer"));
+    }
+
+    #[test]
+    fn a_hub_without_the_setup_endpoint_falls_back_to_the_cli() {
+        let cli_runs = Cell::new(0);
+        let r = first_run_status(
+            || Ok(()),
+            || Err("the hub refused the request (HTTP 404)".to_string()),
+            || {
+                cli_runs.set(cli_runs.get() + 1);
+                Ok(ok_status())
+            },
+            |_| {},
+        );
+        assert_eq!(r, Ok(ok_status()));
+        assert_eq!(cli_runs.get(), 1);
+    }
+
+    #[test]
+    fn both_failing_reports_both_reasons() {
+        let r = first_run_status(
+            || Err("could not start the SeKantor hub: no exe".to_string()),
+            || Ok(ok_status()),
+            || Err("could not run sekantor.exe".to_string()),
+            |_| {},
+        );
+        let e = r.unwrap_err();
+        assert!(e.contains("no exe") && e.contains("could not run"), "{e}");
+    }
+
+    #[test]
+    fn status_from_json_reads_the_hub_answer() {
+        let v: serde_json::Value = serde_json::from_str(OK).unwrap();
+        assert_eq!(status_from_json(v), Ok(ok_status()));
+        let v = serde_json::json!({
+            "hooks": "outdated", "hook_path": null, "service": true, "service_current": false,
+            "openbot": "on", "orca": true, "tmux": false, "extra": 1
+        });
+        let s = status_from_json(v).unwrap();
+        assert!(!s.service_current && s.needs_first_run());
+        let e = status_from_json(serde_json::json!({"ok": true})).unwrap_err();
+        assert!(e.contains("unexpected setup answer"), "{e}");
     }
 
     #[test]
