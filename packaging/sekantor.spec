@@ -21,8 +21,8 @@ datas = [
     (str(PKG / "pos" / "tmux" / "agents.yaml"), "sekantor/pos/tmux"),
     (str(PKG / "hub" / "static"), "sekantor/hub/static"),
 ]
-# uvicorn picks its loop, protocol and lifespan modules by name at runtime.
-hiddenimports = collect_submodules("sekantor") + collect_submodules("uvicorn")
+# uvicorn picks its loop, protocol, websockets and lifespan modules by name at runtime.
+hiddenimports = collect_submodules("sekantor") + collect_submodules("uvicorn") + collect_submodules("websockets")
 
 
 def analysis(entry):

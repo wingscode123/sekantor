@@ -17,9 +17,13 @@ Uninstalling must leave no hooks in `~/.claude/settings.json` and no login task 
 - The windowed hub has no stdout or stderr; `packaging/entry_hub.py` points them at the null device
   before the CLI loads (uvicorn's formatter calls `sys.stderr.isatty()`).
 - `pyinstaller` lives in the `packaging` dependency group; only CI runs `uv sync --group packaging`.
-- The NSIS pre-uninstall hook (`desktop/src-tauri/windows/hooks.nsh`) runs, from the installed folder,
-  `sekantor.exe stop` (so the hub's files can be deleted), `uninstall claude --global` and
-  `service uninstall`, ignoring errors.
+- NSIS hooks (`desktop/src-tauri/windows/hooks.nsh`), errors ignored:
+  - pre-install, when a previous install exists: `sekantor.exe stop --wait`, so an upgrade does not
+    overwrite the files of a running hub;
+  - pre-uninstall: `stop --wait`, then, unless Tauri's `$UpdateMode` is 1 (uninstaller started with
+    `/UPDATE`), `uninstall claude --global` and `service uninstall`.
+  `stop --wait` returns once the port is free and no process from the frozen folder is left (up to
+  20 s); plain `stop` returns when the hub accepts the request, while it still holds its files.
 - CircleCI job `desktop-windows` (main, `desktop-*` branches, or pipeline parameter `desktop=true`):
   web build, PyInstaller, `packaging/smoke.py` (temporary home, port 7899), icons, `cargo test`,
   `tauri build`, then `packaging/installer_check.py`: silent install, `setup --apply`, silent
@@ -28,7 +32,11 @@ Uninstalling must leave no hooks in `~/.claude/settings.json` and no login task 
 ## Consequences
 - Every build checks the frozen exes and the uninstall path end to end on a clean VM; a local build is
   possible in a worktree but never needed.
-- Two Rust builds per run (`cargo test` in debug, `tauri build` in release) make the job slow; the
-  cargo registry and `target/` are cached on `Cargo.toml`.
-- If Tauri runs the old uninstaller during an upgrade, the hook removes the hooks and the login task;
-  the new app's first run puts them back (it sees `hooks: missing`).
+- Two Rust builds per run (`cargo test` in debug, `tauri build` in release) make the job slow. Only
+  the cargo registry is cached (on `Cargo.toml`; no `Cargo.lock` is committed because nothing outside
+  CI has a Rust toolchain); `target/` is too large to cache usefully.
+- Upgrades: Tauri's installer only passes `/UPDATE` to the old uninstaller in its own update mode, and
+  in that mode it skips uninstalling altogether. A GUI upgrade where the user picks
+  "uninstall before installing" runs the old uninstaller without `/UPDATE`, so the hooks and the login
+  task are removed: after such an upgrade the user must open the app and click "Connect Claude Code"
+  again (first run sees `hooks: missing`). Hooks posting meanwhile fail silently.

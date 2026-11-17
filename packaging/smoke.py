@@ -9,11 +9,11 @@ Checks:
   2. `sekantor-hook` with a PreToolUse payload and no hub exits 0 in under 5 s and prints nothing.
   3. `sekantor-hub up --no-open --port P` answers GET /v1/health (token from the temp home) with 200
      within 30 s.
-  4. `sekantor stop` exits 0 and the hub process ends.
+  4. `sekantor stop --wait` exits 0 and the hub process has ended by then.
   5. What the uninstaller runs (desktop/src-tauri/windows/hooks.nsh): `install claude --global` then
      `uninstall claude --global` leaves no SeKantor hook in the temp Claude settings.
-  6. With --service only (CI, where the Task Scheduler is a throwaway VM's): `service install --no-start`
-     then `service uninstall` leaves no login task. Never pass --service on a machine whose hub you use.
+  6. With --service only, and only when CIRCLECI is set (a throwaway VM): `service install --no-start`
+     then `service uninstall` leaves no login task. It refuses to run elsewhere.
 """
 
 from __future__ import annotations
@@ -118,13 +118,14 @@ class Smoke:
             if not self.check(status == 200, f"sekantor-hub up: /v1/health {status} after {took:.1f} s",
                               f"hub exit code {hub.poll()}"):
                 return
-            r = self.run("sekantor", "stop")
-            self.check(r.returncode == 0, f"sekantor stop -> {r.stdout.decode().strip()}", r.stderr.decode())
+            r = self.run("sekantor", "stop", "--wait")
+            self.check(r.returncode == 0, f"sekantor stop --wait -> {r.stdout.decode().strip()}", r.stderr.decode())
+            # --wait returned: the hub process must already be gone (the uninstaller deletes its files next).
             try:
-                hub.wait(20)
+                hub.wait(1)
             except subprocess.TimeoutExpired:
                 pass
-            self.check(hub.poll() is not None and not port_open(self.port), "hub process gone after stop")
+            self.check(hub.poll() is not None and not port_open(self.port), "hub process gone when stop --wait returns")
         finally:
             kill_tree(hub)
 
@@ -156,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--service", action="store_true", help="also install and remove the login task (CI only)")
     args = ap.parse_args(argv)
 
+    if args.service and not os.environ.get("CIRCLECI"):
+        sys.exit("--service changes this machine's \"SeKantor hub\" login task: CI only (CIRCLECI is not set)")
     if args.port == REAL_PORT:
         sys.exit(f"refusing port {REAL_PORT}: that is where a real hub runs")
     if port_open(args.port):

@@ -15,9 +15,40 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 TASK = "SeKantor hub"
+PORT = 7878  # the installed app's default; this runs only on a CI VM
+
+
+def healthy() -> bool:
+    token = Path.home() / ".sekantor" / "token"
+    if not token.is_file():
+        return False
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/health",
+                                 headers={"Authorization": f"Bearer {token.read_text().strip()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status == 200
+    except OSError:
+        return False
+
+
+def wait_healthy(seconds: float) -> bool:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if healthy():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def hub_processes() -> list:
+    import psutil
+
+    return [p for p in psutil.process_iter(["name"]) if (p.info.get("name") or "").lower() == "sekantor-hub.exe"]
 
 
 def main(argv: list[str]) -> int:
@@ -50,8 +81,17 @@ def main(argv: list[str]) -> int:
     check(r.returncode == 0 and report.get("hooks") == "ok" and report.get("service") is True,
           f"setup --apply -> {report}", r.stdout + r.stderr)
     settings = Path.home() / ".claude" / "settings.json"
-    check(str(inst).lower().replace("\\", "/") in settings.read_text(encoding="utf-8").lower().replace("\\\\", "/"),
-          "hooks point at the installed sekantor-hook.exe")
+    text = settings.read_text(encoding="utf-8") if settings.is_file() else ""
+    check(str(inst).lower().replace("\\", "/") in text.lower().replace("\\\\", "/"),
+          "hooks point at the installed sekantor-hook.exe", f"{settings} missing" if not text else text[:500])
+
+    # The uninstaller must cope with a running hub (its files are locked while it runs). The login task
+    # was started by --apply; if Task Scheduler did not start it here, start the hub the way the app does.
+    if not wait_healthy(20):
+        print("login task did not start a hub; starting sekantor-hub.exe", flush=True)
+        subprocess.Popen([str(inst / "sekantor" / "sekantor-hub.exe"), "up", "--no-open"],
+                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS)
+    check(wait_healthy(30), "a hub is running before uninstall")
 
     # `_?=` makes the uninstaller run in place and wait, instead of copying itself to TEMP and returning.
     r = subprocess.run([str(inst / "uninstall.exe"), "/S", f"_?={inst}"], timeout=300)
@@ -61,7 +101,12 @@ def main(argv: list[str]) -> int:
     check("sekantor-hook" not in text, "no SeKantor hooks left in ~/.claude/settings.json", text[:500])
     q = subprocess.run(["schtasks", "/Query", "/TN", TASK], capture_output=True)
     check(q.returncode != 0, "no login task left")
-    check(not cli.exists(), "sekantor folder removed")
+    check(not (inst / "sekantor").exists(), "sekantor folder removed entirely",
+          "\n".join(str(p) for p in (inst / "sekantor").rglob("*"))[:2000] if (inst / "sekantor").exists() else "")
+    left = hub_processes()
+    check(not left, "no sekantor-hub.exe process left", str([p.pid for p in left]))
+    for p in left:
+        p.kill()
     print(f"{failures} failure(s)" if failures else "installer check passed", flush=True)
     return 1 if failures else 0
 
