@@ -46,6 +46,7 @@ it("assigns seats in start order with distinct stable looks", () => {
   const b = office.avatars.find(a => a.sessionId === "two")!;
   expect([a.seat, b.seat]).toEqual([0, 1]);
   expect(a.look).not.toEqual(b.look);
+  expect(a.look.shirt).not.toBe(b.look.shirt);
   expect(lookFor(a.identity, 0)).toEqual(a.look);
   expect(layoutOffice([early, late])).toEqual(office);
 });
@@ -71,13 +72,49 @@ it("overflows a project into additional eight-desk clusters", () => {
   expect(new Set(office.avatars.map(a => JSON.stringify(a.deskTile))).size).toBe(25);
 });
 
-it("keeps ended avatars for their walk and handles missing metadata", () => {
-  const office = layoutOffice([session({ workspace: {}, host: null, agent: null, status: "ended" })]);
+it("handles missing metadata for live sessions", () => {
+  const office = layoutOffice([session({ workspace: {}, host: null, agent: null })]);
   const avatar = office.avatars[0];
   expect(avatar.project).toBe("unknown");
   expect(avatar.name.length).toBeGreaterThan(0);
   expect(avatar.deskTile).toBeDefined();
   expect(avatar.look).toEqual(lookFor(avatar.identity, avatar.seat));
-  expect(avatar.place).toBe("door");
+  expect(avatar.place).toBe("desk");
   expect(layoutOffice([]).avatars).toEqual([]);
+});
+
+it("ignores 50 retained ended sessions when allocating two live desks", () => {
+  const ended = Array.from({ length: 50 }, (_, i) => session({ session_id: `ended-${i}`, status: "ended", workspace: { cwd: `/old/${i}` } }));
+  const office = layoutOffice([...ended, session(), session({ session_id: "two" })]);
+  expect(office.avatars).toHaveLength(2);
+  expect(office.clusters.flatMap(c => c.desks)).toHaveLength(2);
+  expect(layoutOffice(ended).avatars).toEqual([]);
+  expect(layoutOffice(ended).clusters).toEqual([]);
+});
+
+it("assigns distinct bounded shared-place slots in stable start/id order", () => {
+  const sessions = Array.from({ length: 9 }, (_, i) => session({ session_id: `pantry-${i}`, status: "done" })).concat(
+    Array.from({ length: 3 }, (_, i) => session({ session_id: `waiting-${i}`, status: "waiting_input" })),
+    Array.from({ length: 35 }, (_, i) => session({ session_id: `rack-${i}`, activity: { kind: "run", tool: "Bash" } })),
+  );
+  const office = layoutOffice(sessions);
+  for (const place of ["pantry", "your_desk", "rack"]) {
+    const avatars = office.avatars.filter(a => a.place === place);
+    expect(new Set(avatars.map(a => JSON.stringify(a.targetTile))).size).toBe(avatars.length);
+    for (const a of avatars) {
+      expect(a.targetTile!.x).toBeGreaterThanOrEqual(0);
+      expect(a.targetTile!.x).toBeLessThan(office.width);
+      expect(a.targetTile!.y).toBeGreaterThanOrEqual(0);
+      expect(a.targetTile!.y).toBeLessThan(office.height);
+    }
+  }
+  expect(layoutOffice([...sessions].reverse())).toEqual(office);
+});
+
+it("groups OpenBot source and host sessions together while using friendly app labels", () => {
+  const office = layoutOffice([session({ source: "openbot", workspace: { cwd: "/agents/id-1" }, host_label: "Orca" }), session({ session_id: "two", host: { app: "openbot", confidence: 1, via: [] }, workspace: { cwd: "/agents/id-2" } })]);
+  expect(office.clusters.map(c => c.project)).toEqual(["OpenBot agents"]);
+  expect(office.avatars.map(a => a.project)).toEqual(["OpenBot agents", "OpenBot agents"]);
+  expect(office.avatars[0].app).toBe("Orca");
+  expect(office.avatars[1].app).toBe("openbot");
 });

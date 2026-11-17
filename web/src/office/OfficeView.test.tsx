@@ -77,16 +77,17 @@ describe("office page", () => {
     view.rerender(<App />);
     expect(screen.getByText("sekantor install claude --project")).toBeTruthy();
   });
-  it("hides ended plates at 2x, keeps list items, and removes plates from tab order", () => {
+  it("omits ended plates and list items and removes live plates from tab order", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(512);
     render(<OfficeView sessions={[session(), { ...session("ended"), status: "ended" }]} />);
     const plates = screen.getAllByTestId("name-plate") as HTMLButtonElement[];
     expect(plates.find(p => p.textContent?.startsWith("one"))!.hidden).toBe(false);
-    expect(plates.find(p => p.textContent?.startsWith("ended"))!.hidden).toBe(true);
+    expect(plates).toHaveLength(1);
     expect(plates.every(p => p.tabIndex === -1)).toBe(true);
-    expect(screen.getByRole("button", { name: "ended, claude, repo, Ended" })).toBeTruthy();
-  });  it("wakes the renderer when an empty office gains a session", () => {
+    expect(screen.queryByRole("button", { name: "ended, claude, repo, Ended" })).toBeNull();
+  });
+  it("wakes the renderer when an empty office gains a session", () => {
     const view = render(<OfficeView sessions={[]} />);
     const wake = vi.fn();
     screen.getByRole("img").addEventListener("officechange", wake);

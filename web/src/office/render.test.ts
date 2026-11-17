@@ -41,12 +41,15 @@ it("retains a removed session and its desk until walking to the door", () => {
   let current: Office = { ...office, avatars: [avatar] };
   const character = vi.fn(), furniture = vi.fn();
   const stop = startRenderer(canvas, () => current, { ...theme, character, furniture });
+  furniture.mockClear();
   vi.advanceTimersByTime(1500);
-  current = { ...office, avatars: [] }; character.mockClear();
+  current = { ...office, width: office.width + 1, avatars: [] }; character.mockClear(); furniture.mockClear();
   vi.advanceTimersByTime(100);
   expect(character).toHaveBeenCalled();
   expect(furniture.mock.calls.some(call => call[0] === "desk" && call[2] === 80)).toBe(true);
+  furniture.mockClear();
   vi.advanceTimersByTime(2000); expect(vi.getTimerCount()).toBe(0);
+  expect(furniture.mock.calls.some(call => call[0] === "desk")).toBe(false);
   character.mockClear(); vi.advanceTimersByTime(1000); expect(character).not.toHaveBeenCalled(); stop();
 });
 
