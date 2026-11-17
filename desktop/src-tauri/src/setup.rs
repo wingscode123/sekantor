@@ -4,11 +4,16 @@
 //! No Tauri types here, so `cargo test` covers it.
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// Windows `CREATE_NO_WINDOW`: a console child gets no console window.
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
+pub const APPLY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What `sekantor.exe setup --json` (and `--apply`) prints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,11 +60,11 @@ impl Bundle {
     }
 
     pub fn status(&self) -> Result<SetupStatus, String> {
-        parse_status(&run(&self.cli(), &["setup", "--json"])?)
+        parse_status(&run(&self.cli(), &["setup", "--json"], STATUS_TIMEOUT)?)
     }
 
     pub fn apply(&self) -> Result<SetupStatus, String> {
-        parse_status(&run(&self.cli(), &["setup", "--apply"])?)
+        parse_status(&run(&self.cli(), &["setup", "--apply"], APPLY_TIMEOUT)?)
     }
 }
 
@@ -75,19 +80,53 @@ pub fn hidden_command(exe: &Path) -> Command {
     cmd
 }
 
-/// Run the CLI hidden and return its stdout; on a non-zero exit, its message.
-pub fn run(exe: &Path, args: &[&str]) -> Result<String, String> {
-    let out = hidden_command(exe)
+fn read_all(pipe: Option<impl Read + Send + 'static>) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut p) = pipe {
+            let _ = p.read_to_end(&mut buf);
+        }
+        buf
+    })
+}
+
+/// Run the CLI hidden and return its stdout; on a non-zero exit, its message. A child still running
+/// after `timeout` is killed, so the first-run page cannot wait forever.
+pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let mut child = hidden_command(exe)
         .args(args)
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("could not run {}: {e}", exe.display()))?;
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    if out.status.success() {
+    // Read both pipes on threads so a chatty child never blocks on a full pipe.
+    let out = read_all(child.stdout.take());
+    let err = read_all(child.stderr.take());
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{} {} did not finish within {} s",
+                    exe.display(),
+                    args.join(" "),
+                    timeout.as_secs()
+                ));
+            }
+            Err(e) => return Err(format!("could not wait for {}: {e}", exe.display())),
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out.join().unwrap_or_default()).into_owned();
+    if status.success() {
         return Ok(stdout);
     }
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    Err(failure_message(&stderr, &stdout, out.status.code()))
+    let stderr = String::from_utf8_lossy(&err.join().unwrap_or_default()).into_owned();
+    Err(failure_message(&stderr, &stdout, status.code()))
 }
 
 fn failure_message(stderr: &str, stdout: &str, code: Option<i32>) -> String {
@@ -174,6 +213,34 @@ mod tests {
         assert_eq!(failure_message("boom\n", "out", Some(1)), "boom");
         assert_eq!(failure_message("", "Hooks: could not write\n", Some(1)), "Hooks: could not write");
         assert_eq!(failure_message(" ", "", Some(1)), "sekantor setup failed (exit 1)");
+    }
+
+    // A program that exists everywhere CI runs: `ping` on Windows, `sleep`/`echo` elsewhere.
+    #[cfg(windows)]
+    fn slow() -> (&'static str, Vec<&'static str>) {
+        ("ping", vec!["-n", "30", "127.0.0.1"])
+    }
+    #[cfg(not(windows))]
+    fn slow() -> (&'static str, Vec<&'static str>) {
+        ("sleep", vec!["30"])
+    }
+
+    #[test]
+    fn run_kills_a_child_that_hangs() {
+        let (exe, args) = slow();
+        let started = Instant::now();
+        let r = run(Path::new(exe), &args, Duration::from_secs(1));
+        assert!(r.unwrap_err().contains("did not finish within 1 s"));
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn run_returns_stdout() {
+        #[cfg(windows)]
+        let r = run(Path::new("cmd"), &["/C", "echo", "hello"], Duration::from_secs(10));
+        #[cfg(not(windows))]
+        let r = run(Path::new("echo"), &["hello"], Duration::from_secs(10));
+        assert_eq!(r.unwrap().trim(), "hello");
     }
 
     #[test]

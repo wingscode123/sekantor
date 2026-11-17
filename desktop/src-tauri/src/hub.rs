@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const DEFAULT_PORT: u16 = 7878;
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -14,6 +14,8 @@ pub const HTTP_TRIES: u32 = 3;
 pub const HTTP_PAUSE: Duration = Duration::from_secs(1);
 pub const POLL_EVERY: Duration = Duration::from_millis(500);
 pub const POLL_FOR: Duration = Duration::from_secs(30);
+/// After `setup --apply` the service task starts a hub; give it this long before starting our own.
+pub const SERVICE_GRACE: Duration = Duration::from_secs(15);
 
 /// `SEKANTOR_HOME`, or `~/.sekantor` (same rule as `sekantor.config.home`).
 pub fn home_dir() -> PathBuf {
@@ -61,23 +63,44 @@ pub fn code_from_path(path: &str) -> Option<String> {
     (!code.is_empty() && !code.contains(|c: char| matches!(c, '&' | '#' | '/'))).then(|| code.to_string())
 }
 
-/// Start the hub if it does not answer: `launch` once, then poll `health` every 500 ms for up to 30 s.
-/// The 30 s are counted in `sleep` calls, so a fake `sleep` makes the test instant.
+/// A monotonic clock for `wait_for` / `ensure_hub`: time since it was made.
+pub fn monotonic() -> impl Fn() -> Duration {
+    let t0 = Instant::now();
+    move || t0.elapsed()
+}
+
+/// Poll `health` every 500 ms until it answers or `limit` has passed on `clock`. The limit is wall
+/// time, so a health check that itself takes seconds (a busy hub) does not stretch the wait.
+pub fn wait_for(
+    health: impl Fn() -> bool,
+    sleep: impl Fn(Duration),
+    clock: impl Fn() -> Duration,
+    limit: Duration,
+) -> bool {
+    let start = clock();
+    while clock().saturating_sub(start) < limit {
+        sleep(POLL_EVERY);
+        if health() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Start the hub if it does not answer: `launch` once, then poll `health` every 500 ms for up to 30 s
+/// on `clock`. Tests pass a fake `sleep` and `clock`, so they run instantly.
 pub fn ensure_hub(
     launch: impl Fn() -> io::Result<()>,
     health: impl Fn() -> bool,
     sleep: impl Fn(Duration),
+    clock: impl Fn() -> Duration,
 ) -> Result<(), String> {
     if health() {
         return Ok(());
     }
     launch().map_err(|e| format!("could not start the SeKantor hub: {e}"))?;
-    let polls = (POLL_FOR.as_millis() / POLL_EVERY.as_millis()) as u32;
-    for _ in 0..polls {
-        sleep(POLL_EVERY);
-        if health() {
-            return Ok(());
-        }
+    if wait_for(health, sleep, clock, POLL_FOR) {
+        return Ok(());
     }
     Err(format!(
         "the SeKantor hub did not answer within {} s (see hub.log in the .sekantor folder)",
@@ -244,21 +267,44 @@ mod tests {
         dir
     }
 
+    /// A fake clock that only moves when the code under test sleeps (or a health check "takes" time).
+    struct FakeClock {
+        now: Cell<Duration>,
+        slept: Cell<Duration>,
+    }
+
+    impl FakeClock {
+        fn new() -> Self {
+            FakeClock { now: Cell::new(Duration::ZERO), slept: Cell::new(Duration::ZERO) }
+        }
+        fn sleep(&self, d: Duration) {
+            self.now.set(self.now.get() + d);
+            self.slept.set(self.slept.get() + d);
+        }
+        fn advance(&self, d: Duration) {
+            self.now.set(self.now.get() + d);
+        }
+        fn now(&self) -> Duration {
+            self.now.get()
+        }
+    }
+
     #[test]
     fn ensure_hub_healthy_does_not_launch() {
         let launches = Cell::new(0);
-        let slept = Cell::new(Duration::ZERO);
+        let clock = FakeClock::new();
         let r = ensure_hub(
             || {
                 launches.set(launches.get() + 1);
                 Ok(())
             },
             || true,
-            |d| slept.set(slept.get() + d),
+            |d| clock.sleep(d),
+            || clock.now(),
         );
         assert_eq!(r, Ok(()));
         assert_eq!(launches.get(), 0);
-        assert_eq!(slept.get(), Duration::ZERO);
+        assert_eq!(clock.slept.get(), Duration::ZERO);
     }
 
     #[test]
@@ -266,7 +312,7 @@ mod tests {
         // Review focus 1: first install or after Quit, nothing answers; the app starts one and goes on.
         let launches = Cell::new(0);
         let checks = Cell::new(0);
-        let slept = Cell::new(Duration::ZERO);
+        let clock = FakeClock::new();
         let r = ensure_hub(
             || {
                 launches.set(launches.get() + 1);
@@ -276,29 +322,78 @@ mod tests {
                 checks.set(checks.get() + 1);
                 checks.get() > 3 // the first check plus two polls fail; the third poll answers
             },
-            |d| slept.set(slept.get() + d),
+            |d| clock.sleep(d),
+            || clock.now(),
         );
         assert_eq!(r, Ok(()));
         assert_eq!(launches.get(), 1);
         assert_eq!(checks.get(), 4);
-        assert_eq!(slept.get(), POLL_EVERY * 3);
+        assert_eq!(clock.slept.get(), POLL_EVERY * 3);
     }
 
     #[test]
     fn ensure_hub_gives_up_after_the_timeout() {
         let launches = Cell::new(0);
-        let slept = Cell::new(Duration::ZERO);
+        let clock = FakeClock::new();
         let r = ensure_hub(
             || {
                 launches.set(launches.get() + 1);
                 Ok(())
             },
             || false,
-            |d| slept.set(slept.get() + d),
+            |d| clock.sleep(d),
+            || clock.now(),
         );
         assert!(r.is_err());
         assert_eq!(launches.get(), 1);
-        assert_eq!(slept.get(), POLL_FOR);
+        assert_eq!(clock.slept.get(), POLL_FOR);
+    }
+
+    #[test]
+    fn ensure_hub_timeout_is_wall_time_when_health_checks_are_slow() {
+        // Each health check of a busy hub takes 10 s (3 tries x timeout): the wait still ends near 30 s.
+        let checks = Cell::new(0);
+        let clock = FakeClock::new();
+        let r = ensure_hub(
+            || Ok(()),
+            || {
+                checks.set(checks.get() + 1);
+                clock.advance(Duration::from_secs(10));
+                false
+            },
+            |d| clock.sleep(d),
+            || clock.now(),
+        );
+        assert!(r.is_err());
+        assert_eq!(checks.get(), 4); // the first check, then 3 polls of 10.5 s each pass 30 s
+        assert!(clock.now() < POLL_FOR + Duration::from_secs(15));
+    }
+
+    #[test]
+    fn wait_for_gives_the_service_hub_a_grace_period() {
+        let checks = Cell::new(0);
+        let clock = FakeClock::new();
+        let up = wait_for(
+            || {
+                checks.set(checks.get() + 1);
+                checks.get() == 4
+            },
+            |d| clock.sleep(d),
+            || clock.now(),
+            SERVICE_GRACE,
+        );
+        assert!(up);
+        assert_eq!(clock.slept.get(), POLL_EVERY * 4);
+        let clock = FakeClock::new();
+        assert!(!wait_for(|| false, |d| clock.sleep(d), || clock.now(), SERVICE_GRACE));
+        assert_eq!(clock.slept.get(), SERVICE_GRACE);
+    }
+
+    #[test]
+    fn monotonic_clock_moves_forward() {
+        let clock = monotonic();
+        let a = clock();
+        assert!(clock() >= a);
     }
 
     #[test]
@@ -307,6 +402,7 @@ mod tests {
             || Err(io::Error::new(io::ErrorKind::NotFound, "no exe")),
             || false,
             |_| panic!("must not poll after a failed launch"),
+            || Duration::ZERO,
         );
         assert!(r.unwrap_err().contains("no exe"));
     }

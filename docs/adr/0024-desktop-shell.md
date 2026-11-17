@@ -23,20 +23,31 @@ is built and tested only in CI.
   stored nowhere else.
 - First run: a bundled local page asks `sekantor.exe setup --json`. When hooks are not `ok` or the
   service is off it shows a status list and a "Connect Claude Code" button that runs
-  `setup --apply`. Otherwise it goes straight on. The page is the only local page and it can call
-  only the app's three commands (`status`, `connect`, `open_office`); the hub page is a remote URL and
-  gets no IPC. CSP allows `'self'` and `http://127.0.0.1:*` only.
+  `setup --apply`. Otherwise it goes straight on. `setup --json` is killed after 20 s and
+  `setup --apply` after 60 s, so the page cannot hang.
+- IPC is enforced by Tauri's ACL, not by convention: `build.rs` declares the three app commands
+  (`status`, `connect`, `open_office`) in an app manifest, so each needs an `allow-<command>`
+  permission. `capabilities/default.json` grants exactly those three to the `main` window for local
+  (bundled) content only and lists no remote URLs, so the hub page on 127.0.0.1 cannot call them,
+  even though `withGlobalTauri` puts `window.__TAURI__` there too. No core permissions are granted.
+  CSP for the bundled page allows `'self'` and `http://127.0.0.1:*` only.
 - Attaching: if `GET /v1/health` does not answer, start `sekantor-hub.exe up --no-open --log-file
-  <home>/hub.log` detached with no window, then poll health every 500 ms for up to 30 s. Each HTTP
-  call has a 5 s timeout and 3 tries 1 s apart when it times out or gets a 5xx; a refused connection
-  (nothing listening) or a 4xx is not retried. `up` ignores `SEKANTOR_PORT`, so a non-default port is
-  passed as `--port`.
-- Closing the window hides it. The tray menu has "Open SeKantor" and "Quit SeKantor"; Quit sends
-  `POST /v1/shutdown` (bearer) and then exits the app.
+  <home>/hub.log` detached with no window, then poll health every 500 ms for up to 30 s of wall time
+  (a slow health check does not stretch it). After "Connect Claude Code", `setup --apply` has asked
+  the service to start a hub, so the shell first waits up to 15 s for that one before starting its
+  own. Each HTTP call has a 5 s timeout and 3 tries 1 s apart when it times out or gets a 5xx; a
+  refused connection (nothing listening) or a 4xx is not retried. `up` ignores `SEKANTOR_PORT`, so a
+  non-default port is passed as `--port`.
+- Closing the window hides it. The tray menu has "Open SeKantor" and "Quit SeKantor"; Open shows the
+  window and, if the hub it showed no longer answers, goes back to the bundled page, which checks
+  and starts a hub again. Quit sends `POST /v1/shutdown` (bearer) and then exits the app. Without an
+  app icon there is no tray, so the shell logs that to `<home>/desktop.log` and lets the close button
+  quit the app instead of hiding it for good.
+- The installed executable is `SeKantor.exe` (`mainBinaryName`).
 - HTTP uses `ureq` 2 without TLS or proxy support: every request goes to 127.0.0.1. Child processes
   run with `CREATE_NO_WINDOW`.
 - Logic lives in `hub.rs` and `setup.rs` with no Tauri types, so `cargo test` covers it with fake
-  launchers, health checks and sleeps; `main.rs` only wires commands, the tray and window events.
+  launchers, health checks, sleeps and clocks; `main.rs` only wires commands, the tray and window events.
 - Icons are generated in CI from `brand/logo/icon-512.png` (`npm run icons` in `desktop/`) into
   `desktop/src-tauri/icons/`, which is not committed.
 
