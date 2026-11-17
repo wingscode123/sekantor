@@ -150,3 +150,81 @@ def test_service_install_waits_for_the_old_hub_to_let_go_of_the_port(tmp_path, m
     assert r.exit_code == 0 and "takes over" not in r.output
     assert calls[-1] == "/Run"  # the new task is started once the port is free
     assert next(polls, "drained") == "drained"
+
+
+def _setup_env(tmp_path, monkeypatch):
+    """Tmp Claude config dir, a fake hook binary in a spaced path, and a service layer that touches nothing real."""
+    from sekantor import service
+    from sekantor.pos.claude_code import install as inst
+
+    cfg = tmp_path / "claude cfg"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(cfg))
+    exe_dir = tmp_path / "First Last" / "SeKantor"
+    exe_dir.mkdir(parents=True)
+    exe = exe_dir / "sekantor-hook.exe"
+    exe.write_text("")
+    monkeypatch.setattr(inst, "hook_executable", lambda: exe)
+    monkeypatch.setattr("sekantor.cli._detect_integrations",
+                        lambda: {"openbot": "absent", "orca": False, "tmux": False})
+    ran = []
+    state = {"installed": False}
+
+    def fake_run(commands, check=True):
+        ran.append(commands)
+        state["installed"] = True
+        return []
+
+    monkeypatch.setattr(service, "run", fake_run)
+    monkeypatch.setattr(service, "installed", lambda plan: state["installed"])
+    monkeypatch.setattr(service, "port_busy", lambda host, port: True)
+    return cfg / "settings.json", exe, ran
+
+
+def _venv_settings(path):
+    h = {"type": "command", "command": "C:/src/.venv/Scripts/sekantor-hook.exe", "args": [],
+         "async": True, "timeout": 10}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"hooks": {e: [{"hooks": [dict(h)]}] for e in ["SessionStart", "Stop", "SessionEnd"]}}))
+
+
+def test_setup_json_reports_missing_hooks(tmp_path, monkeypatch):
+    _, exe, _ = _setup_env(tmp_path, monkeypatch)
+    r = runner.invoke(app, ["setup", "--json"])
+    assert r.exit_code == 0, r.output
+    assert json.loads(r.stdout) == {"hooks": "missing", "hook_path": str(exe), "service": False,
+                                    "openbot": "absent", "orca": False, "tmux": False}
+
+
+def test_setup_json_outdated_when_hook_path_differs(tmp_path, monkeypatch):
+    settings, _, _ = _setup_env(tmp_path, monkeypatch)
+    _venv_settings(settings)
+    r = runner.invoke(app, ["setup", "--json"])
+    assert json.loads(r.stdout)["hooks"] == "outdated"
+
+
+def test_setup_apply_replaces_venv_hooks_with_this_install(tmp_path, monkeypatch):
+    from sekantor.pos.claude_code import install as inst
+
+    settings, exe, ran = _setup_env(tmp_path, monkeypatch)
+    _venv_settings(settings)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert r.exit_code == 0, r.output
+    report = json.loads(r.stdout)
+    assert report["hooks"] == "ok" and report["service"] is True and ran
+    hooks = json.loads(settings.read_text())["hooks"]
+    assert set(hooks) == set(inst.EVENTS)
+    for groups in hooks.values():
+        handlers = [h for g in groups for h in g["hooks"]]
+        assert len(handlers) == 1
+        # a path with spaces stays one argv element: exec form, empty args
+        assert handlers[0]["command"] == exe.as_posix() and " " in handlers[0]["command"]
+        assert handlers[0]["args"] == []
+
+
+def test_setup_apply_fails_when_no_hook_binary(tmp_path, monkeypatch):
+    from sekantor.pos.claude_code import install as inst
+
+    _setup_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(inst, "hook_executable", lambda: None)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert r.exit_code == 1 and "sekantor-hook not found" in r.output
