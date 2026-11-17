@@ -68,6 +68,11 @@ impl Bundle {
         self.exe("sekantor-hub")
     }
 
+    /// The Claude Code hook this install registers (what `setup` reports as `hook_path`).
+    pub fn hook(&self) -> PathBuf {
+        self.exe("sekantor-hook")
+    }
+
     pub fn status(&self) -> Result<SetupStatus, String> {
         parse_status(&run(&self.cli(), &["setup", "--json"], STATUS_TIMEOUT)?)
     }
@@ -77,24 +82,48 @@ impl Bundle {
     }
 }
 
-/// The first-run state for the page. `ensure_hub` makes sure a hub answers (starting one if needed),
-/// then `from_hub` asks it. Only when no hub answers, or it cannot report (an older hub without
-/// `/v1/setup`), does `from_cli` run `sekantor.exe setup --json`. The fallback is logged.
+/// The first-run state for the page. This never starts a hub: starting one before Connect makes
+/// `setup --apply` find the port busy, so the login task would not start (`restart_needed`).
+/// When `hub_up` says a hub answers, `from_hub` asks it, and its answer counts only when it reports
+/// this install's hook (`this_hook`). A hub from another install, such as a source checkout on the
+/// same port, describes its own install. Otherwise, or when the hub cannot report (an older hub
+/// without `/v1/setup`), `from_cli` runs `sekantor.exe setup --json` once. The fallback is logged.
 pub fn first_run_status(
-    ensure_hub: impl FnOnce() -> Result<(), String>,
+    hub_up: impl FnOnce() -> bool,
     from_hub: impl FnOnce() -> Result<SetupStatus, String>,
+    this_hook: &Path,
     from_cli: impl FnOnce() -> Result<SetupStatus, String>,
     log: impl Fn(&str),
 ) -> Result<SetupStatus, String> {
-    let why = match ensure_hub() {
-        Ok(()) => match from_hub() {
-            Ok(s) => return Ok(s),
+    let why = if !hub_up() {
+        "no hub answers".to_string()
+    } else {
+        match from_hub() {
+            Ok(s) if s.hook_path.as_deref().is_some_and(|p| same_path(p, this_hook)) => return Ok(s),
+            Ok(s) => format!(
+                "the running hub belongs to another install (hook {})",
+                s.hook_path.as_deref().unwrap_or("not found")
+            ),
             Err(e) => format!("the hub could not report the setup: {e}"),
-        },
-        Err(e) => e,
+        }
     };
     log(&format!("first run: {why}; asking sekantor setup --json instead"));
-    from_cli().map_err(|e| format!("{why}; {e}"))
+    from_cli()
+}
+
+/// The same file path, ignoring a `\\?\` prefix, slash direction and a trailing slash, and on
+/// Windows also letter case.
+pub fn same_path(a: &str, b: &Path) -> bool {
+    fn norm(p: &str) -> String {
+        let p = p.strip_prefix(r"\\?\").unwrap_or(p).replace('\\', "/");
+        let p = p.trim_end_matches('/');
+        if cfg!(windows) {
+            p.to_lowercase()
+        } else {
+            p.to_string()
+        }
+    }
+    norm(a) == norm(&b.to_string_lossy())
 }
 
 /// The setup state from the hub's JSON answer.
@@ -258,74 +287,100 @@ mod tests {
         parse_status(OK).unwrap()
     }
 
-    #[test]
-    fn a_healthy_hub_answers_and_the_cli_does_not_run() {
+    fn this_install() -> Bundle {
+        Bundle::new(Path::new(r"C:\Users\First Last\AppData\Local\SeKantor"))
+    }
+
+    /// What the hub of this install reports.
+    fn hub_status() -> SetupStatus {
+        SetupStatus { hook_path: Some(this_install().hook().display().to_string()), ..ok_status() }
+    }
+
+    /// What the CLI reports, told apart from the hub's answer by `hooks`.
+    fn cli_status() -> SetupStatus {
+        SetupStatus { hooks: "missing".into(), ..ok_status() }
+    }
+
+    struct Outcome {
+        result: Result<SetupStatus, String>,
+        hub_asked: bool,
+        cli_runs: u32,
+        logs: Vec<String>,
+    }
+
+    fn first_run(hub_up: bool, hub_answer: Result<SetupStatus, String>) -> Outcome {
+        let hub_asked = Cell::new(false);
         let cli_runs = Cell::new(0);
-        let logs = RefCell::new(Vec::<String>::new());
-        let r = first_run_status(
-            || Ok(()),
-            || Ok(ok_status()),
+        let logs = RefCell::new(Vec::new());
+        let result = first_run_status(
+            || hub_up,
+            || {
+                hub_asked.set(true);
+                hub_answer
+            },
+            &this_install().hook(),
             || {
                 cli_runs.set(cli_runs.get() + 1);
-                Err("must not run".to_string())
+                Ok(cli_status())
             },
-            |m| logs.borrow_mut().push(m.to_string()),
+            |m: &str| logs.borrow_mut().push(m.to_string()),
         );
-        assert_eq!(r, Ok(ok_status()));
-        assert_eq!(cli_runs.get(), 0);
-        assert!(logs.borrow().is_empty());
+        Outcome { result, hub_asked: hub_asked.get(), cli_runs: cli_runs.get(), logs: logs.into_inner() }
     }
 
     #[test]
-    fn no_hub_falls_back_to_the_cli() {
-        let hub_asked = Cell::new(false);
-        let cli_runs = Cell::new(0);
-        let logs = RefCell::new(Vec::<String>::new());
-        let r = first_run_status(
-            || Err("the SeKantor hub did not answer within 30 s".to_string()),
-            || {
-                hub_asked.set(true);
-                Ok(ok_status())
-            },
-            || {
-                cli_runs.set(cli_runs.get() + 1);
-                Ok(SetupStatus { hooks: "missing".into(), ..ok_status() })
-            },
-            |m| logs.borrow_mut().push(m.to_string()),
-        );
-        assert_eq!(r.unwrap().hooks, "missing");
-        assert!(!hub_asked.get());
-        assert_eq!(cli_runs.get(), 1);
-        assert_eq!(logs.borrow().len(), 1);
-        assert!(logs.borrow()[0].contains("did not answer"));
+    fn a_running_hub_of_this_install_answers_and_the_cli_does_not_run() {
+        let o = first_run(true, Ok(hub_status()));
+        assert_eq!(o.result, Ok(hub_status()));
+        assert!(o.hub_asked);
+        assert_eq!(o.cli_runs, 0);
+        assert!(o.logs.is_empty());
+    }
+
+    #[test]
+    fn no_hub_runs_the_cli_once_and_does_not_ask_the_hub() {
+        let o = first_run(false, Ok(hub_status()));
+        assert_eq!(o.result, Ok(cli_status()));
+        assert!(!o.hub_asked);
+        assert_eq!(o.cli_runs, 1);
+        assert_eq!(o.logs.len(), 1);
     }
 
     #[test]
     fn a_hub_without_the_setup_endpoint_falls_back_to_the_cli() {
-        let cli_runs = Cell::new(0);
-        let r = first_run_status(
-            || Ok(()),
-            || Err("the hub refused the request (HTTP 404)".to_string()),
-            || {
-                cli_runs.set(cli_runs.get() + 1);
-                Ok(ok_status())
-            },
-            |_| {},
-        );
-        assert_eq!(r, Ok(ok_status()));
-        assert_eq!(cli_runs.get(), 1);
+        let o = first_run(true, Err("the hub refused the request (HTTP 404)".into()));
+        assert_eq!(o.result, Ok(cli_status()));
+        assert_eq!(o.cli_runs, 1);
+        assert_eq!(o.logs.len(), 1);
     }
 
     #[test]
-    fn both_failing_reports_both_reasons() {
-        let r = first_run_status(
-            || Err("could not start the SeKantor hub: no exe".to_string()),
-            || Ok(ok_status()),
-            || Err("could not run sekantor.exe".to_string()),
-            |_| {},
-        );
-        let e = r.unwrap_err();
-        assert!(e.contains("no exe") && e.contains("could not run"), "{e}");
+    fn a_hub_of_another_install_falls_back_to_the_cli() {
+        // The owner's source hub on 7878 reports the venv's hook, not this bundle's.
+        let venv = SetupStatus { hook_path: Some(r"D:\Ronda\.venv\Scripts\sekantor-hook.exe".into()), ..ok_status() };
+        let o = first_run(true, Ok(venv));
+        assert_eq!(o.result, Ok(cli_status()));
+        assert_eq!(o.cli_runs, 1);
+        let no_hook = SetupStatus { hook_path: None, ..ok_status() };
+        assert_eq!(first_run(true, Ok(no_hook)).result, Ok(cli_status()));
+    }
+
+    #[test]
+    fn a_failing_cli_is_the_error() {
+        let r = first_run_status(|| false, || Ok(hub_status()), &this_install().hook(), || Err("boom".into()), |_: &str| {});
+        assert_eq!(r, Err("boom".to_string()));
+    }
+
+    #[test]
+    fn same_path_ignores_slashes_and_the_long_path_prefix() {
+        let hook = this_install().hook();
+        let shown = hook.display().to_string();
+        assert!(same_path(&shown, &hook));
+        assert!(same_path(&shown.replace('\', "/"), &hook));
+        assert!(same_path(&format!(r"\?\{shown}"), &hook));
+        assert!(!same_path(r"D:\Ronda\.venv\Scripts\sekantor-hook.exe", &hook));
+        // Windows paths ignore case; others do not.
+        assert_eq!(same_path(&shown.to_uppercase(), &hook), cfg!(windows));
     }
 
     #[test]

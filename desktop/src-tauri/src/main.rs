@@ -137,16 +137,17 @@ async fn blocking<T: Send + 'static>(
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// Called by the page on load: start the hub if needed and ask it (`GET /v1/setup`); run
-/// `sekantor.exe setup --json` only when no hub answers.
+/// Called by the page on load: ask a running hub of this install (`GET /v1/setup`), or else run
+/// `sekantor.exe setup --json` once. It never starts a hub; `open_office_now` does that.
 #[tauri::command]
 async fn status(app: AppHandle) -> Result<Start, String> {
     blocking(move || {
         let bundle = bundle(&app)?;
         let client = hub_client();
         let found = setup::first_run_status(
-            || ensure_hub(&bundle, &client),
+            || client.healthy(),
             || client.setup_status(),
+            &bundle.hook(),
             || bundle.status(),
             log,
         );

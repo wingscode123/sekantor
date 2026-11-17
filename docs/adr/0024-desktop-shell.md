@@ -21,9 +21,12 @@ is built and tested only in CI.
   (bearer), so the token never appears in a URL and the window gets the same cookie as a browser
   (ADR-0007). The token is read from `~/.sekantor/token` (or `SEKANTOR_HOME`) on each request and is
   stored nowhere else.
-- First run: a bundled local page asks for the setup state. The shell starts the hub if needed (see
-  Attaching) and asks `GET /v1/setup` (bearer); only when no hub answers, or it cannot report, does it
-  run `sekantor.exe setup --json` (S1.5: endpoint protection flags each run of the unsigned CLI). When
+- First run: a bundled local page asks for the setup state. The shell asks a running hub
+  (`GET /v1/setup`, bearer) and does not start one, because a hub started before Connect would make
+  `setup --apply` skip starting the login task. The answer counts only when its `hook_path` is this
+  install's `sekantor-hook`, so a source checkout's hub on the same port does not answer for the app.
+  Otherwise, or when the hub cannot report, the shell runs `sekantor.exe setup --json` once (S1.5:
+  endpoint protection flags each run of the unsigned CLI). When
   hooks are not `ok` or the service is off it shows a status list and a "Connect Claude Code" button
   that runs `setup --apply`. Otherwise it goes straight on. `setup --json` and `setup --apply` are
   killed after 60 s, so the page cannot hang.
