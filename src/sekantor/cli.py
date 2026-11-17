@@ -93,6 +93,17 @@ def version():
     typer.echo(__version__)
 
 
+def _keep_in_ram() -> None:
+    """ADR-0020, unless `keep_in_ram = false` (the default for the frozen app) in config.toml."""
+    from sekantor import resident
+
+    if not config.settings().keep_in_ram:
+        return
+    why_not = resident.keep_resident()
+    if why_not and sys.platform == "win32":
+        logging.getLogger("sekantor.hub").warning("could not keep the hub in RAM: %s", why_not)
+
+
 @app.command()
 def up(
     port: int = typer.Option(config.DEFAULT_PORT, help="Port on 127.0.0.1."),
@@ -116,12 +127,10 @@ def up(
         _CHILD_OUT = open(log_file, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = _CHILD_OUT
         typer.echo(f"--- {datetime.now().isoformat(timespec='seconds')} sekantor up")
-    from sekantor import logs, resident
+    from sekantor import logs
 
     logs.setup("hub")
-    why_not = resident.keep_resident()
-    if why_not and sys.platform == "win32":
-        logging.getLogger("sekantor.hub").warning("could not keep the hub in RAM: %s", why_not)
+    _keep_in_ram()
 
     os.environ["SEKANTOR_PORT"] = str(port)
     with socket.socket() as s:

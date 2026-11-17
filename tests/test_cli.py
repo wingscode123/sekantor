@@ -395,3 +395,15 @@ def test_setup_apply_reports_the_hub_outcome(tmp_path, monkeypatch, platform):
     monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: True)
     r = runner.invoke(app, ["setup", "--apply"])
     assert json.loads(r.stdout)["hub"] == "started"
+
+
+@pytest.mark.parametrize("keep, calls", [(True, 1), (False, 0)])
+def test_up_keeps_the_hub_in_ram_only_when_keep_in_ram(tmp_path, monkeypatch, keep, calls):
+    from sekantor import cli, resident
+
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
+    (tmp_path / "config.toml").write_text(f"keep_in_ram = {str(keep).lower()}\n")
+    seen = []
+    monkeypatch.setattr(resident, "keep_resident", lambda *a, **k: seen.append(1))
+    cli._keep_in_ram()
+    assert len(seen) == calls

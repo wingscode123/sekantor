@@ -260,3 +260,9 @@ def test_permission_request_hook_returns_at_once_with_no_output(home):
     finally:
         server.should_exit = True
         th.join(5)
+
+
+def test_build_event_takes_an_id_and_a_ts():
+    ev = hook.build_event({"hook_event_name": "PreToolUse", "session_id": "s", "cwd": str(ROOT), "tool_name": "Bash"},
+                          {}, event_id="fixed-id", ts="2026-11-17T00:00:00+00:00")
+    assert ev["event_id"] == "fixed-id" and ev["ts"] == "2026-11-17T00:00:00+00:00"
