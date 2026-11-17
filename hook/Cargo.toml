@@ -1,0 +1,15 @@
+[package]
+name = "sekantor-hook"
+version = "0.1.0"
+description = "SeKantor Claude Code hook: forwards the raw hook payload to the local hub (ADR-0026)"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"
