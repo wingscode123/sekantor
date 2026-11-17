@@ -42,9 +42,15 @@ def test_hub_exe_from_source_keeps_pythonw(monkeypatch, tmp_path):
 
 
 def test_frozen_service_runs_the_windowed_hub_exe(monkeypatch, tmp_path):
-    _frozen(monkeypatch, tmp_path)
-    p = service.plan(Path(tmp_path / "home"), platform="win32", user="me", scratch=tmp_path)
+    folder = _frozen(monkeypatch, tmp_path)
+    home = tmp_path / "Home Dir"
+    p = service.plan(home, platform="win32", user="me", scratch=tmp_path)
     text = next(iter(p.files.values())).decode("utf-16")
-    assert "sekantor-hub.exe" in text and "-m sekantor.cli" not in text
-    assert "<Arguments>up --no-open --log-file" in text
-    assert "First Last" in text
+    assert f"<Command>{folder / 'sekantor-hub.exe'}</Command>" in text
+    assert "-m sekantor.cli" not in text
+    assert f'<Arguments>up --no-open --log-file "{home / "hub.log"}"</Arguments>' in text
+
+
+def test_hub_exe_frozen_follows_the_platform_argument(monkeypatch, tmp_path):
+    folder = _frozen(monkeypatch, tmp_path, name="sekantor-hub", platform="linux")
+    assert selfexe.hub_exe("win32") == [str(folder / "sekantor-hub.exe")]

@@ -150,3 +150,20 @@ def test_service_install_waits_for_the_old_hub_to_let_go_of_the_port(tmp_path, m
     assert r.exit_code == 0 and "takes over" not in r.output
     assert calls[-1] == "/Run"  # the new task is started once the port is free
     assert next(polls, "drained") == "drained"
+
+
+def test_spawned_children_get_no_console_window_on_windows(monkeypatch):
+    import subprocess
+    import sys
+
+    from sekantor import cli
+
+    seen = []
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **k: seen.append(k))
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(cli, "_CHILD_OUT", None)
+    cli._spawn(["x"], 7878)
+    monkeypatch.setattr(cli, "_CHILD_OUT", object())
+    cli._spawn(["x"], 7878)
+    assert [k["creationflags"] for k in seen] == [0x08000000, 0x08000000]

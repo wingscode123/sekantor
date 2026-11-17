@@ -232,9 +232,10 @@ def _spawn(args: list[str], port: int):
     from sekantor.lifeline import parent_env
 
     env = {**os.environ, "SEKANTOR_URL": f"http://{config.HOST}:{port}", **parent_env()}
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
     if _CHILD_OUT is not None:
-        return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT)
-    return subprocess.Popen(args, env=env)
+        return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT, **flags)
+    return subprocess.Popen(args, env=env, **flags)
 
 
 @app.command("open")
