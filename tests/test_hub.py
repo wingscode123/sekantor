@@ -61,6 +61,21 @@ def test_login_code_endpoint_is_bearer_only(client):
     assert client.post("/v1/login-code", headers={"Origin": BASE}).status_code == 403
 
 
+def test_shutdown_needs_the_bearer_token(client):
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
+    assert client.post("/v1/shutdown", headers={"Origin": BASE}).status_code == 403
+    client.cookies.clear()
+    assert client.post("/v1/shutdown").status_code == 401
+    assert client.app.state.should_exit is False
+
+
+def test_shutdown_sets_should_exit(client):
+    assert client.app.state.should_exit is False
+    r = client.post("/v1/shutdown", headers=AUTH)
+    assert r.status_code == 202 and r.json() == {"stopping": True}
+    assert client.app.state.should_exit is True
+
+
 def test_cookie_post_needs_same_origin(client):
     client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
     assert client.post("/v1/events", json=ev(1, "running")).status_code == 403

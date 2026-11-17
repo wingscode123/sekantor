@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -144,7 +145,16 @@ def up(
     children = [c for c in (_start_tmux(port) if tmux else None,
                             _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
-        uvicorn.run(hub_app, host=config.HOST, port=port, log_level="warning")
+        server = uvicorn.Server(uvicorn.Config(hub_app, host=config.HOST, port=port, log_level="warning"))
+
+        def watch_stop():  # POST /v1/shutdown sets the flag; uvicorn then drains and returns
+            while not server.should_exit:
+                if hub_app.state.should_exit:
+                    server.should_exit = True
+                time.sleep(0.2)
+
+        threading.Thread(target=watch_stop, daemon=True, name="stop-watch").start()
+        server.run()
     finally:
         for child in children:
             if child.poll() is None:
@@ -247,6 +257,34 @@ def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the
     typer.echo(url)
     if not print_only:
         webbrowser.open(url)
+
+
+@app.command()
+def stop():
+    """Stop the running hub (its watchers end with it)."""
+    try:
+        res = _api("/v1/shutdown", timeout=10, method="POST", body={})
+    except urllib.error.HTTPError as e:
+        _stop_refused(e.code)
+    except RuntimeError:  # no token file: no hub was ever started here
+        typer.echo("No hub running.")
+        return
+    except OSError as e:  # URLError is an OSError
+        reason = e.reason if isinstance(e, urllib.error.URLError) else e
+        if not isinstance(reason, ConnectionRefusedError):
+            typer.secho("The hub did not answer; it may still be stopping.", fg="yellow")
+            raise typer.Exit(1)
+        typer.echo("No hub running.")
+        return
+    if "_status" in res:
+        _stop_refused(res["_status"])
+    typer.echo("SeKantor hub stopped.")
+
+
+def _stop_refused(code: int):
+    why = "refused the token" if code in (401, 403) else "answered with an error"
+    typer.secho(f"The hub {why} (HTTP {code}). Run `sekantor doctor`.", fg="red")
+    raise typer.Exit(1)
 
 
 service_app = typer.Typer(no_args_is_help=True, help="Start the hub automatically at login.")
