@@ -1,8 +1,4 @@
-/* Hallmark · checked: 2026-11-11 · genre: modern-minimal · extends site/app.css (the locked system, design.md) for the live inbox
- * built: the project · v2.0.0 */
-time.card__time { white-space: nowrap; }
 
-.card__note { color: var(--color-ink-2); }
 .card__error { color: var(--color-failing); }
 
 /* FR-13: session timeline */

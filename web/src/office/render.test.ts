@@ -65,3 +65,19 @@ it("reuses the static layer across frames and equivalent office objects", () => 
   canvas.dispatchEvent(new Event("officechange"));
   expect(tile).toHaveBeenCalledTimes(office.width * office.height); stop();
 });
+
+it("publishes key-based native positions in paint order across office replacement", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const avatar = { key: "front", sessionId: "front", identity: "i", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk" as const, pose: "type" as const, deskTile: { x: 5, y: 4 }, name: "a", app: "a", project: "a" };
+  let current: Office = { ...office, avatars: [avatar, { ...avatar, key: "back", deskTile: { x: 5, y: 3 } }] };
+  const onFrame = vi.fn();
+  const stop = startRenderer(canvas, () => current, theme, onFrame);
+  vi.advanceTimersByTime(2500);
+  const positions = onFrame.mock.lastCall![0] as Map<string, { x: number; y: number }>;
+  expect([...positions.keys()]).toEqual(["back", "front"]);
+  expect(positions.get("front")).toEqual({ x: 80, y: 56 });
+  current = { ...current, avatars: current.avatars.map(a => ({ ...a, look: { ...a.look } })) };
+  vi.advanceTimersByTime(100);
+  expect([...onFrame.mock.lastCall![0]]).toEqual([...positions]);
+  stop();
+});

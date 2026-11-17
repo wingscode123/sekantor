@@ -61,12 +61,12 @@ export function useSessions(): {
 }
 
 /** Re-render every `ms` so "time in status" keeps moving. */
-export function useNow(ms = 1000): number {
+export function useNow(ms = 1000, enabled = true): number {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
+    if (!enabled) return;
     const id = window.setInterval(() => setNow(Date.now()), ms);
     return () => window.clearInterval(id);
-  }, [ms]);
+  }, [ms, enabled]);
   return now;
 }
-

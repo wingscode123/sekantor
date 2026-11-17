@@ -16,8 +16,8 @@ export function AvatarCard({ session: s, avatar, onClose }: { session: Session; 
   }, []);
   return <section ref={card} tabIndex={-1} className="avatar-card" role="dialog" aria-label={`${avatar.name} details`} onKeyDown={e => { if (e.key === "Escape") onClose(); }}>
     <button type="button" className="ctl avatar-card__close" onClick={onClose}>Close</button>
-    <h2>{avatar.name}</h2><p>{s.host_label || avatar.app} · {avatar.project}{s.workspace.branch ? ` / ${s.workspace.branch}` : ""}</p>
-    <p className={`status status--${STATUS_CLASS[s.status]}`}>{statusText(s)} · <time dateTime={s.status_since} title={new Date(s.status_since).toLocaleString()}>since {new Date(s.status_since).toLocaleTimeString()} ({Math.max(0, Math.floor((now - Date.parse(s.status_since)) / 60000))}m)</time></p>
+    <h2>{avatar.name}</h2><p>{s.host_label || avatar.app} Â· {avatar.project}{s.workspace.branch ? ` / ${s.workspace.branch}` : ""}</p>
+    <p className={`status status--${STATUS_CLASS[s.status]}`}>{statusText(s)} Â· <time dateTime={s.status_since} title={new Date(s.status_since).toLocaleString()}>since {new Date(s.status_since).toLocaleTimeString()} ({Math.max(0, Math.floor((now - Date.parse(s.status_since)) / 60000))}m)</time></p>
     {s.summary && <p>{s.summary}</p>}
     {s.activity && <p>Activity: {s.activity.tool} ({s.activity.kind})</p>}
     <SessionMenu s={s} now={now} /><Timeline sessionId={s.session_id} />
