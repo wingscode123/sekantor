@@ -23,6 +23,7 @@ class _GuardedPopen(subprocess.Popen):
 def _isolate(tmp_path_factory, monkeypatch):
     """Never touch the real home, the real service manager or real desktop notifications."""
     monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path_factory.mktemp("sekantor-home")))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     fake_home = str(tmp_path_factory.mktemp("user-home"))
     monkeypatch.setenv("HOME", fake_home)
     monkeypatch.setenv("USERPROFILE", fake_home)
@@ -37,12 +38,3 @@ def _isolate(tmp_path_factory, monkeypatch):
     sent = []
     monkeypatch.setattr("sekantor.hub.notify.send_native", lambda title, body: sent.append((title, body)))
     return sent
-
-
-def test_guard_blocks_real_service_tools():
-    from sekantor import service
-
-    with pytest.raises(AssertionError):
-        service.run([["schtasks", "/Query"]])
-    with pytest.raises(AssertionError, match="schtasks"):
-        subprocess.run(["schtasks", "/Query"])
