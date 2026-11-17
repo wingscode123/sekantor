@@ -34,6 +34,14 @@ def test_commands_when_hub_down(tmp_path, monkeypatch, args):
     assert r.exit_code == 1 and "Hub not reachable" in r.output and "sekantor up" in r.output
 
 
+def test_stop_command_when_no_hub(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
+    (tmp_path / "token").write_text("x")
+    monkeypatch.setenv("SEKANTOR_URL", "http://127.0.0.1:9")
+    r = runner.invoke(app, ["stop"])
+    assert r.exit_code == 0 and "No hub running." in r.output
+
+
 def test_doctor_reports_failures_without_hub(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path / "home"))

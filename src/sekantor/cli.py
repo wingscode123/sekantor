@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -144,7 +145,16 @@ def up(
     children = [c for c in (_start_tmux(port) if tmux else None,
                             _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
-        uvicorn.run(hub_app, host=config.HOST, port=port, log_level="warning")
+        server = uvicorn.Server(uvicorn.Config(hub_app, host=config.HOST, port=port, log_level="warning"))
+
+        def watch_stop():  # POST /v1/shutdown sets the flag; uvicorn then drains and returns
+            while not server.should_exit:
+                if hub_app.state.should_exit:
+                    server.should_exit = True
+                time.sleep(0.2)
+
+        threading.Thread(target=watch_stop, daemon=True, name="stop-watch").start()
+        server.run()
     finally:
         for child in children:
             if child.poll() is None:
@@ -247,6 +257,21 @@ def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the
     typer.echo(url)
     if not print_only:
         webbrowser.open(url)
+
+
+@app.command()
+def stop():
+    """Stop the running hub (its watchers end with it)."""
+    try:
+        _api("/v1/shutdown", method="POST", body={})
+    except urllib.error.HTTPError as e:
+        why = "refused the token" if e.code in (401, 403) else "answered with an error"
+        typer.secho(f"The hub {why} (HTTP {e.code}). Run `sekantor doctor`.", fg="red")
+        raise typer.Exit(1)
+    except (urllib.error.URLError, RuntimeError, OSError):
+        typer.echo("No hub running.")
+        return
+    typer.echo("SeKantor hub stopped.")
 
 
 service_app = typer.Typer(no_args_is_help=True, help="Start the hub automatically at login.")

@@ -146,6 +146,15 @@ async def login_code(request: Request):
     return {"path": f"/?login={request.app.state.login_codes.issue()}", "valid_s": int(request.app.state.login_codes.TTL_S)}
 
 
+@router.post("/shutdown", status_code=202)
+async def shutdown(request: Request):
+    """Ask the hub to exit (`sekantor stop`, the tray's Quit). Bearer token only, like /login-code."""
+    if request.scope.get("sekantor_auth") != "bearer":
+        raise HTTPException(403, detail="bearer token required")
+    request.app.state.should_exit = True
+    return {"stopping": True}
+
+
 @router.get("/health")
 async def health(request: Request):
     return {"ok": True, "version": __version__, "clients": request.app.state.broadcaster.clients,

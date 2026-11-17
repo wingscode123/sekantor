@@ -120,6 +120,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()
+    app.state.should_exit = False  # set by POST /v1/shutdown; `sekantor up` hands it to uvicorn
     app.include_router(router)
 
     dist = web_dist()
