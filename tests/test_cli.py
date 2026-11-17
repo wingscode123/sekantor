@@ -1,4 +1,7 @@
 import json
+import os
+import sys
+from types import SimpleNamespace
 
 import pytest
 import typer.main
@@ -59,6 +62,60 @@ def test_stop_on_a_slow_hub_does_not_say_no_hub(monkeypatch):
     r = runner.invoke(app, ["stop"])
     assert r.exit_code == 1 and "may still be stopping" in r.output and "No hub running" not in r.output
     assert seen["timeout"] == 10
+
+
+def test_stop_wait_returns_once_the_port_is_free(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"stopping": True})
+    answers = iter([True, True, False])
+    monkeypatch.setattr("sekantor.service.port_busy", lambda host, port: next(answers))
+    r = runner.invoke(app, ["stop", "--wait"])
+    assert r.exit_code == 0 and "hub stopped" in r.output
+    assert next(answers, "done") == "done"  # polled until free
+
+
+def test_stop_wait_fails_when_the_hub_does_not_exit(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"stopping": True})
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, wait_s: False)
+    r = runner.invoke(app, ["stop", "--wait"])
+    assert r.exit_code == 1 and "still running" in r.output
+
+
+def test_stop_wait_on_a_slow_hub_succeeds_once_it_exits(monkeypatch):
+    def slow(*a, **k):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("sekantor.cli._api", slow)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, wait_s: True)
+    r = runner.invoke(app, ["stop", "--wait"])
+    assert r.exit_code == 0 and "hub stopped" in r.output
+
+
+def test_stop_without_wait_does_not_poll(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"stopping": True})
+    monkeypatch.setattr("sekantor.service.wait_free", lambda *a, **k: pytest.fail("polled"))
+    assert runner.invoke(app, ["stop"]).exit_code == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows paths")
+def test_bundle_processes_finds_the_frozen_hub_in_a_spaced_folder(monkeypatch):
+    from sekantor import cli
+
+    folder = r"C:\Users\First Last\AppData\Local\SeKantor\sekantor"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", folder + r"\sekantor.exe")
+    procs = [SimpleNamespace(pid=os.getpid(), info={"exe": folder + r"\sekantor.exe"}),  # ourselves
+             SimpleNamespace(pid=11, info={"exe": folder.upper() + r"\sekantor-hub.exe"}),
+             SimpleNamespace(pid=12, info={"exe": r"C:\Other\sekantor-hub.exe"}),
+             SimpleNamespace(pid=13, info={"exe": None})]
+    monkeypatch.setattr("psutil.process_iter", lambda attrs: procs)
+    assert [p.pid for p in cli._bundle_processes()] == [11]
+
+
+def test_bundle_processes_is_empty_from_source(monkeypatch):
+    from sekantor import cli
+
+    monkeypatch.setattr("psutil.process_iter", lambda attrs: pytest.fail("scanned"))
+    assert cli._bundle_processes() == []
 
 
 def test_doctor_reports_failures_without_hub(tmp_path, monkeypatch):

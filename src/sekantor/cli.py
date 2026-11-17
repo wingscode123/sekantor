@@ -262,25 +262,61 @@ def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the
 
 
 @app.command()
-def stop():
+def stop(wait: bool = typer.Option(False, "--wait", help="Return only once the hub has exited (up to 20 s); the uninstaller uses this.")):
     """Stop the running hub (its watchers end with it)."""
     try:
         res = _api("/v1/shutdown", timeout=10, method="POST", body={})
     except urllib.error.HTTPError as e:
         _stop_refused(e.code)
     except RuntimeError:  # no token file: no hub was ever started here
+        _wait_gone(wait)
         typer.echo("No hub running.")
         return
     except OSError as e:  # URLError is an OSError
         reason = e.reason if isinstance(e, urllib.error.URLError) else e
         if not isinstance(reason, ConnectionRefusedError):
+            if wait and _wait_gone(wait):  # a busy hub may have got the request and be draining
+                typer.echo("SeKantor hub stopped.")
+                return
             typer.secho("The hub did not answer; it may still be stopping.", fg="yellow")
             raise typer.Exit(1)
+        _wait_gone(wait)
         typer.echo("No hub running.")
         return
     if "_status" in res:
         _stop_refused(res["_status"])
+    if wait and not _wait_gone(wait):
+        typer.secho("The hub is still running after 20 s.", fg="yellow")
+        raise typer.Exit(1)
     typer.echo("SeKantor hub stopped.")
+
+
+def _bundle_processes() -> list:
+    """Other processes running an exe from this frozen folder (the hub and its watchers): they lock its
+    files, so the uninstaller must wait for them. Empty when running from source."""
+    from sekantor.selfexe import frozen
+
+    if not frozen():
+        return []
+    import psutil
+
+    folder = os.path.normcase(str(Path(sys.executable).parent))
+    found = []
+    for p in psutil.process_iter(["exe"]):
+        exe = p.info.get("exe")
+        if p.pid != os.getpid() and exe and os.path.normcase(str(Path(exe).parent)) == folder:
+            found.append(p)
+    return found
+
+
+def _wait_gone(wait: bool, wait_s: float = 20.0) -> bool:
+    """With --wait: block until the port is free and no process from this folder is left."""
+    if not wait:
+        return True
+    from sekantor import service
+
+    return service.wait_free(lambda: service.port_busy(config.HOST, config.port()) or bool(_bundle_processes()),
+                             wait_s=wait_s)
 
 
 def _stop_refused(code: int):
