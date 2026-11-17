@@ -236,9 +236,13 @@ def test_service_install_waits_for_the_old_hub_to_let_go_of_the_port(tmp_path, m
     assert next(polls, "drained") == "drained"
 
 
-def _setup_env(tmp_path, monkeypatch):
-    """Tmp Claude config dir, a fake hook binary in a spaced path, and a service layer that touches nothing real."""
+def _setup_env(tmp_path, monkeypatch, platform="win32"):
+    """Tmp Claude config dir, a fake hook binary in a spaced path, and a service layer that touches nothing real.
+    The service plan is for ``platform``, not the host's."""
     from sekantor import service
+
+    real_plan = service.plan
+    monkeypatch.setattr(service, "plan", lambda home, *a, **k: real_plan(home, platform, *a, **k))
     from sekantor.pos.claude_code import install as inst
 
     cfg = tmp_path / "claude cfg"
@@ -342,7 +346,7 @@ def _frozen_install(tmp_path, monkeypatch, busy_answers):
     calls = []
 
     def fake_run(commands, check=True):
-        calls.extend(c[1] for c in commands)
+        calls.extend(commands)
         return [subprocess.CompletedProcess(c, 0, "", "") for c in commands]
 
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -358,8 +362,10 @@ def test_frozen_service_install_ends_its_own_task_then_starts_the_new_one(tmp_pa
     calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: next(polls, False))
     r = runner.invoke(app, ["service", "install"])
     assert r.exit_code == 0 and "takes over" not in r.output
-    assert calls.index("/End") < calls.index("/Create") < calls.index("/Run")
-    assert calls[-1] == "/Run"
+    verbs = [c[1] for c in calls if c[-1] == "SeKantor hub" or "/F" in c]
+    assert ["schtasks", "/End", "/TN", "SeKantor hub"] in calls
+    assert verbs.index("/End") < verbs.index("/Create") < verbs.index("/Run")
+    assert calls[-1] == ["schtasks", "/Run", "/TN", "SeKantor hub"]
 
 
 def test_frozen_service_install_keeps_a_hand_started_hub(tmp_path, monkeypatch):
@@ -367,21 +373,25 @@ def test_frozen_service_install_keeps_a_hand_started_hub(tmp_path, monkeypatch):
     monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: False)
     r = runner.invoke(app, ["service", "install"])
     assert r.exit_code == 0 and "takes over at the next login" in r.output
-    assert "/Run" not in calls
+    assert ["schtasks", "/Run", "/TN", "SeKantor hub"] not in calls
 
 
 def test_source_service_install_leaves_a_running_hub_alone(tmp_path, monkeypatch):
     calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: True)
     monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: False)
     r = runner.invoke(app, ["service", "install"])
     assert r.exit_code == 0 and "takes over at the next login" in r.output
-    assert "/End" not in calls[:calls.index("/Create")] or calls[:1] == ["/End"]  # only the old-task cleanup
+    assert ["schtasks", "/End", "/TN", "SeKantor hub"] not in calls  # only the old Ronda task is cleaned up
+    assert ["schtasks", "/Run", "/TN", "SeKantor hub"] not in calls
 
 
-def test_setup_apply_reports_the_hub_outcome(tmp_path, monkeypatch):
-    _setup_env(tmp_path, monkeypatch)
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_setup_apply_reports_the_hub_outcome(tmp_path, monkeypatch, platform):
+    _setup_env(tmp_path, monkeypatch, platform)
     r = runner.invoke(app, ["setup", "--apply"])
     assert json.loads(r.stdout)["hub"] == "restart_needed"  # port_busy is faked busy
     monkeypatch.setattr("sekantor.service.port_busy", lambda host, port: False)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: True)
     r = runner.invoke(app, ["setup", "--apply"])
     assert json.loads(r.stdout)["hub"] == "started"

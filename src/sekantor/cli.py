@@ -358,8 +358,12 @@ def _install_service(start: bool) -> str:
         for path, content in p.files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
+        was_busy = hub_busy()
         service.run(p.install)
-        if start and p.start:
+        if start and not p.start:
+            # launchd / systemd: the install command starts the service itself
+            result = "restart_needed" if was_busy else "started"
+        elif start:
             busy = hub_busy
             # schtasks /End returns before the old hub has exited: give it time to let go of the port
             if old_hub_ended or takeover:
