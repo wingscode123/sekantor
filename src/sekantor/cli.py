@@ -513,6 +513,61 @@ def uninstall_claude(
     typer.echo(f"Backup: {r.backup}")
 
 
+def _detect_integrations() -> dict:
+    """Which agent hosts this machine has: shared by `doctor` and `setup`."""
+    import shutil
+
+    from sekantor.pos.openbot.pos import automation_dir, installed as openbot_installed
+    from sekantor.pos.orca.pos import orca_cli
+
+    openbot = "absent"
+    if openbot_installed():
+        openbot = "on" if (automation_dir() / "url").exists() else "off"
+    return {"openbot": openbot, "orca": bool(orca_cli()), "tmux": bool(shutil.which("tmux"))}
+
+
+def _hooks_state(exe) -> str:
+    """missing: none of ours in the global settings; outdated: old shape, incomplete, or not this install's hook."""
+    from sekantor.pos.claude_code import install as inst
+
+    found = inst.inspect(inst.settings_path("global"))
+    if not found.events:
+        return "missing"
+    ours = exe.as_posix().lower() if exe else None
+    same_path = all(c.replace("\\", "/").lower() == ours for c in found.commands)
+    return "ok" if found.complete and found.current_shape() and same_path else "outdated"
+
+
+def _setup_report() -> dict:
+    from sekantor import service
+    from sekantor.pos.claude_code import install as inst
+
+    exe = inst.hook_executable()
+    return {"hooks": _hooks_state(exe), "hook_path": str(exe) if exe else None,
+            "service": service.installed(service.plan(config.home())), **_detect_integrations()}
+
+
+@app.command()
+def setup(
+    as_json: bool = typer.Option(False, "--json", help="Print what is set up and what is not, as JSON (the default)."),
+    apply: bool = typer.Option(False, "--apply", help="Install the hooks (global) and the login service, then print the same JSON."),
+):
+    """First-run check for the desktop app: report the state, or fix it with --apply."""
+    if apply:
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                install_claude(project=False, global_=True)
+                service_install(start=True)
+        except typer.Exit as e:
+            typer.echo(out.getvalue().strip(), err=True)
+            raise typer.Exit(e.exit_code or 1)
+    typer.echo(json.dumps(_setup_report()))
+
+
 @app.command()
 def doctor():
     """Check that everything is in place."""
@@ -573,11 +628,9 @@ def doctor():
     dist = web_dist()
     check(dist is not None, f"Web UI built ({dist})", "Web UI not built: `npm ci && npm run build` in web/", warn=True)
 
-    from sekantor.pos.openbot.pos import automation_dir, installed as openbot_installed
-
-    if openbot_installed():
-        on = (automation_dir() / "url").exists()
-        check(on, "OpenBot: Local scripts is on for at least one agent",
+    openbot = _detect_integrations()["openbot"]
+    if openbot != "absent":
+        check(openbot == "on", "OpenBot: Local scripts is on for at least one agent",
               "OpenBot: no agent has Local scripts on, so SeKantor cannot see OpenBot agents "
               "(agent settings > Permissions > Local scripts)", warn=True)
 
