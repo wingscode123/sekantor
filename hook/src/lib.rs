@@ -27,6 +27,8 @@ pub const SENT_MAX: u64 = 2 * 1024 * 1024;
 pub const DEFAULT_PORT: u16 = 7878;
 pub const HOOK_PATH: &str = "/v1/hooks/claude";
 const MAX_RESPONSE: usize = 64 * 1024;
+/// Kept free before the watchdog for writing sent.log and hook.log.
+pub const LOG_RESERVE: Duration = Duration::from_millis(150);
 
 /// What `run` did; only tests look at it.
 #[derive(Debug, PartialEq, Eq)]
@@ -35,6 +37,8 @@ pub enum Outcome {
     Skipped(&'static str),
     /// The hub answered 2xx.
     Sent(u16),
+    /// The hub answered 2xx with `"stored": false` (e.g. ignore_cwd): no sent.log line.
+    Dropped,
     /// Logged as "hub unreachable (<kind>) <id>"; the kind is a Python exception name, as before.
     Failed(&'static str),
 }
@@ -46,8 +50,9 @@ pub fn process_env() -> Vec<(String, String)> {
         .collect()
 }
 
-/// Forward one hook call. `windows` selects `USERPROFILE` and case-insensitive env names.
-pub fn run<R: Read>(stdin: R, env: &[(String, String)], windows: bool) -> Outcome {
+/// Forward one hook call. `windows` selects `USERPROFILE` and case-insensitive env names; `started` is
+/// when the process began, so the request ends early enough for the logs to be written before the watchdog.
+pub fn run<R: Read>(stdin: R, env: &[(String, String)], windows: bool, started: Instant) -> Outcome {
     let raw = match read_capped(stdin, MAX_STDIN) {
         Some(raw) => raw,
         None => return Outcome::Skipped("stdin"),
@@ -76,20 +81,53 @@ pub fn run<R: Read>(stdin: R, env: &[(String, String)], windows: bool) -> Outcom
     let id = event_id(nanos, random_u32(nanos));
     let ts = utc_iso(now);
     let session = format!("claude:{}", text_field(&payload, "session_id"));
-    append_rotating(&home.join("sent.log"), &sent_line(&ts, &id, &session, &event_name), SENT_MAX);
+    // Written after the reply but with the pre-send `ts`, which is what `sekantor stats` reads.
+    let sent = sent_line(&ts, &id, &session, &event_name);
 
     let port = hub_port(env, windows);
     let body = request_body(&id, &ts, payload, sent_env);
     let request = http_request(port, &token, &body);
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
-    let result = match post(addr, &request, http_timeout(&event_name)) {
-        Ok(status) if (200..300).contains(&status) => return Outcome::Sent(status),
+    let reply = match http_budget(&event_name, started.elapsed()) {
+        Some(timeout) => post(addr, &request, timeout),
+        None => Err("TimeoutError"),
+    };
+    let result = match reply {
+        Ok((status, raw)) if (200..300).contains(&status) => {
+            // The hub dropped it on purpose (e.g. ignore_cwd): not an attempt stats should count.
+            if hub_dropped(&raw) {
+                return Outcome::Dropped;
+            }
+            append_rotating(&home.join("sent.log"), &sent, SENT_MAX);
+            return Outcome::Sent(status);
+        }
         Ok(_) => "RuntimeError",
         Err(kind) => kind,
     };
+    append_rotating(&home.join("sent.log"), &sent, SENT_MAX);
     // The event id lets `sekantor stats` match this line to the event, however late it is logged.
     log(&home, &format!("{}: hub unreachable ({}) {}", event_name, result, id));
     Outcome::Failed(result)
+}
+
+/// Time the request may take: the event's HTTP timeout, cut so that it ends at least `LOG_RESERVE`
+/// before the watchdog. `None` when that leaves nothing.
+pub fn http_budget(event_name: &str, elapsed: Duration) -> Option<Duration> {
+    let left = HARD_TIMEOUT.checked_sub(elapsed)?.checked_sub(LOG_RESERVE)?;
+    let budget = left.min(http_timeout(event_name));
+    if budget.is_zero() {
+        None
+    } else {
+        Some(budget)
+    }
+}
+
+/// A 2xx reply whose JSON body says `"stored": false`. Anything unclear counts as stored.
+fn hub_dropped(raw: &[u8]) -> bool {
+    match response_body(raw).and_then(|b| serde_json::from_slice::<Value>(b).ok()) {
+        Some(Value::Object(map)) => map.get("stored") == Some(&Value::Bool(false)),
+        _ => false,
+    }
 }
 
 /// All of `r` when it is at most `max` bytes; `None` when longer or unreadable.
@@ -235,9 +273,10 @@ pub fn http_request(port: u16, token: &str, body: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Send `request` and return the response status. Connect, write and read all share one deadline,
-/// `timeout` from now, so a hub that accepts and never answers costs `timeout`, not more.
-pub fn post(addr: SocketAddr, request: &[u8], timeout: Duration) -> Result<u16, &'static str> {
+/// Send `request` and return the status and the raw response. Connect, write and read all share one
+/// deadline, `timeout` from now, so a hub that accepts and never answers costs `timeout`, not more.
+/// Reading stops at EOF or once the head and `Content-Length` body bytes are in.
+pub fn post(addr: SocketAddr, request: &[u8], timeout: Duration) -> Result<(u16, Vec<u8>), &'static str> {
     let deadline = Instant::now() + timeout;
     let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| err_name(&e))?;
     stream.set_write_timeout(Some(remaining(deadline)?)).map_err(|e| err_name(&e))?;
@@ -247,22 +286,66 @@ pub fn post(addr: SocketAddr, request: &[u8], timeout: Duration) -> Result<u16, 
     loop {
         let left = match remaining(deadline) {
             Ok(left) => left,
-            Err(kind) => return parse_status(&response).ok_or(kind),
+            Err(kind) => return with_status(response, kind),
         };
         stream.set_read_timeout(Some(left)).map_err(|e| err_name(&e))?;
         match stream.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
                 response.extend_from_slice(&buf[..n]);
-                if response.len() > MAX_RESPONSE {
+                if response.len() > MAX_RESPONSE || response_complete(&response) {
                     break;
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return parse_status(&response).ok_or(err_name(&e)),
+            Err(e) => return with_status(response, err_name(&e)),
         }
     }
-    parse_status(&response).ok_or("RuntimeError")
+    with_status(response, "RuntimeError")
+}
+
+/// A response whose status line arrived counts as answered, even if the rest did not.
+fn with_status(response: Vec<u8>, otherwise: &'static str) -> Result<(u16, Vec<u8>), &'static str> {
+    match parse_status(&response) {
+        Some(status) => Ok((status, response)),
+        None => Err(otherwise),
+    }
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// `Content-Length` from a response or request head (the bytes before the blank line).
+fn content_length(head: &[u8]) -> Option<usize> {
+    let head = std::str::from_utf8(head).ok()?;
+    head.split("\r\n").skip(1).find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    })
+}
+
+/// The head is in and so are all `Content-Length` body bytes (without that header: wait for EOF).
+fn response_complete(raw: &[u8]) -> bool {
+    match find(raw, b"\r\n\r\n") {
+        Some(end) => matches!(content_length(&raw[..end]), Some(n) if raw.len() >= end + 4 + n),
+        None => false,
+    }
+}
+
+/// The body after the blank line, cut to `Content-Length`; `None` while it is incomplete.
+fn response_body(raw: &[u8]) -> Option<&[u8]> {
+    let end = find(raw, b"\r\n\r\n")?;
+    let rest = &raw[end + 4..];
+    match content_length(&raw[..end]) {
+        Some(n) if rest.len() >= n => Some(&rest[..n]),
+        Some(_) => None,
+        None => Some(rest),
+    }
 }
 
 fn remaining(deadline: Instant) -> Result<Duration, &'static str> {
@@ -446,8 +529,23 @@ mod tests {
     use std::sync::mpsc;
     use std::thread;
 
-    // Every test gets its own temporary home and a port from the OS: never the real home or 7878.
-    fn temp_home(tag: &str) -> PathBuf {
+    /// A temporary home, removed when the test ends. Tests never use the real home or port 7878.
+    struct TempHome(PathBuf);
+
+    impl Drop for TempHome {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for TempHome {
+        type Target = Path;
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    fn temp_home(tag: &str) -> TempHome {
         static N: AtomicU32 = AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
             "sekantor-hook-test-{}-{}-{}",
@@ -457,7 +555,13 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        dir
+        TempHome(dir)
+    }
+
+    fn home_with_token(tag: &str) -> TempHome {
+        let home = temp_home(tag);
+        fs::write(home.join("token"), "tok123\n").unwrap();
+        home
     }
 
     fn owned(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -471,16 +575,6 @@ mod tests {
         env
     }
 
-    fn home_with_token(tag: &str) -> PathBuf {
-        let home = temp_home(tag);
-        fs::write(home.join("token"), "tok123\n").unwrap();
-        home
-    }
-
-    fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-        haystack.windows(needle.len()).position(|w| w == needle)
-    }
-
     fn is_event_id(id: &str) -> bool {
         id.len() == 24 && id.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
     }
@@ -490,18 +584,7 @@ mod tests {
         let mut buf = [0u8; 4096];
         loop {
             if let Some(end) = find(&data, b"\r\n\r\n") {
-                let head = String::from_utf8_lossy(&data[..end]).into_owned();
-                let len = head
-                    .lines()
-                    .find_map(|l| {
-                        let (k, v) = l.split_once(':')?;
-                        if k.eq_ignore_ascii_case("content-length") {
-                            v.trim().parse::<usize>().ok()
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(0);
+                let len = content_length(&data[..end]).unwrap_or(0);
                 if data.len() >= end + 4 + len {
                     return data;
                 }
@@ -513,8 +596,9 @@ mod tests {
         }
     }
 
-    /// A hub that answers one request with `status_line` and hands the raw request to the test.
-    fn fake_hub(status_line: &'static str) -> (u16, mpsc::Receiver<Vec<u8>>) {
+    /// A hub that answers one request with `status_line` and `body`, keeps the connection open for
+    /// `hold`, and hands the raw request to the test.
+    fn fake_hub(status_line: &'static str, body: &'static str, hold: Duration) -> (u16, mpsc::Receiver<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = mpsc::channel();
@@ -522,29 +606,40 @@ mod tests {
             if let Ok((mut s, _)) = listener.accept() {
                 s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                 let req = read_request(&mut s);
-                let reply = format!("{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", status_line);
+                let reply = format!(
+                    "{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_line,
+                    body.len(),
+                    body
+                );
                 let _ = s.write_all(reply.as_bytes());
                 let _ = tx.send(req);
+                thread::sleep(hold);
             }
         });
         (port, rx)
     }
 
+    const STORED: &str = r#"{"stored": true, "event_id": "x"}"#;
     const PRE_TOOL_USE: &[u8] =
         br#"{"session_id":"abc","hook_event_name":"PreToolUse","tool_name":"Read","cwd":"/w","tool_input":{"file_path":"/w/a.txt"}}"#;
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
 
     #[test]
     fn posts_raw_payload_with_whitelisted_env_only() {
         let home = home_with_token("post");
         fs::write(home.join("hook-env.txt"), "TERM_PROGRAM\nCLAUDE_PID\n").unwrap();
-        let (port, rx) = fake_hub("HTTP/1.1 202 Accepted");
+        let (port, rx) = fake_hub("HTTP/1.1 202 Accepted", STORED, ms(0));
         let env = env_for(
             &home,
             port,
             &[("TERM_PROGRAM", "vscode"), ("CLAUDE_PID", "4242"), ("ANTHROPIC_API_KEY", "sk-secret")],
         );
 
-        assert_eq!(run(PRE_TOOL_USE, &env, false), Outcome::Sent(202));
+        assert_eq!(run(PRE_TOOL_USE, &env, false, Instant::now()), Outcome::Sent(202));
 
         let req = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let end = find(&req, b"\r\n\r\n").unwrap();
@@ -580,6 +675,50 @@ mod tests {
     }
 
     #[test]
+    fn event_the_hub_did_not_store_is_not_in_sent_log() {
+        let home = home_with_token("dropped");
+        let (port, rx) = fake_hub("HTTP/1.1 202 Accepted", r#"{"stored": false}"#, ms(0));
+        let env = env_for(&home, port, &[]);
+        assert_eq!(run(PRE_TOOL_USE, &env, false, Instant::now()), Outcome::Dropped);
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(!home.join("sent.log").exists());
+        assert!(!home.join("hook.log").exists());
+    }
+
+    #[test]
+    fn unclear_2xx_body_still_counts_as_sent() {
+        for body in ["", "not json", "[false]", r#"{"stored": "no"}"#] {
+            let home = home_with_token("unclear");
+            let (port, rx) = fake_hub("HTTP/1.1 202 Accepted", body, ms(0));
+            let env = env_for(&home, port, &[]);
+            assert_eq!(run(PRE_TOOL_USE, &env, false, Instant::now()), Outcome::Sent(202), "{:?}", body);
+            rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(fs::read_to_string(home.join("sent.log")).unwrap().lines().count(), 1, "{:?}", body);
+        }
+    }
+
+    #[test]
+    fn stops_reading_once_content_length_bytes_are_in() {
+        let (port, _rx) = fake_hub("HTTP/1.1 202 Accepted", STORED, Duration::from_secs(3));
+        let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
+        let start = Instant::now();
+        let (status, raw) = post(addr, b"POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n", HTTP_TIMEOUT).unwrap();
+        assert!(start.elapsed() < ms(900), "{:?}", start.elapsed());
+        assert_eq!(status, 202);
+        assert_eq!(response_body(&raw), Some(STORED.as_bytes()));
+    }
+
+    #[test]
+    fn response_body_honours_content_length() {
+        assert_eq!(response_body(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}xx"), Some(&b"{}"[..]));
+        assert_eq!(response_body(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\n{}"), None);
+        assert_eq!(response_body(b"HTTP/1.1 200 OK\r\n\r\n{}"), Some(&b"{}"[..]));
+        assert_eq!(response_body(b"HTTP/1.1 200 OK\r\n"), None);
+        assert!(hub_dropped(b"HTTP/1.1 202 Accepted\r\nContent-Length: 17\r\n\r\n{\"stored\": false}"));
+        assert!(!hub_dropped(b"HTTP/1.1 202 Accepted\r\nContent-Length: 16\r\n\r\n{\"stored\": true}"));
+    }
+
+    #[test]
     fn env_whitelist_sends_listed_names_and_claude_pid_only() {
         let env = owned(&[("ANTHROPIC_API_KEY", "sk"), ("TERM_PROGRAM", "vscode"), ("CLAUDE_PID", "7")]);
         let got = select_env("# rules\nTERM_PROGRAM\n\nWT_SESSION\n", &env, false);
@@ -608,7 +747,7 @@ mod tests {
 
     #[test]
     fn utc_timestamps_match_python_isoformat() {
-        let at = |secs: u64, micros: u32| utc_iso(UNIX_EPOCH + Duration::from_secs(secs) + Duration::from_micros(micros as u64));
+        let at = |secs: u64, micros: u64| utc_iso(UNIX_EPOCH + Duration::from_secs(secs) + Duration::from_micros(micros));
         assert_eq!(at(0, 0), "1970-01-01T00:00:00.000000+00:00");
         assert_eq!(at(951_782_400, 0), "2000-02-29T00:00:00.000000+00:00");
         assert_eq!(at(1_700_000_000, 123_456), "2023-11-14T22:13:20.123456+00:00");
@@ -622,7 +761,7 @@ mod tests {
         let b = s.as_bytes();
         assert_eq!(s.len(), 19, "{}", s);
         assert_eq!((b[4], b[7], b[10], b[13], b[16]), (b'-', b'-', b'T', b':', b':'), "{}", s);
-        assert!(s.chars().filter(|c| c.is_ascii_digit()).count() == 14, "{}", s);
+        assert_eq!(s.chars().filter(|c| c.is_ascii_digit()).count(), 14, "{}", s);
     }
 
     #[test]
@@ -633,7 +772,7 @@ mod tests {
         let result = post(addr, b"POST / HTTP/1.1\r\n\r\n", HTTP_TIMEOUT);
         let took = start.elapsed();
         assert_eq!(result, Err("TimeoutError"));
-        assert!(took >= Duration::from_millis(900) && took < Duration::from_millis(1300), "{:?}", took);
+        assert!(took >= ms(900) && took < ms(1900), "{:?}", took);
         drop(listener);
     }
 
@@ -643,15 +782,42 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let env = env_for(&home, listener.local_addr().unwrap().port(), &[]);
         let start = Instant::now();
-        assert_eq!(run(PRE_TOOL_USE, &env, false), Outcome::Failed("TimeoutError"));
-        assert!(start.elapsed() < Duration::from_millis(1300), "{:?}", start.elapsed());
+        assert_eq!(run(PRE_TOOL_USE, &env, false, start), Outcome::Failed("TimeoutError"));
+        assert!(start.elapsed() < ms(1900), "{:?}", start.elapsed());
 
         let sent = fs::read_to_string(home.join("sent.log")).unwrap();
+        assert_eq!(sent.lines().count(), 1);
         let id = sent.split(' ').nth(1).unwrap().to_string();
         let log = fs::read_to_string(home.join("hook.log")).unwrap();
         assert_eq!(log.lines().count(), 1);
         assert_eq!(&log[19..], format!(" PreToolUse: hub unreachable (TimeoutError) {}\n", id));
         drop(listener);
+    }
+
+    #[test]
+    fn no_time_left_skips_the_request_but_still_logs() {
+        let home = home_with_token("late");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let env = env_for(&home, listener.local_addr().unwrap().port(), &[]);
+        let started = Instant::now().checked_sub(ms(1900)).unwrap();
+        let start = Instant::now();
+        assert_eq!(run(PRE_TOOL_USE, &env, false, started), Outcome::Failed("TimeoutError"));
+        assert!(start.elapsed() < ms(500), "{:?}", start.elapsed());
+        assert!(listener.accept().is_err(), "the hook connected with no time left");
+        assert_eq!(fs::read_to_string(home.join("sent.log")).unwrap().lines().count(), 1);
+        let log = fs::read_to_string(home.join("hook.log")).unwrap();
+        assert!(log.contains(" PreToolUse: hub unreachable (TimeoutError) "), "{}", log);
+    }
+
+    #[test]
+    fn http_budget_leaves_time_for_the_logs() {
+        assert_eq!(http_budget("PreToolUse", ms(0)), Some(ms(1000)));
+        assert_eq!(http_budget("SessionEnd", ms(0)), Some(ms(1500)));
+        assert_eq!(http_budget("SessionEnd", ms(600)), Some(ms(1250)));
+        assert_eq!(http_budget("PreToolUse", ms(1840)), Some(ms(10)));
+        assert_eq!(http_budget("PreToolUse", ms(1850)), None);
+        assert_eq!(http_budget("PreToolUse", ms(5000)), None);
     }
 
     #[test]
@@ -662,19 +828,27 @@ mod tests {
         };
         let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
         let start = Instant::now();
-        let result = post(addr, b"POST / HTTP/1.1\r\n\r\n", HTTP_TIMEOUT);
-        // Windows retries a refused loopback connect for ~2 s, so it ends as a timeout there.
-        assert!(matches!(result, Err("ConnectionRefusedError") | Err("TimeoutError")), "{:?}", result);
-        assert!(start.elapsed() < Duration::from_millis(1300), "{:?}", start.elapsed());
+        match post(addr, b"POST / HTTP/1.1\r\n\r\n", HTTP_TIMEOUT) {
+            // Something else took the freed port in the meantime: nothing to check.
+            Ok(_) => {}
+            // Windows retries a refused loopback connect for ~2 s, so it ends as a timeout there.
+            Err(kind) => assert!(
+                kind == "ConnectionRefusedError" || kind == "TimeoutError" || kind == "ConnectionResetError",
+                "{}",
+                kind
+            ),
+        }
+        assert!(start.elapsed() < ms(1900), "{:?}", start.elapsed());
     }
 
     #[test]
     fn non_2xx_answer_is_logged_as_unreachable() {
         let home = home_with_token("401");
-        let (port, rx) = fake_hub("HTTP/1.1 401 Unauthorized");
+        let (port, rx) = fake_hub("HTTP/1.1 401 Unauthorized", r#"{"detail": "no"}"#, ms(0));
         let env = env_for(&home, port, &[]);
-        assert_eq!(run(PRE_TOOL_USE, &env, false), Outcome::Failed("RuntimeError"));
+        assert_eq!(run(PRE_TOOL_USE, &env, false, Instant::now()), Outcome::Failed("RuntimeError"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(fs::read_to_string(home.join("sent.log")).unwrap().lines().count(), 1);
         let log = fs::read_to_string(home.join("hook.log")).unwrap();
         assert!(log.contains(" PreToolUse: hub unreachable (RuntimeError) "), "{}", log);
     }
@@ -686,14 +860,21 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let env = env_for(&home, listener.local_addr().unwrap().port(), &[]);
 
-        let inputs: [&[u8]; 5] = [b"[1, 2]", b"\"text\"", b"42", b"not json", b"\xff\xfe{\"a\": 1}"];
+        let inputs: [&[u8]; 6] = [
+            b"[1, 2]",
+            b"\"text\"",
+            b"42",
+            b"not json",
+            b"\xff\xfe{\"a\": 1}",
+            b"{\"a\":\"\xff\"}", // invalid UTF-8 inside a string
+        ];
         for input in inputs {
-            assert_eq!(run(input, &env, false), Outcome::Skipped("payload"), "{:?}", input);
+            assert_eq!(run(input, &env, false, Instant::now()), Outcome::Skipped("payload"), "{:?}", input);
         }
         let mut big = b"{\"a\":\"".to_vec();
         big.extend(std::iter::repeat(b'x').take(MAX_STDIN));
         big.extend_from_slice(b"\"}");
-        assert_eq!(run(&big[..], &env, false), Outcome::Skipped("stdin"));
+        assert_eq!(run(&big[..], &env, false, Instant::now()), Outcome::Skipped("stdin"));
 
         assert!(listener.accept().is_err(), "the hook connected to the hub");
         assert!(!home.join("sent.log").exists());
@@ -712,7 +893,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let env = env_for(&home, listener.local_addr().unwrap().port(), &[]);
-        assert_eq!(run(PRE_TOOL_USE, &env, false), Outcome::Skipped("token"));
+        assert_eq!(run(PRE_TOOL_USE, &env, false, Instant::now()), Outcome::Skipped("token"));
         assert!(listener.accept().is_err());
         let log = fs::read_to_string(home.join("hook.log")).unwrap();
         assert_eq!(&log[19..], " no token: run `sekantor up` once\n");
@@ -748,8 +929,8 @@ mod tests {
 
     #[test]
     fn session_end_waits_longer() {
-        assert_eq!(http_timeout("SessionEnd"), Duration::from_millis(1500));
-        assert_eq!(http_timeout("PreToolUse"), Duration::from_millis(1000));
+        assert_eq!(http_timeout("SessionEnd"), ms(1500));
+        assert_eq!(http_timeout("PreToolUse"), ms(1000));
     }
 
     #[test]
