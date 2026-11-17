@@ -5,8 +5,8 @@ and ~/.claude are never read or changed. It refuses the default port 7878 (a rea
 stops only the hub it started, and kills that hub's process tree if anything is left at the end.
 
 The folder holds the PyInstaller exes and, in CI, the native `sekantor-hook.exe` (hook/, ADR-0026)
-copied in after PyInstaller. Without it (a local build has no Rust toolchain) the hook checks are
-skipped with a message; CI always has it.
+copied in after PyInstaller. Without it the hook checks are skipped with a message locally (no Rust
+toolchain) and the smoke fails on CI (CIRCLECI set), where it must be there.
 
 Checks:
   1. `sekantor version` exits 0.
@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -40,11 +41,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from sekantor.stats import UNREACHABLE_ID
-
 REAL_PORT = 7878
 EXE = ".exe" if sys.platform == "win32" else ""
 HOOK = "sekantor-hook"
+# The hook.log line `sekantor stats` matches (sekantor.stats.UNREACHABLE_ID); copied to keep this stdlib only.
+UNREACHABLE_ID = re.compile(r"hub unreachable \(\w+\) (\S+)\s*$")
 OPENBOT_CWD = "C:/Users/smoke/AppData/Local/Programs/OpenBot/resources/app"  # matches DEFAULT_IGNORE_CWD
 
 
@@ -145,7 +146,7 @@ class Smoke:
                    f"activity kinds {kinds}; hook.log: {lines(self.home / 'hook.log')[-3:]}")
 
         sent_before = len(lines(self.home / "sent.log"))
-        r, took = self.hook("smoke-openbot-0001", OPENBOT_CWD)
+        r, _ = self.hook("smoke-openbot-0001", OPENBOT_CWD)
         added = len(lines(self.home / "sent.log")) - sent_before
         self.check(r.returncode == 0 and not r.stdout and added == 0,
                    f"{HOOK} with an ignore_cwd payload: exit {r.returncode}, sent.log +{added}", r.stderr.decode())
@@ -226,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"refusing port {REAL_PORT}: that is where a real hub runs")
     if port_open(args.port):
         sys.exit(f"port {args.port} is already in use; pick another with --port")
-    for stem in ("sekantor", "sekantor-hub"):
+    for stem in ("sekantor", "sekantor-hub") + ((HOOK,) if os.environ.get("CIRCLECI") else ()):
         if not (args.folder / (stem + EXE)).is_file():
             sys.exit(f"missing {stem}{EXE} in {args.folder}")
 

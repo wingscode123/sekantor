@@ -83,8 +83,8 @@ def main(argv: list[str]) -> int:
     settings = Path.home() / ".claude" / "settings.json"
     text = settings.read_text(encoding="utf-8") if settings.is_file() else ""
     # The native forwarder (hook/, ADR-0026) that CI copied into dist/sekantor/ before `tauri build`.
-    hook = (inst / "sekantor" / "sekantor-hook.exe").as_posix().lower()
-    commands = {str(h.get("command", "")).replace("\\", "/").lower()
+    hook = os.path.normcase((inst / "sekantor" / "sekantor-hook.exe").resolve())  # resolve: 8.3 short names
+    commands = {os.path.normcase(Path(str(h.get("command", ""))).resolve())
                 for groups in (json.loads(text).get("hooks", {}) if text else {}).values()
                 for group in groups for h in group.get("hooks", [])
                 if "sekantor-hook" in str(h.get("command", ""))}

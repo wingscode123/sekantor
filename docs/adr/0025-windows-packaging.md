@@ -52,5 +52,5 @@ test and `tauri build` see the same three exes as before. The registry cache key
 `desktop/src-tauri/Cargo.toml` and `hook/Cargo.toml`. `smoke.py` now checks the forwarder against the
 smoke hub (a `Bash` PreToolUse is stored with `activity.kind == "run"`, an `ignore_cwd` payload adds no
 `sent.log` line) and without one (exit 0 in under 3 s, no output, one "hub unreachable" line in
-`hook.log`); without the exe (a local build) it skips those checks. `installer_check.py` checks that
+`hook.log`); without the exe it skips those checks locally and fails on CI. `installer_check.py` checks that
 every SeKantor hook in `settings.json` points at `<install>/sekantor/sekantor-hook.exe`.

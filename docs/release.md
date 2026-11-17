@@ -66,4 +66,4 @@ To build the PyInstaller folder by hand, in a worktree (never in a checkout whos
 `(cd web && npm ci && npm run build)`, `uv sync --group packaging`,
 `uv run pyinstaller packaging/sekantor.spec --distpath dist --workpath build/pyi`, then
 `uv run python packaging/smoke.py dist/sekantor`. Without a Rust toolchain the folder has no
-`sekantor-hook.exe`, and the smoke test skips the hook checks (it says so); CI runs them.
+`sekantor-hook.exe`: the smoke test skips the hook checks locally (it says so) and fails on CI.
