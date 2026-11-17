@@ -42,6 +42,25 @@ def test_stop_command_when_no_hub(tmp_path, monkeypatch):
     assert r.exit_code == 0 and "No hub running." in r.output
 
 
+def test_stop_reports_a_refused_token(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"_status": 401, "detail": "bad token"})
+    r = runner.invoke(app, ["stop"])
+    assert r.exit_code == 1 and "refused the token" in r.output and "hub stopped" not in r.output
+
+
+def test_stop_on_a_slow_hub_does_not_say_no_hub(monkeypatch):
+    seen = {}
+
+    def slow(path, timeout=2.0, **kw):
+        seen["timeout"] = timeout
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("sekantor.cli._api", slow)
+    r = runner.invoke(app, ["stop"])
+    assert r.exit_code == 1 and "may still be stopping" in r.output and "No hub running" not in r.output
+    assert seen["timeout"] == 10
+
+
 def test_doctor_reports_failures_without_hub(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path / "home"))

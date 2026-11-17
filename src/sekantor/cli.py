@@ -263,15 +263,28 @@ def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the
 def stop():
     """Stop the running hub (its watchers end with it)."""
     try:
-        _api("/v1/shutdown", method="POST", body={})
+        res = _api("/v1/shutdown", timeout=10, method="POST", body={})
     except urllib.error.HTTPError as e:
-        why = "refused the token" if e.code in (401, 403) else "answered with an error"
-        typer.secho(f"The hub {why} (HTTP {e.code}). Run `sekantor doctor`.", fg="red")
-        raise typer.Exit(1)
-    except (urllib.error.URLError, RuntimeError, OSError):
+        _stop_refused(e.code)
+    except RuntimeError:  # no token file: no hub was ever started here
         typer.echo("No hub running.")
         return
+    except OSError as e:  # URLError is an OSError
+        reason = e.reason if isinstance(e, urllib.error.URLError) else e
+        if not isinstance(reason, ConnectionRefusedError):
+            typer.secho("The hub did not answer; it may still be stopping.", fg="yellow")
+            raise typer.Exit(1)
+        typer.echo("No hub running.")
+        return
+    if "_status" in res:
+        _stop_refused(res["_status"])
     typer.echo("SeKantor hub stopped.")
+
+
+def _stop_refused(code: int):
+    why = "refused the token" if code in (401, 403) else "answered with an error"
+    typer.secho(f"The hub {why} (HTTP {code}). Run `sekantor doctor`.", fg="red")
+    raise typer.Exit(1)
 
 
 service_app = typer.Typer(no_args_is_help=True, help="Start the hub automatically at login.")
