@@ -1,0 +1,3 @@
+/target/
+# No Cargo.lock: nothing outside CI has a Rust toolchain (ADR-0025).
+/Cargo.lock
