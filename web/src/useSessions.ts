@@ -6,14 +6,14 @@ const PRIORITY: Record<Session["status"], number> = {
 };
 
 /** FR-10: status priority, then the longest wait first (same rule as the hub). */
-export function inboxOrder(sessions: Iterable<Session>): Session[] {
+export function sessionOrder(sessions: Iterable<Session>): Session[] {
   return [...sessions].sort(
     (a, b) => PRIORITY[a.status] - PRIORITY[b.status] || a.status_since.localeCompare(b.status_since),
   );
 }
 
 /** Live sessions over WS /v1/stream, reconnecting with backoff. Auth rides on the hub's cookie. */
-export function useInbox(): {
+export function useSessions(): {
   sessions: Session[]; connection: Connection; loaded: boolean;
 } {
   const [byId, setById] = useState<Map<string, Session>>(new Map());
@@ -57,7 +57,7 @@ export function useInbox(): {
     return () => { stopped = true; window.clearTimeout(timer); ws?.close(); };
   }, []);
 
-  return { sessions: inboxOrder(byId.values()), connection, loaded };
+  return { sessions: sessionOrder(byId.values()), connection, loaded };
 }
 
 /** Re-render every `ms` so "time in status" keeps moving. */
@@ -69,3 +69,4 @@ export function useNow(ms = 1000): number {
   }, [ms]);
   return now;
 }
+
