@@ -1,20 +1,23 @@
 """`sekantor service`: start the hub at login, so it is not off for hours (dogfooding 2026-11-11).
 
-Windows: a Task Scheduler task (XML, so it has no 3-day run limit and restarts on failure) running
-`pythonw -m sekantor.cli up --no-open --log-file ~/.sekantor/hub.log` with no console window.
+Windows: a Task Scheduler task (XML, so it has no 3-day run limit and restarts on failure) running the
+hub with no console window: `sekantor-hub.exe up --no-open --log-file ~/.sekantor/hub.log` from the
+installed app (frozen), or `pythonw -m sekantor.cli up ...` from a source checkout.
 macOS: a launchd agent (RunAtLoad, KeepAlive). Linux: a systemd user unit.
 """
 
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import socket
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, unescape
 
 from sekantor import selfexe
 
@@ -35,6 +38,7 @@ class Plan:
     remove: list[Path] = field(default_factory=list)
     cleanup: list[list[str]] = field(default_factory=list)         # the old Ronda service, removed on install
     cleanup_files: list[Path] = field(default_factory=list)
+    command: list[str] = field(default_factory=list)               # the hub command this plan installs
 
 
 def hub_command(home: Path, platform: str = sys.platform, python: str = sys.executable) -> list[str]:
@@ -95,7 +99,7 @@ WantedBy=default.target
 def plan(home: Path, platform: str = sys.platform, python: str = sys.executable,
          user: str | None = None, scratch: Path | None = None) -> Plan:
     cmd = hub_command(home, platform, python)
-    p = Plan()
+    p = Plan(command=cmd)
     if platform == "win32":
         user = user or os.environ.get("USERNAME", "")
         xml = (scratch or home) / "sekantor-task.xml"
@@ -145,6 +149,30 @@ def installed(p: Plan) -> bool:
     try:
         return subprocess.run(p.status, capture_output=True, text=True).returncode == 0
     except OSError:
+        return False
+
+
+def _norm(cmd: list[str]) -> list[str]:
+    return [c.strip('"').replace("\\", "/").lower() for c in cmd]
+
+
+def current(p: Plan, run_=subprocess.run) -> bool:
+    """Is the installed service the one this install would write (same hub command)?"""
+    if not installed(p):
+        return False
+    try:
+        if p.status[0] == "schtasks":
+            out = run_([*p.status, "/XML"], capture_output=True, text=True).stdout
+            m = re.search(r"<Command>(.*?)</Command>", out, re.S)
+            a = re.search(r"<Arguments>(.*?)</Arguments>", out, re.S)
+            if not m:
+                return False
+            have = [unescape(m.group(1)).strip()]
+            if a:
+                have += shlex.split(unescape(a.group(1)), posix=False)
+            return _norm(have) == _norm(p.command)
+        return all(path.exists() and path.read_text() == content for path, content in p.files.items())
+    except (OSError, ValueError):
         return False
 
 

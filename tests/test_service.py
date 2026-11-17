@@ -89,3 +89,38 @@ def test_old_ronda_units_are_cleaned_up_on_macos_and_linux():
     assert any("dev.ronda.hub" in c[-1] for c in mac.cleanup)
     lin = service.plan(HOME, platform="linux", python="/p/python")
     assert ["systemctl", "--user", "disable", "--now", "ronda.service"] in lin.cleanup
+
+
+def _fake_query(xml):
+    import subprocess
+
+    return lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, xml, "")
+
+
+def test_current_compares_the_windows_task_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "installed", lambda p: True)
+    p = service.plan(Path("C:/Users/First Last/.sekantor"), platform="win32", user="u", scratch=tmp_path,
+                     python=str(tmp_path / "python.exe"))
+    xml = service._windows_xml(p.command, "u").decode("utf-16")
+    assert service.current(p, run_=_fake_query(xml))
+    other = xml.replace(p.command[0], "C:/src/venv/pythonw.exe")
+    assert not service.current(p, run_=_fake_query(other))
+    assert not service.current(p, run_=_fake_query("<Task/>"))
+
+
+def test_current_is_false_when_not_installed(monkeypatch):
+    monkeypatch.setattr(service, "installed", lambda p: False)
+    assert not service.current(service.plan(HOME, platform="win32", user="u"))
+
+
+def test_current_compares_the_unit_file_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "installed", lambda p: True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    p = service.plan(HOME, platform="linux")
+    [(unit, text)] = p.files.items()
+    assert not service.current(p)
+    unit.parent.mkdir(parents=True)
+    unit.write_text(text)
+    assert service.current(p)
+    unit.write_text(text.replace("ExecStart=", "ExecStart=/old "))
+    assert not service.current(p)

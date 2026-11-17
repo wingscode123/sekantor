@@ -332,36 +332,50 @@ app.add_typer(service_app, name="service")
 @service_app.command("install")
 def service_install(start: bool = typer.Option(True, "--start/--no-start", help="Also start it now.")):
     """Run the hub at every login (Task Scheduler / launchd / systemd user), with no window."""
-    from sekantor import service
+    _install_service(start)
+
+
+def _install_service(start: bool) -> str:
+    """Install the login service. Returns "started" (the new hub runs), "restart_needed" (another
+    hub still holds the port; the service takes over at next login) or "not_started"."""
+    from sekantor import selfexe, service
 
     p = service.plan(config.home())
     _migrate()
+    hub_busy = lambda: service.port_busy(config.HOST, config.port())  # noqa: E731
+    # The installed app replacing a source install: its task may still run the old hub. End our own
+    # task first, so the port frees up for the new one (a hub started by hand stays and keeps the port).
+    takeover = bool(start and p.start and p.stop and selfexe.frozen() and hub_busy())
+    if takeover:
+        service.run(p.stop, check=False)
     # the old Ronda service, so it does not start a second hub
     cleaned = service.run(p.cleanup, check=False)
     old_hub_ended = bool(p.stop) and bool(cleaned) and cleaned[0].returncode == 0
     for old in p.cleanup_files:
         old.unlink(missing_ok=True)
+    result = "not_started"
     try:
         for path, content in p.files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
         service.run(p.install)
         if start and p.start:
-            def busy() -> bool:
-                return service.port_busy(config.HOST, config.port())
-
+            busy = hub_busy
             # schtasks /End returns before the old hub has exited: give it time to let go of the port
-            if old_hub_ended:
+            if old_hub_ended or takeover:
                 service.wait_free(busy)
             if busy():
                 typer.secho("A hub is already running; the service takes over at the next login.", fg="yellow")
+                result = "restart_needed"
             else:
                 service.run(p.start)
+                result = "started"
     except (RuntimeError, OSError) as e:
         typer.secho(f"Could not install the service: {e}", fg="red")
         raise typer.Exit(1)
     typer.secho("The hub now starts at login (no window). Output: " + str(config.home() / "hub.log"), fg="green")
     typer.echo("Open the inbox with `sekantor open`. Remove with `sekantor service uninstall`.")
+    return result
 
 
 @service_app.command("uninstall")
@@ -620,7 +634,8 @@ def _setup_report() -> dict:
 
     exe = inst.hook_executable()
     return {"hooks": _hooks_state(exe), "hook_path": str(exe) if exe else None,
-            "service": service.installed(service.plan(config.home())), **_detect_integrations()}
+            "service": service.installed(service.plan(config.home())),
+            "service_current": service.current(service.plan(config.home())), **_detect_integrations()}
 
 
 @app.command()
@@ -637,11 +652,14 @@ def setup(
         try:
             with contextlib.redirect_stdout(out):
                 install_claude(project=False, global_=True)
-                service_install(start=True)
+                hub = _install_service(start=True)
         except typer.Exit as e:
             typer.echo(out.getvalue().strip(), err=True)
             raise typer.Exit(e.exit_code or 1)
-    typer.echo(json.dumps(_setup_report()))
+    report = _setup_report()
+    if apply:
+        report["hub"] = hub
+    typer.echo(json.dumps(report))
 
 
 @app.command()

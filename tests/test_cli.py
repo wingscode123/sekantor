@@ -260,6 +260,7 @@ def _setup_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(service, "run", fake_run)
     monkeypatch.setattr(service, "installed", lambda plan: state["installed"])
+    monkeypatch.setattr(service, "current", lambda plan: state["installed"])
     monkeypatch.setattr(service, "port_busy", lambda host, port: True)
     return cfg / "settings.json", exe, ran
 
@@ -276,7 +277,7 @@ def test_setup_json_reports_missing_hooks(tmp_path, monkeypatch):
     r = runner.invoke(app, ["setup", "--json"])
     assert r.exit_code == 0, r.output
     assert json.loads(r.stdout) == {"hooks": "missing", "hook_path": str(exe), "service": False,
-                                    "openbot": "absent", "orca": False, "tmux": False}
+                                    "service_current": False, "openbot": "absent", "orca": False, "tmux": False}
 
 
 def test_setup_json_outdated_when_hook_path_differs(tmp_path, monkeypatch):
@@ -329,3 +330,58 @@ def test_spawned_children_get_no_console_window_on_windows(monkeypatch):
     monkeypatch.setattr(cli, "_CHILD_OUT", object())
     cli._spawn(["x"], 7878)
     assert [k["creationflags"] for k in seen] == [0x08000000, 0x08000000]
+
+
+def _frozen_install(tmp_path, monkeypatch, busy_answers):
+    import subprocess
+
+    from sekantor import service
+
+    plan = service.plan(tmp_path, platform="win32", user="u")
+    plan.files = {}
+    calls = []
+
+    def fake_run(commands, check=True):
+        calls.extend(c[1] for c in commands)
+        return [subprocess.CompletedProcess(c, 0, "", "") for c in commands]
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(service, "plan", lambda home: plan)
+    monkeypatch.setattr(service, "run", fake_run)
+    monkeypatch.setattr(service, "port_busy", busy_answers)
+    monkeypatch.setattr(service.time, "sleep", lambda s: None)
+    return calls
+
+
+def test_frozen_service_install_ends_its_own_task_then_starts_the_new_one(tmp_path, monkeypatch):
+    polls = iter([True, True, False])  # busy at the start, still busy once, then free
+    calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: next(polls, False))
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over" not in r.output
+    assert calls.index("/End") < calls.index("/Create") < calls.index("/Run")
+    assert calls[-1] == "/Run"
+
+
+def test_frozen_service_install_keeps_a_hand_started_hub(tmp_path, monkeypatch):
+    calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: True)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: False)
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over at the next login" in r.output
+    assert "/Run" not in calls
+
+
+def test_source_service_install_leaves_a_running_hub_alone(tmp_path, monkeypatch):
+    calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: True)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over at the next login" in r.output
+    assert "/End" not in calls[:calls.index("/Create")] or calls[:1] == ["/End"]  # only the old-task cleanup
+
+
+def test_setup_apply_reports_the_hub_outcome(tmp_path, monkeypatch):
+    _setup_env(tmp_path, monkeypatch)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert json.loads(r.stdout)["hub"] == "restart_needed"  # port_busy is faked busy
+    monkeypatch.setattr("sekantor.service.port_busy", lambda host, port: False)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert json.loads(r.stdout)["hub"] == "started"
