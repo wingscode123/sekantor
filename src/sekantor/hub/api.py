@@ -122,11 +122,9 @@ async def unsnooze(request: Request, session_id: str):
 
 @router.post("/sessions/{session_id}/open")
 async def open_in_source(request: Request, session_id: str):
-    """Bring the app where the session runs to the front. Only for this computer, never from Telegram."""
+    """Bring the app where the session runs to the front."""
     from sekantor.hub import opener
 
-    if request.headers.get("x-sekantor-channel") == "telegram":
-        raise HTTPException(403, detail="opening apps is only for this computer")
     s = await run_in_threadpool(request.app.state.store.session, session_id)
     if s is None:
         raise HTTPException(404, detail="no such session")

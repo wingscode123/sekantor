@@ -193,7 +193,7 @@ def _start_openbot(port: int):
 
 @pos_app.command("openbot")
 def pos_openbot(interval: float = typer.Option(3.0, help="Seconds between polls.")):
-    """Watch OpenBot agents that have Local scripts on; answer their approvals and questions (runs with `sekantor up`)."""
+    """Watch OpenBot agents that have Local scripts on; report their status (runs with `sekantor up`)."""
     from sekantor.pos.openbot.pos import main as openbot_main
 
     openbot_main(interval)
@@ -201,7 +201,7 @@ def pos_openbot(interval: float = typer.Option(3.0, help="Seconds between polls.
 
 @pos_app.command("tmux")
 def pos_tmux(interval: float = typer.Option(2.0, help="Seconds between scans.")):
-    """Watch codex, opencode, gemini and aider in tmux panes; answer them with send-keys (runs with `sekantor up`)."""
+    """Watch codex, opencode, gemini and aider in tmux panes; report their status (runs with `sekantor up`)."""
     from sekantor.pos.tmux.pos import main as tmux_main
 
     tmux_main(interval)

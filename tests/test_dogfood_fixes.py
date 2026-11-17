@@ -21,7 +21,7 @@ ASK = {"hook_event_name": "PermissionRequest", "session_id": "s1", "tool_name": 
 def test_ask_user_question_is_a_question():
     ev = translate(ASK)
     assert ev["status"] == "waiting_input"
-    assert ev["request"] == {"kind": "question", "tool": "AskUserQuestion", "id": ev["event_id"]}
+    assert ev["request"] == {"kind": "question", "tool": "AskUserQuestion"}
     assert ev["summary"] == "Asks: Which channel for the phone? (ntfy, Telegram)"
     assert "capabilities" not in ev
 

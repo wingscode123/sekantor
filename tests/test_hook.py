@@ -60,8 +60,7 @@ def test_translate_real_payloads(rel, type_, status):
 
 def test_permission_request_carries_the_command():
     ev = translate(payload("cli-headless/10_PermissionRequest.json")["stdin"])
-    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt",
-                             "id": ev["event_id"]}
+    assert ev["request"] == {"kind": "tool", "tool": "PowerShell", "input": "echo ronda-spike > spike-tmp.txt"}
     assert ev["summary"] == "Wants to run: echo ronda-spike > spike-tmp.txt"
 
 
@@ -213,15 +212,15 @@ def test_hub_up_receives_event(home):
         th.join(5)
 
 
-def test_rewake_prompt_gets_a_readable_summary():
+def test_hook_wake_prompt_gets_a_readable_summary():
     ev = translate({"hook_event_name": "UserPromptSubmit", "session_id": "x",
                     "prompt": "<task-notification>\n<summary>Stop hook feedback</summary>\n</task-notification>"})
-    assert ev["summary"] == "Continuing after your reply" and ev["status"] == "running"
+    assert ev["summary"] == "Woken by a hook" and ev["status"] == "running"
 
 
 @pytest.mark.parametrize("tool,kind", [("Read", "read"), ("Grep", "read"), ("Edit", "edit"), ("Write", "edit"),
     ("Bash", "run"), ("PowerShell", "run"), ("WebFetch", "web"), ("mcp__github__create_issue", "other"),
-    ("Task", "other"), ("", "other")])
+    ("Task", "other"), ("", "other"), (None, "other"), (["x"], "other"), (7, "other")])
 def test_activity_kind(tool, kind):
     from sekantor.pos.claude_code.translate import activity_kind
     assert activity_kind(tool) == kind

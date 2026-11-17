@@ -33,7 +33,7 @@ ACTIVITY_KINDS = {
 
 def activity_kind(tool: str) -> str:
     """The kind of work a tool does; a tool never seen before (MCP, subagent) is ``other``."""
-    return ACTIVITY_KINDS.get(tool, "other")
+    return ACTIVITY_KINDS.get(str(tool), "other")
 
 
 def _clip(text: str | None, n: int) -> str | None:
@@ -121,8 +121,8 @@ def translate(payload: dict) -> dict | None:
         status = "running"
         prompt = payload.get("prompt") or ""
         if prompt.lstrip().startswith("<task-notification>"):
-            # A hook woke the agent (asyncRewake), e.g. a reply sent through SeKantor
-            summary = "Continuing after your reply" if "Stop hook" in prompt else "Woken by a hook"
+            # Claude Code woke the agent on its own (a hook or background task finished)
+            summary = "Woken by a hook"
         else:
             summary = _clip(prompt, SUMMARY_MAX)
     elif name == "PreToolUse":
@@ -135,12 +135,12 @@ def translate(payload: dict) -> dict | None:
         # Claude asks the person something. Approving the tool does not answer it, so this is a
         # question to answer in the app, not an approval (dogfooding 2026-11-11).
         status = "waiting_input"
-        request = {"kind": "question", "tool": tool, "id": event_id}
+        request = {"kind": "question", "tool": tool}
         summary = _clip(question_text(payload.get("tool_input")), SUMMARY_MAX)
     elif name == "PermissionRequest":
         status = "waiting_approval"
         text = tool_input_text(payload.get("tool_input"))
-        request = {"kind": "tool", "tool": tool, "input": text, "id": event_id}
+        request = {"kind": "tool", "tool": tool, "input": text}
         summary = _clip(f"Wants to run: {text}" if text else f"Wants to use {tool}", SUMMARY_MAX)
     elif name in ("PostToolUse", "PostToolUseFailure", "PermissionDenied"):
         status = "running"
@@ -156,7 +156,7 @@ def translate(payload: dict) -> dict | None:
     elif name == "Stop":
         status = "waiting_input"
         summary = _clip(payload.get("last_assistant_message"), SUMMARY_MAX)
-        request = {"kind": "input", "id": event_id}
+        request = {"kind": "input"}
     elif name == "StopFailure":
         status = "error"
         summary = _clip(f"Error: {payload.get('error') or 'unknown'}", SUMMARY_MAX)

@@ -80,8 +80,6 @@ def test_open_endpoint(client):
     r = client.post("/v1/sessions/claude:s1/open", headers=AUTH)
     assert r.status_code == 200 and r.json() == {"opened": "Open in VS Code"}
     assert client.opened[0].kind == "url"
-    r = client.post("/v1/sessions/claude:s1/open", headers={**AUTH, "X-SeKantor-Channel": "telegram"})
-    assert r.status_code == 403
 
 
 def test_open_unknown_is_409(client):

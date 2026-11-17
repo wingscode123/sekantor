@@ -2,7 +2,8 @@
 
 Reads the hook payload on stdin, turns it into a SeKantor event, adds the host fingerprint and the agent
 PID, and POSTs it to the hub. That is all it does (ADR-0021): SeKantor watches and never answers, so every
-hook runs asynchronously and prints nothing.
+hook runs asynchronously and prints nothing, except SessionEnd: it runs synchronously (short timeout)
+so the event still goes out while Claude Code exits.
 
 Every failure (hub down, timeout, bad input, crash) prints nothing and exits 0, so Claude Code behaves
 exactly as without SeKantor (fail closed). A watchdog ends the process at its deadline even if something

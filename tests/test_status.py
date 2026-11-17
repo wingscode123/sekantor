@@ -218,15 +218,6 @@ def test_capabilities_follow_the_request():
     assert s.capabilities == ["approve", "deny"]
 
 
-def test_duplicate_ask_from_a_hook_that_cannot_act_is_ignored():
-    # capable hook first, then the same question from an older install without capabilities
-    s = run(_ask(0, "p-new", ["approve", "deny"]), _ask(1, "p-old", []))
-    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
-    # the other order: the capable one replaces the incapable one
-    s = run(_ask(0, "p-old", []), _ask(1, "p-new", ["approve", "deny"]))
-    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
-
-
 def test_a_different_question_replaces_even_without_capabilities():
     s = run(_ask(0, "p1", ["approve", "deny"]), _ask(1, "p2", [], cmd="rm x"))
     assert s.request.id == "p2" and s.capabilities == []

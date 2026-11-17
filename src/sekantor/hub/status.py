@@ -139,18 +139,11 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
                 # A repeat of the same wait (the idle or permission notification) keeps the request.
                 if changed:
                     s.request, s.capabilities = None, list(event.capabilities)
-            elif (not changed and s.request is not None and s.capabilities and not event.capabilities
-                  and _same_ask(s.request, event.request)):
-                pass  # the same question from a hook that cannot act (an older install): keep ours
             else:
                 s.request, s.capabilities = event.request, list(event.capabilities)
         else:
             s.request, s.capabilities = None, list(event.capabilities)
     return s
-
-
-def _same_ask(a: Request, b: Request) -> bool:
-    return (a.kind, a.tool, a.input) == (b.kind, b.tool, b.input)
 
 
 def sort_key(s: SessionState) -> tuple:
