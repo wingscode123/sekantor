@@ -46,10 +46,14 @@ other branch, trigger a pipeline with the parameter `desktop` set to `true`.
 3. The installer puts the app in `%LOCALAPPDATA%\SeKantor` (no admin rights). First run offers
    "Connect Claude Code", which installs the hooks globally and the login task, pointing at
    `%LOCALAPPDATA%\SeKantor\sekantor\`. A source install's hooks and task are replaced, not doubled.
+   If a source install's hub is running (task "SeKantor hub"), the first run ends that task, waits for
+   port 7878 and starts the app's hub from the new task. If the result is `restart_needed` (a hub
+   started by hand, or one that would not let go of the port), sign out and in once.
 4. Check it with `"%LOCALAPPDATA%\SeKantor\sekantor\sekantor.exe" doctor`.
 
 Uninstalling (Settings, Apps) stops the hub and removes the hooks and the login task first. `~/.sekantor`
-(token, events, logs) stays.
+(token, events, logs) stays. Upgrading or uninstalling while agents run can hit a locked
+`sekantor-hook.exe` (a running hook holds it open): close the agents, or retry.
 
 The job also stores `logs/` (PyInstaller, cargo test, tauri build and installer check output, the
 smoke test's temporary home without its token) for debugging a failed run.

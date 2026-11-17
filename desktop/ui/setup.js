@@ -38,7 +38,7 @@ function renderChecks(status) {
   if (!status) return;
   list.append(
     item("Claude Code hooks", HOOKS[status.hooks] || status.hooks, status.hooks === "ok"),
-    item("Start the hub at sign-in", status.service ? "On" : "Off", status.service),
+    item("Start the hub at sign-in", status.service && status.service_current ? "On" : "Off", status.service && status.service_current),
     info("OpenBot", OPENBOT[status.openbot] || status.openbot),
     info("Orca", status.orca ? "Found" : "Not found"),
     info("tmux", status.tmux ? "Found" : "Not found"),

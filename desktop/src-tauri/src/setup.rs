@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 /// Windows `CREATE_NO_WINDOW`: a console child gets no console window.
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-pub const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
+pub const STATUS_TIMEOUT: Duration = Duration::from_secs(60);
 pub const APPLY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What `sekantor.exe setup --json` (and `--apply`) prints.
@@ -22,16 +22,23 @@ pub struct SetupStatus {
     pub hooks: String,
     pub hook_path: Option<String>,
     pub service: bool,
+    /// The installed task runs this install's hub. Absent in older output: assume it does.
+    #[serde(default = "yes")]
+    pub service_current: bool,
     /// "absent" | "off" | "on"
     pub openbot: String,
     pub orca: bool,
     pub tmux: bool,
 }
 
+fn yes() -> bool {
+    true
+}
+
 impl SetupStatus {
     /// The first-run page is needed until hooks point at this install and the service is set up.
     pub fn needs_first_run(&self) -> bool {
-        self.hooks != "ok" || !self.service
+        self.hooks != "ok" || !self.service || !self.service_current
     }
 }
 
@@ -92,6 +99,10 @@ fn read_all(pipe: Option<impl Read + Send + 'static>) -> thread::JoinHandle<Vec<
 
 /// Run the CLI hidden and return its stdout; on a non-zero exit, its message. A child still running
 /// after `timeout` is killed, so the first-run page cannot wait forever.
+///
+/// Caveat: the pipes are read on threads that are joined after the child exits. A grandchild that
+/// inherited stdout/stderr (e.g. a hub started by `setup --apply`) keeps them open and delays the
+/// join; the CLI starts it through Task Scheduler, which does not inherit them.
 pub fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<String, String> {
     let mut child = hidden_command(exe)
         .args(args)
@@ -197,6 +208,21 @@ mod tests {
             let s = SetupStatus { hooks: hooks.into(), service, ..base.clone() };
             assert_eq!(s.needs_first_run(), want, "{hooks} {service}");
         }
+    }
+
+    #[test]
+    fn first_run_when_the_service_runs_another_install() {
+        let s = SetupStatus { service_current: false, ..parse_status(OK).unwrap() };
+        assert!(s.needs_first_run());
+    }
+
+    #[test]
+    fn service_current_defaults_to_true_and_unknown_fields_are_ignored() {
+        let s = parse_status(OK).unwrap(); // OK has no service_current
+        assert!(s.service_current && !s.needs_first_run());
+        let applied = OK.replace("\"tmux\": false}", "\"tmux\": false, \"service_current\": false, \"hub\": \"restart_needed\"}");
+        let s = parse_status(&applied).unwrap();
+        assert!(!s.service_current && s.needs_first_run());
     }
 
     #[test]

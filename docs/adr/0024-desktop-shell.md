@@ -14,7 +14,7 @@ is built and tested only in CI.
 
 ## Decision
 - `desktop/` holds a Tauri 2 shell (`tray-icon` feature, `tauri-plugin-single-instance`), identifier
-  `dev.sekantor.app`, an unsigned NSIS installer in per-user mode. The PyInstaller folder is a bundle
+  `dev.sekantor.desktop`, an unsigned NSIS installer in per-user mode. The PyInstaller folder is a bundle
   resource (`../../dist/sekantor/` to `sekantor/`).
 - The shell holds no product logic. The hub serves the UI; the window loads
   `http://127.0.0.1:<port>/?login=<code>` with a fresh one-time code from `POST /v1/login-code`
