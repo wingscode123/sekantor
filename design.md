@@ -1,4 +1,4 @@
-# Design: Ronda
+# Design: SeKantor
 
 The locked system. Every Hallmark run reads this first and pages share it. Change it on purpose; the file is the rule.
 Brand source: `docs/PRD.md` (Identitas visual). Guidelines for people: `brand/BRAND.md`.

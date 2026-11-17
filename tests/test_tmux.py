@@ -1,4 +1,4 @@
-"""tmux pos (FR-04, FR-23): detection, events, answers, and a real-tmux run where tmux exists."""
+"""tmux pos (FR-04): detection and events, and a real-tmux run where tmux exists. It only watches (ADR-0021)."""
 
 import shutil
 import subprocess
@@ -9,8 +9,8 @@ import uuid
 
 import pytest
 
-from ronda.pos.tmux.detect import Pane, Watch, agent_of, assess, load_rules, parse_panes
-from ronda.pos.tmux.pos import Tmux, TmuxPos
+from sekantor.pos.tmux.detect import Pane, Watch, agent_of, assess, load_rules, parse_panes
+from sekantor.pos.tmux.pos import Tmux, TmuxPos
 
 RULES = load_rules()
 
@@ -57,7 +57,6 @@ def test_answered_question_higher_up_is_history():
 class FakeTmux:
     def __init__(self):
         self.screen = {"%1": "starting\n"}
-        self.sent = []
         self.listing = [Pane("%1", "work", "0.0", 100, "codex", "/tmp/shop"), Pane("%2", "work", "0.1", 200, "claude", "/tmp")]
 
     def panes(self):
@@ -66,26 +65,14 @@ class FakeTmux:
     def capture(self, pane_id):
         return self.screen.get(pane_id, "")
 
-    def send_keys(self, pane_id, keys):
-        self.sent.append((pane_id, "keys", tuple(keys)))
-        return True
-
-    def send_text(self, pane_id, text):
-        self.sent.append((pane_id, "text", text))
-        return True
-
 
 class FakeHub:
     def __init__(self):
         self.events = []
-        self.actions = {}
 
     def post_event(self, ev):
         self.events.append(ev)
         return True
-
-    def next_action(self, sid, kind, rid):
-        return self.actions.pop((sid, rid), None)
 
 
 def make(clock):
@@ -95,7 +82,7 @@ def make(clock):
     return pos, tmux, hub, agents
 
 
-def test_pos_reports_approval_and_sends_keys():
+def test_pos_reports_a_waiting_approval():
     clock = [0.0]
     pos, tmux, hub, _ = make(clock)
     pos.tick()
@@ -104,15 +91,14 @@ def test_pos_reports_approval_and_sends_keys():
     tmux.screen["%1"] = "plan ready\nApply the patch? (y/n)"
     pos.tick()
     ev = hub.events[-1]
-    assert ev["status"] == "waiting_approval" and ev["capabilities"] == ["approve", "deny"]
+    assert ev["status"] == "waiting_approval" and "capabilities" not in ev
     assert ev["request"]["kind"] == "tool" and "Apply the patch" in ev["request"]["input"]
     assert ev["host"]["app"] == "tmux" and ev["process"] == {"pid": 1001}
-    hub.actions[("tmux:%1:1001", ev["request"]["id"])] = {"type": "approve"}
     pos.tick()
-    assert tmux.sent == [("%1", "keys", ("y", "Enter"))]
+    assert len(hub.events) == 2  # the same prompt is reported once
 
 
-def test_pos_reply_and_end():
+def test_pos_reports_waiting_for_input_and_the_end():
     clock = [0.0]
     pos, tmux, hub, agents = make(clock)
     tmux.screen["%1"] = "All done.\n> "
@@ -120,48 +106,30 @@ def test_pos_reply_and_end():
     clock[0] = 5
     pos.tick()
     ev = hub.events[-1]
-    assert ev["status"] == "waiting_input" and ev["capabilities"] == ["reply"]
-    hub.actions[("tmux:%1:1001", ev["request"]["id"])] = {"type": "reply", "text": "now run the linter"}
-    pos.tick()
-    assert tmux.sent == [("%1", "text", "now run the linter")]
+    assert ev["status"] == "waiting_input" and ev["request"]["kind"] == "input"
     del agents[100]
     pos.tick()
     assert hub.events[-1]["type"] == "session_ended" and hub.events[-1]["status"] == "ended"
 
 
-def test_pos_refuses_to_type_into_a_pane_whose_agent_changed():
-    clock = [0.0]
-    pos, tmux, hub, agents = make(clock)
-    pos.tick()
-    agents[100] = ("codex", 9999)  # a new codex in the same pane
-    assert pos.act("tmux:%1:1001", {"type": "reply", "text": "hi"}) is False
-    assert tmux.sent == []
-
-
 # --- real tmux (Linux/macOS CI; skipped where tmux is missing) --------------------------
 
 FAKE_AGENT = textwrap.dedent("""
-    import sys
     print("planning...", flush=True)
-    answer = input("Run the migration? (y/n) ")
-    with open(sys.argv[1], "w") as f:
-        f.write(answer)
-    print("ok, done", flush=True)
-    input("> ")
+    input("Run the migration? (y/n) ")
 """)
 
 
 @pytest.mark.skipif(not shutil.which("tmux"), reason="tmux not installed")
-def test_real_tmux_pane(tmp_path):
+def test_real_tmux_pane_is_reported_and_left_alone(tmp_path):
     agent_dir = tmp_path / "bin"
     agent_dir.mkdir()
     script = agent_dir / "codex"  # named after an agent: found through the python process's cmdline
     script.write_text(FAKE_AGENT)
-    out = tmp_path / "answer.txt"
-    sock = f"ronda-test-{uuid.uuid4().hex[:8]}"
+    sock = f"sekantor-test-{uuid.uuid4().hex[:8]}"
     tmux = Tmux(extra=["-L", sock])
     subprocess.run(["tmux", "-L", sock, "new-session", "-d", "-s", "t", "-x", "120", "-y", "30",
-                    f"{sys.executable} {script} {out}"], check=True)
+                    f"{sys.executable} {script}"], check=True)
     try:
         hub = FakeHub()
         pos = TmuxPos(tmux, hub, RULES)
@@ -171,15 +139,8 @@ def test_real_tmux_pane(tmp_path):
             if hub.events and hub.events[-1].get("status") == "waiting_approval":
                 break
             time.sleep(0.3)
-        ev = hub.events[-1]
-        assert ev["status"] == "waiting_approval", hub.events
-        hub.actions[(ev["session_id"], ev["request"]["id"])] = {"type": "approve"}
-        pos.tick()
-        for _ in range(50):
-            if out.exists():
-                break
-            time.sleep(0.1)
-        assert out.read_text() == "y"
+        assert hub.events[-1]["status"] == "waiting_approval", hub.events
+        assert "Run the migration? (y/n)" in tmux.capture("%0")  # still waiting: nothing was typed
     finally:
         subprocess.run(["tmux", "-L", sock, "kill-server"], capture_output=True)
 

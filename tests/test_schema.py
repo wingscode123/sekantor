@@ -3,7 +3,7 @@ from datetime import timezone
 import pytest
 from pydantic import ValidationError
 
-from ronda.schema import Event, Status
+from sekantor.schema import Event, Status
 
 PRD_EXAMPLE = {
     "v": 1,
@@ -66,3 +66,14 @@ def test_status_values_match_adr_0002():
     assert [s.value for s in Status] == [
         "waiting_approval", "waiting_input", "error", "running", "done", "ended",
     ]
+
+
+def test_activity_is_optional_and_validated():
+    base = {"event_id": "e", "ts": "2026-11-10T10:21:04Z", "source": "s", "session_id": "x"}
+    assert Event.model_validate(base).activity is None
+    e = Event.model_validate({**base, "activity": {"tool": "Read", "kind": "read"}})
+    assert e.activity.tool == "Read" and e.activity.kind == "read"
+    with pytest.raises(ValidationError):
+        Event.model_validate({**base, "activity": {"tool": "Read", "kind": "dance"}})
+    with pytest.raises(ValidationError):
+        Event.model_validate({**base, "activity": {"tool": "x" * 101, "kind": "read"}})

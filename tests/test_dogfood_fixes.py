@@ -3,12 +3,11 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from ronda.config import Settings
-from ronda.hub.status import apply
-from ronda.pos.claude_code import install as inst
-from ronda.pos.claude_code.hook import capabilities
-from ronda.pos.claude_code.translate import translate
-from ronda.schema import Event, Status
+from sekantor.config import Settings
+from sekantor.hub.status import apply
+from sekantor.pos.claude_code import install as inst
+from sekantor.pos.claude_code.translate import translate
+from sekantor.schema import Event, Status
 
 T0 = datetime(2026, 11, 12, 9, 0, tzinfo=timezone.utc)
 
@@ -22,9 +21,9 @@ ASK = {"hook_event_name": "PermissionRequest", "session_id": "s1", "tool_name": 
 def test_ask_user_question_is_a_question():
     ev = translate(ASK)
     assert ev["status"] == "waiting_input"
-    assert ev["request"] == {"kind": "question", "tool": "AskUserQuestion", "id": ev["event_id"]}
+    assert ev["request"] == {"kind": "question", "tool": "AskUserQuestion"}
     assert ev["summary"] == "Asks: Which channel for the phone? (ntfy, Telegram)"
-    assert capabilities(ASK, {"CLAUDE_CODE_ENTRYPOINT": "cli"}, Settings()) == []  # never Approve/Deny
+    assert "capabilities" not in ev
 
 
 def test_permission_notification_does_not_turn_a_question_into_an_approval():
@@ -45,7 +44,7 @@ def test_permission_notification_does_not_turn_a_question_into_an_approval():
 
 def test_session_end_hook_has_a_longer_budget(tmp_path):
     p = tmp_path / "settings.json"
-    inst.install(p, inst.Path("/x/ronda-hook"))
+    inst.install(p, inst.Path("/x/sekantor-hook"))
     end = json.loads(p.read_text())["hooks"]["SessionEnd"][0]["hooks"][0]
     assert end["timeout"] >= 5 and "async" not in end
 
@@ -55,15 +54,12 @@ def test_session_end_hook_has_a_longer_budget(tmp_path):
 class FakeWatchdog:
     """A real Watchdog calls os._exit at its deadline, which would end the test run."""
 
-    def extend_to(self, seconds):
-        pass
-
     def remaining(self):
         return 60.0
 
 
 def test_openbot_internal_runs_are_ignored(monkeypatch, tmp_path):
-    from ronda.pos.claude_code import hook
+    from sekantor.pos.claude_code import hook
 
     sent = []
     monkeypatch.setattr(hook, "post", lambda event, timeout: sent.append(event))
@@ -78,7 +74,7 @@ def test_openbot_internal_runs_are_ignored(monkeypatch, tmp_path):
 
 def test_ignore_list_comes_from_config(tmp_path):
     (tmp_path / "config.toml").write_text('ignore_cwd = ["/scratch/"]\n')
-    from ronda.config import settings
+    from sekantor.config import settings
 
     s = settings(tmp_path)
     assert s.ignored("D:/work/scratch/demo") and not s.ignored("D:/work/app")

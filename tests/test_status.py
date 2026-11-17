@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ronda.schema import Event, Status
-from ronda.hub.status import SessionState, apply, inbox_order, sweep, NEEDS_YOU
+from sekantor.schema import Event, Status
+from sekantor.hub.status import SessionState, apply, inbox_order, sweep, NEEDS_YOU
 
 T0 = datetime(2026, 11, 11, 10, 0, 0, tzinfo=timezone.utc)
 
@@ -218,15 +218,6 @@ def test_capabilities_follow_the_request():
     assert s.capabilities == ["approve", "deny"]
 
 
-def test_duplicate_ask_from_a_hook_that_cannot_act_is_ignored():
-    # capable hook first, then the same question from an older install without capabilities
-    s = run(_ask(0, "p-new", ["approve", "deny"]), _ask(1, "p-old", []))
-    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
-    # the other order: the capable one replaces the incapable one
-    s = run(_ask(0, "p-old", []), _ask(1, "p-new", ["approve", "deny"]))
-    assert s.request.id == "p-new" and s.capabilities == ["approve", "deny"]
-
-
 def test_a_different_question_replaces_even_without_capabilities():
     s = run(_ask(0, "p1", ["approve", "deny"]), _ask(1, "p2", [], cmd="rm x"))
     assert s.request.id == "p2" and s.capabilities == []
@@ -237,3 +228,21 @@ def test_events_well_after_end_revive_a_session_whose_restart_was_missed():
     # SessionStart, later events from the live process must still bring the session back.
     s = run(ev(Status.running, at=0), ev(Status.ended, at=10, type="session_ended"), ev(Status.running, at=40))
     assert s.status is Status.running and s.ended_at is None
+
+
+# --- activity -------------------------------------------------------------
+
+def test_activity_is_kept_while_running_and_cleared_when_status_changes():
+    s = run(ev(Status.running, at=0, activity={"tool": "Read", "kind": "read"}))
+    assert s.activity == {"tool": "Read", "kind": "read"}
+    s = apply(s, ev(Status.running, at=1))  # PostToolUse: running, no activity
+    assert s.activity == {"tool": "Read", "kind": "read"}
+    s = apply(s, ev(Status.running, at=2, activity={"tool": "Bash", "kind": "run"}))
+    assert s.activity == {"tool": "Bash", "kind": "run"}
+    s = apply(s, ev(Status.done, at=3))
+    assert s.activity is None
+
+
+def test_activity_cleared_when_waiting():
+    s = run(ev(Status.running, at=0, activity={"tool": "Edit", "kind": "edit"}), ev(Status.waiting_input, at=1))
+    assert s.activity is None

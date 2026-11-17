@@ -1,3 +1,5 @@
+> Superseded by docs/superpowers/specs/2026-11-16-sekantor-design.md
+
 # Ronda — PRD v1.0
 
 Nov 10, 2026 · @IT New Tech

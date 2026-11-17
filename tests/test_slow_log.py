@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
-from ronda.config import Settings
-from ronda.hub import store as store_mod
-from ronda.hub.app import create_app, watch_loop
-from ronda.hub.notify import Notifier
-from ronda.hub.store import Store
-from ronda.schema import Event
+from sekantor.config import Settings
+from sekantor.hub import store as store_mod
+from sekantor.hub.app import create_app, watch_loop
+from sekantor.hub.notify import Notifier
+from sekantor.hub.store import Store
+from sekantor.schema import Event
 
 TOKEN = "t" * 43
 NOW = datetime.now(timezone.utc)
@@ -36,7 +36,7 @@ def test_a_blocked_event_loop_is_logged(caplog):
 
 def test_a_long_wait_for_the_store_lock_is_logged(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(store_mod, "SLOW_S", 0.2)
-    store = Store(tmp_path / "ronda.db")
+    store = Store(tmp_path / "sekantor.db")
     held = threading.Event()
 
     def hold_lock():

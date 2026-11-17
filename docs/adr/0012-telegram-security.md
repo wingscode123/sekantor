@@ -1,6 +1,6 @@
 # ADR-0012: Telegram pairing, allowlist and redaction
 
-- Status: Accepted
+- Status: Superseded by ADR-0021
 - Date: 2026-11-11
 
 ## Context

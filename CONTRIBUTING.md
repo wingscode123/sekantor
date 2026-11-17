@@ -1,6 +1,6 @@
 # Contributing
 
-Ronda is pre-alpha. The public repo opens with the beta; until then this file is a stub.
+SeKantor is pre-alpha. The public repo opens with the beta; until then this file is a stub.
 
 - Python 3.11+, managed with [uv](https://docs.astral.sh/uv/): `uv sync`, then `uv run pytest`.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/).

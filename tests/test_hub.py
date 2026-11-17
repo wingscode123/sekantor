@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from ronda.hub.app import create_app, run_sweep
+from sekantor.hub.app import create_app, run_sweep
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -155,13 +155,12 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
     """The sweep runs in a worker thread; what it ends must still reach WS clients safely."""
     import asyncio
 
-    from ronda.hub.app import sweep_tick
-    from ronda.hub.store import Store
-    from ronda.hub.stream import Broadcaster
-    from ronda.hub.waiters import Waiters
-    from ronda.schema import Event
+    from sekantor.hub.app import sweep_tick
+    from sekantor.hub.store import Store
+    from sekantor.hub.stream import Broadcaster
+    from sekantor.schema import Event
 
-    store = Store(tmp_path / "ronda.db")
+    store = Store(tmp_path / "sekantor.db")
     old = (NOW - timedelta(minutes=20)).isoformat()
     store.add_event(Event.model_validate({**ev(1, "waiting_input", sid="claude:gone"), "ts": old,
                                           "process": {"pid": 2_000_000_000}}))
@@ -172,7 +171,7 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
         broadcaster._queues.add(client)
         waiting = asyncio.create_task(client.get())
         await asyncio.sleep(0)
-        await sweep_tick(store, broadcaster, Waiters())
+        await sweep_tick(store, broadcaster)
         return await asyncio.wait_for(waiting, 2)
 
     import threading
@@ -190,7 +189,7 @@ def test_swept_session_reaches_a_waiting_stream_client(tmp_path):
 def test_a_failing_sweep_is_logged(tmp_path, monkeypatch, caplog):
     import time
 
-    import ronda.hub.app as hub_app
+    import sekantor.hub.app as hub_app
 
     def broken(store, now=None):
         raise RuntimeError("disk gone")
@@ -201,3 +200,14 @@ def test_a_failing_sweep_is_logged(tmp_path, monkeypatch, caplog):
     with TestClient(app, base_url=BASE):
         time.sleep(0.3)
     assert any("sweep failed" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+def test_actions_routes_are_gone(client):
+    assert client.post("/v1/sessions/x/actions", json={"type": "approve"}, headers=AUTH).status_code in (404, 405)
+    assert client.get("/v1/sessions/x/actions/next?request_id=r&for=approval", headers=AUTH).status_code == 404
+    assert client.get("/v1/actions", headers=AUTH).status_code == 404
+
+
+def test_an_old_event_with_capabilities_is_accepted(client):
+    e = ev(1, "waiting_approval", capabilities=["approve", "deny"], request={"kind": "tool", "id": "r1"})
+    assert client.post("/v1/events", json=e, headers=AUTH).status_code == 202

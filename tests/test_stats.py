@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from typer.testing import CliRunner
 
-from ronda.cli import app
-from ronda.hub.store import Store
-from ronda.schema import Event
-from ronda.stats import compute, parse_since
+from sekantor.cli import app
+from sekantor.hub.store import Store
+from sekantor.schema import Event
+from sekantor.stats import compute, parse_since
 
 NOW = datetime(2026, 11, 12, 18, 0, tzinfo=timezone.utc)
 
@@ -24,7 +24,7 @@ def sent(home, events):
 
 @pytest.fixture
 def home(tmp_path):
-    store = Store(tmp_path / "ronda.db")
+    store = Store(tmp_path / "sekantor.db")
     stored = [
         ev(1, "claude:a", "waiting_input", 120, host="orca"),
         ev(2, "claude:a", "running", 100),       # waited 20 min for a reply
@@ -65,9 +65,9 @@ def test_waiting_time_and_sessions(home):
 
 
 def test_a_wait_cut_short_by_the_session_ending_is_left_waiting(home):
-    from ronda.hub.store import Store
+    from sekantor.hub.store import Store
 
-    store = Store(home / "ronda.db")
+    store = Store(home / "sekantor.db")
     store.add_event(ev(20, "claude:c", "waiting_input", 60))
     store.add_event(Event(event_id="e21", ts=NOW - timedelta(minutes=50), source="claude-code", session_id="claude:c",
                           status="ended", type="session_ended"))
@@ -95,15 +95,15 @@ def test_parse_since():
 
 
 def test_cli_stats_clean_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("RONDA_HOME", str(tmp_path))
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
     r = CliRunner().invoke(app, ["stats"])
     assert r.exit_code == 0 and "lost 0" in r.output
 
 
 def test_hook_records_what_it_sends(tmp_path, monkeypatch):
-    from ronda.pos.claude_code import hook
+    from sekantor.pos.claude_code import hook
 
-    monkeypatch.setenv("RONDA_HOME", str(tmp_path))
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
     hook._record_sent({"ts": "2026-11-12T18:00:00+00:00", "event_id": "x1", "session_id": "claude:z", "status": "running"})
     assert (tmp_path / "sent.log").read_text() == "2026-11-12T18:00:00+00:00 x1 claude:z running\n"
 

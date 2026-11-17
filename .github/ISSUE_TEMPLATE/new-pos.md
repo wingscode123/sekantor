@@ -9,10 +9,10 @@ labels: pos
 
 **How do you run it?** (terminal, IDE, desktop app, inside another tool)
 
-**How could Ronda see its state?** Anything you know: hooks, a local API, log files, a CLI,
+**How could SeKantor see its state?** Anything you know: hooks, a local API, log files, a CLI,
 its process name, env vars. A `scripts/probe_hosts.py -o probe.json` run while it waits for you
 helps a lot (check the file for secrets first).
 
-**How could Ronda answer it?** (approve/deny, reply text, keys in a terminal, an API call)
+**How could SeKantor tell when it is waiting, working or done?** (a hook event, a prompt on screen, an API field, a process state)
 
 **Will you write it?** See docs/writing-a-pos.md.

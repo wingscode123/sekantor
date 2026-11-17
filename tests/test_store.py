@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from ronda.hub.store import Store
-from ronda.schema import Event, Status
+from sekantor.hub.store import Store
+from sekantor.schema import Event, Status
 
 T0 = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
 
@@ -64,25 +64,21 @@ def test_prune_retention(tmp_path):
     assert len(st.events("claude:b")) == 1
 
 
-# --- actions / audit (ADR-0010) -------------------------------------------------
-
-def test_action_lifecycle(tmp_path):
+def test_a_new_database_has_no_actions_table(tmp_path):
     st = Store(tmp_path / "r.db")
-    a = st.add_action("claude:a", "approve", "p1", None, "web", "me")
-    assert a["outcome"] == "pending" and a["channel"] == "web"
-    assert st.take_action("claude:a", "p2", ("approve", "deny")) is None  # other request
-    got = st.take_action("claude:a", "p1", ("approve", "deny"))
-    assert got["id"] == a["id"] and got["outcome"] == "delivered"
-    assert st.take_action("claude:a", "p1", ("approve", "deny")) is None  # delivered once
+    tables = {r[0] for r in st._db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "actions" not in tables and {"events", "sessions"} <= tables
 
 
-def test_newer_answer_supersedes_and_stale_expire(tmp_path):
+def test_an_old_database_with_an_actions_table_is_left_alone(tmp_path):
+    import sqlite3
+
+    db = sqlite3.connect(tmp_path / "r.db")
+    db.execute("CREATE TABLE actions (id INTEGER PRIMARY KEY, session_id TEXT)")
+    db.execute("INSERT INTO actions(session_id) VALUES ('claude:a')")
+    db.commit()
+    db.close()
     st = Store(tmp_path / "r.db")
-    first = st.add_action("claude:a", "approve", "p1", None, "web", "me")
-    st.add_action("claude:a", "deny", "p1", None, "cli", "me")
-    st.add_action("claude:a", "reply", "s1", "hi", "web", "me")
-    assert st.expire_actions("claude:a", keep_request_id="p1") == 1  # the reply to s1
-    outcomes = {x["id"]: x["outcome"] for x in st.actions("claude:a")}
-    assert outcomes[first["id"]] == "superseded"
-    assert st.take_action("claude:a", "p1", ("approve", "deny"))["type"] == "deny"
-    assert [x["type"] for x in st.actions()] == ["reply", "deny", "approve"]
+    st.add_event(ev(1, Status.running))
+    st.prune()
+    assert st._db.execute("SELECT count(*) FROM actions").fetchone()[0] == 1
