@@ -60,7 +60,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     for (const [key, avatar] of retained) {
       const leaving = !live.has(key) || avatar.pose === "leave";
       if (leaving) departures.mark(key);
-      const target = leaving ? office.door : avatar.place === "desk" ? avatar.deskTile
+      const target = leaving ? office.door : avatar.targetTile ? avatar.targetTile : avatar.place === "desk" ? avatar.deskTile
         : avatar.place === "your_desk" ? office.yourDesk : avatar.place === "rack" ? office.rack
         : avatar.place === "pantry" ? office.pantry : office.door;
       targets.set(key, target);

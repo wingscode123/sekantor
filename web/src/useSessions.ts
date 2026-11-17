@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GHOST_MS, isGhost } from "./office/model";
 import type { Connection, Session, StreamMessage } from "./types";
 
 const PRIORITY: Record<Session["status"], number> = {
@@ -57,7 +58,8 @@ export function useSessions(): {
     return () => { stopped = true; window.clearTimeout(timer); ws?.close(); };
   }, []);
 
-  return { sessions: sessionOrder(byId.values()), connection, loaded };
+  const sessions = useMemo(() => sessionOrder(byId.values()), [byId]);
+  return { sessions, connection, loaded };
 }
 
 /** Re-render every `ms` so "time in status" keeps moving. */
@@ -68,5 +70,18 @@ export function useNow(ms = 1000, enabled = true): number {
     const id = window.setInterval(() => setNow(Date.now()), ms);
     return () => window.clearInterval(id);
   }, [ms, enabled]);
+  return enabled ? now : Date.now();
+}
+
+/** One wake-up for the next departure expiry, with no recurring page clock. */
+export function useGhostNow(sessions: Session[]): number {
+  const [revision, expire] = useState(0);
+  const now = useMemo(() => Date.now(), [sessions, revision]);
+  useEffect(() => {
+    const expiries = sessions.filter(s => isGhost(s, now)).map(s => Date.parse(s.ended_at!) + GHOST_MS);
+    if (!expiries.length) return;
+    const timer = window.setTimeout(() => expire(n => n + 1), Math.max(0, Math.min(...expiries) - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [sessions, now]);
   return now;
 }

@@ -41,12 +41,15 @@ it("retains a removed session and its desk until walking to the door", () => {
   let current: Office = { ...office, avatars: [avatar] };
   const character = vi.fn(), furniture = vi.fn();
   const stop = startRenderer(canvas, () => current, { ...theme, character, furniture });
+  furniture.mockClear();
   vi.advanceTimersByTime(1500);
-  current = { ...office, avatars: [] }; character.mockClear();
+  current = { ...office, width: office.width + 1, avatars: [] }; character.mockClear(); furniture.mockClear();
   vi.advanceTimersByTime(100);
   expect(character).toHaveBeenCalled();
   expect(furniture.mock.calls.some(call => call[0] === "desk" && call[2] === 80)).toBe(true);
+  furniture.mockClear();
   vi.advanceTimersByTime(2000); expect(vi.getTimerCount()).toBe(0);
+  expect(furniture.mock.calls.some(call => call[0] === "desk")).toBe(false);
   character.mockClear(); vi.advanceTimersByTime(1000); expect(character).not.toHaveBeenCalled(); stop();
 });
 
@@ -68,8 +71,8 @@ it("reuses the static layer across frames and equivalent office objects", () => 
 
 it("publishes key-based native positions in paint order across office replacement", () => {
   const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
-  const avatar = { key: "front", sessionId: "front", identity: "i", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk" as const, pose: "type" as const, deskTile: { x: 5, y: 4 }, name: "a", app: "a", project: "a" };
-  let current: Office = { ...office, avatars: [avatar, { ...avatar, key: "back", deskTile: { x: 5, y: 3 } }] };
+  const avatar = { key: "front", sessionId: "front", identity: "i", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk" as const, pose: "type" as const, deskTile: { x: 5, y: 1 }, targetTile: { x: 5, y: 4 }, name: "a", app: "a", project: "a" };
+  let current: Office = { ...office, avatars: [avatar, { ...avatar, key: "back", targetTile: { x: 5, y: 3 } }] };
   const onFrame = vi.fn();
   const stop = startRenderer(canvas, () => current, theme, onFrame);
   vi.advanceTimersByTime(2500);
