@@ -2,8 +2,11 @@ import type { Avatar, Office } from "./model";
 import { Departures, step, type Pt } from "./motion";
 import { defaultTheme, type Theme } from "./sprites";
 
+/** Native-pixel avatar top-left positions (16x24 sprites), keyed by avatar.key in paint order. */
+export type FramePositions = ReadonlyMap<string, Readonly<Pt>>;
+
 /** Dispatch `officechange` on the canvas after replacing an empty office, or restart this renderer. */
-export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme): () => void {
+export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -81,11 +84,14 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     sorted.length = 0;
     for (const avatar of retained.values()) sorted.push(avatar);
     sorted.sort((a, b) => positions.get(a.key)!.y - positions.get(b.key)!.y);
+    const framePositions = onFrame ? new Map<string, Pt>() : undefined;
     for (const avatar of sorted) {
       const p = positions.get(avatar.key)!, target = targets.get(avatar.key)!;
       const moving = p.x !== target.x || p.y !== target.y;
+      framePositions?.set(avatar.key, { x: p.x * 16, y: p.y * 16 - 8 });
       theme.character(avatar.look, moving ? "run" : avatar.pose, frame, ctx!, p.x * 16, p.y * 16 - 8);
     }
+    if (framePositions) onFrame!(framePositions);
     frame++;
     if (office.avatars.some(a => !finished.has(a.key)) || retained.size) timer = setTimeout(tick, Math.ceil(1000 / 12));
   }
@@ -99,5 +105,3 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
   tick();
   return () => { stopped = true; if (timer !== undefined) clearTimeout(timer); document.removeEventListener("visibilitychange", wake); canvas.removeEventListener("officechange", changed); };
 }
-
-
