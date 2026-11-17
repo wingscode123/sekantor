@@ -19,6 +19,7 @@ from pathlib import Path
 import typer
 
 from sekantor import __version__, config
+from sekantor.selfexe import self_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="SeKantor keeps watch over your coding agents.")
 install_app = typer.Typer(no_args_is_help=True, help="Install SeKantor's hooks into an agent.")
@@ -157,7 +158,7 @@ def _start_tmux(port: int):
     if not shutil.which("tmux"):
         return None
     typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
-    return _spawn([sys.executable, "-m", "sekantor.cli", "pos", "tmux"], port)
+    return _spawn(self_command("pos", "tmux"), port)
 
 
 def _start_orca(port: int):
@@ -171,7 +172,7 @@ def _start_orca(port: int):
         typer.secho("orca_pos is on but the orca CLI was not found.", fg="yellow")
         return None
     typer.echo("Orca pos: non-Claude agents in Orca terminals (separate process)")
-    return _spawn([sys.executable, "-m", "sekantor.cli", "pos", "orca"], port)
+    return _spawn(self_command("pos", "orca"), port)
 
 
 @pos_app.command("orca")
@@ -188,7 +189,7 @@ def _start_openbot(port: int):
     if not installed():
         return None
     typer.echo("OpenBot pos: agents with Local scripts on (separate process)")
-    return _spawn([sys.executable, "-m", "sekantor.cli", "pos", "openbot"], port)
+    return _spawn(self_command("pos", "openbot"), port)
 
 
 @pos_app.command("openbot")
