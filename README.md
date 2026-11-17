@@ -34,6 +34,8 @@ same list in the terminal. SeKantor only watches: you answer an agent in its own
 `uv run sekantor stats` reports lost events and time spent waiting for you;
 `uv run sekantor uninstall claude` removes only SeKantor's hooks.
 
+A Windows installer (unsigned, per-user) is built on CircleCI: see [Desktop installer](docs/release.md#desktop-installer-windows).
+
 ## Docs
 
 - [Product requirements](docs/PRD.md)

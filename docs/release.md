@@ -33,3 +33,28 @@ Claim the PyPI name with the first release, before going public.
 A plain `pipx install git+https://...` builds from source without the web UI (it is built by the
 workflow, not committed). Install the wheel attached to a GitHub Release instead:
 `pipx install ./sekantor-<version>-py3-none-any.whl`, or from a checkout as in the README.
+
+## Desktop installer (Windows)
+
+The app (Tauri shell plus the hub frozen by PyInstaller, ADR-0024 and ADR-0025) is built only on
+CircleCI, by the `desktop-windows` job. It runs on `main` and on branches named `desktop-*`; on any
+other branch, trigger a pipeline with the parameter `desktop` set to `true`.
+
+1. Open the pipeline in CircleCI, job `desktop-windows`, tab Artifacts.
+2. Download `installer/SeKantor_<version>_x64-setup.exe`. It is unsigned: Windows SmartScreen asks
+   for "More info", then "Run anyway".
+3. The installer puts the app in `%LOCALAPPDATA%\SeKantor` (no admin rights). First run offers
+   "Connect Claude Code", which installs the hooks globally and the login task, pointing at
+   `%LOCALAPPDATA%\SeKantor\sekantor\`. A source install's hooks and task are replaced, not doubled.
+4. Check it with `"%LOCALAPPDATA%\SeKantor\sekantor\sekantor.exe" doctor`.
+
+Uninstalling (Settings, Apps) stops the hub and removes the hooks and the login task first. `~/.sekantor`
+(token, events, logs) stays.
+
+The job also stores `logs/` (PyInstaller, cargo test, tauri build and installer check output, the
+smoke test's temporary home without its token) for debugging a failed run.
+
+To build the PyInstaller folder by hand, in a worktree (never in a checkout whose `.venv` runs your hub):
+`(cd web && npm ci && npm run build)`, `uv sync --group packaging`,
+`uv run pyinstaller packaging/sekantor.spec --distpath dist --workpath build/pyi`, then
+`uv run python packaging/smoke.py dist/sekantor`.
