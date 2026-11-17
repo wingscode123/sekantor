@@ -7,6 +7,6 @@
     "icons": "tauri icon ../brand/logo/icon-512.png --output src-tauri/icons"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2.1.0"
   }
 }
