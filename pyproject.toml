@@ -24,6 +24,10 @@ sekantor-hook = "sekantor.pos.claude_code.hook:main"
 dev = [
     "pytest>=9.2.0",
 ]
+# Only CI syncs this (`uv sync --group packaging`) to build the Windows app; see packaging/sekantor.spec.
+packaging = [
+    "pyinstaller>=6.11",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]
