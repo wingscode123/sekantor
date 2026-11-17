@@ -376,8 +376,8 @@ mod tests {
         let hook = this_install().hook();
         let shown = hook.display().to_string();
         assert!(same_path(&shown, &hook));
-        assert!(same_path(&shown.replace('\', "/"), &hook));
-        assert!(same_path(&format!(r"\?\{shown}"), &hook));
+        assert!(same_path(&shown.replace('\\', "/"), &hook));
+        assert!(same_path(&format!(r"\\?\{shown}"), &hook));
         assert!(!same_path(r"D:\Ronda\.venv\Scripts\sekantor-hook.exe", &hook));
         // Windows paths ignore case; others do not.
         assert_eq!(same_path(&shown.to_uppercase(), &hook), cfg!(windows));
