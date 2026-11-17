@@ -2,7 +2,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import App from "./App";
-import { useNow, useSessions } from "./useSessions";
+import { MiniView } from "./office/MiniView";
+import { useGhostNow, useNow, useSessions } from "./useSessions";
 import type { Session } from "./types";
 class Socket {
   static latest: Socket;
@@ -47,5 +48,49 @@ it("reads current time without a recurring clock when no session is snoozed", ()
   vi.setSystemTime(new Date("2026-11-17T13:00:00Z"));
   rerender();
   expect(result.current).toBe(Date.now());
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["office", "mini"])("uses one expiry timeout and no interval for %s ghost desks", mode => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-17T12:00:00Z"));
+  vi.stubGlobal("WebSocket", Socket);
+  vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ setTransform: vi.fn(), clearRect: vi.fn(), drawImage: vi.fn(), fillRect: vi.fn() } as unknown as CanvasRenderingContext2D);
+  const interval = vi.spyOn(window, "setInterval");
+  const View = mode === "office" ? App : MiniView;
+  render(<View />);
+  const ended: Session = { session_id: "ghost", source: "claude", source_label: "Claude", status: "ended", ended_at: new Date().toISOString(), status_since: new Date().toISOString(), started_at: "2026-11-17", last_event_at: "2026-11-17", workspace: {}, capabilities: [], needs_you: false };
+  act(() => {
+    Socket.latest.onopen?.();
+    Socket.latest.onmessage?.({ data: JSON.stringify({ type: "snapshot", sessions: [ended] }) });
+  });
+  const canvas = document.querySelector("canvas")!;
+  if (mode === "office") {
+    expect(canvas.height).toBe(256);
+    expect(screen.queryByRole("button", { name: /ghost, claude/ })).toBeNull();
+    expect(screen.getByRole("img").getAttribute("aria-label")).toContain("0 agents");
+  }
+  expect(vi.getTimerCount()).toBe(1);
+  act(() => { vi.advanceTimersByTime(19_999); });
+  expect(vi.getTimerCount()).toBe(1);
+  act(() => { vi.advanceTimersByTime(1); });
+  if (mode === "office") expect(canvas.height).toBe(128);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(interval).not.toHaveBeenCalled();
+});
+it("rearms only one timeout when several ghosts expire at different times", () => {
+  vi.useFakeTimers();
+  const start = Date.parse("2026-11-17T12:00:00Z");
+  vi.setSystemTime(start);
+  const base: Session = { session_id: "a", source: "claude", source_label: "Claude", status: "ended", ended_at: new Date(start - 5000).toISOString(), status_since: "2026-11-17", started_at: "2026-11-17", last_event_at: "2026-11-17", workspace: {}, capabilities: [], needs_you: false };
+  const sessions = [base, { ...base, session_id: "b", ended_at: new Date(start).toISOString() }];
+  const { result } = renderHook(() => useGhostNow(sessions));
+  expect(vi.getTimerCount()).toBe(1);
+  act(() => { vi.advanceTimersByTime(15_000); });
+  expect(result.current).toBe(start + 15_000);
+  expect(vi.getTimerCount()).toBe(1);
+  act(() => { vi.advanceTimersByTime(5000); });
+  expect(result.current).toBe(start + 20_000);
   expect(vi.getTimerCount()).toBe(0);
 });

@@ -6,9 +6,9 @@ import { startRenderer, type FramePositions } from "./render";
 
 import { AvatarCard, statusText } from "./AvatarCard";
 
-export function OfficeView({ sessions, loaded = true, now = Date.now() }: { sessions: Session[]; loaded?: boolean; now?: number }) {
+export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number }) {
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
-  const office = useMemo(() => layoutOffice(sessions), [sessions]);
+  const office = useMemo(() => layoutOffice(sessions, layoutNow), [sessions, layoutNow]);
   const sceneKey = JSON.stringify(office);
   const current = useRef(office);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -54,7 +54,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now() }: { sess
       </div>
     </div>
     {loaded && !office.avatars.length && <p className="office-empty">Your office is quiet. Agents appear when their sessions connect. If an agent is running, install its hooks with <code>sekantor install claude --project</code>.</p>}
-    <ul className="office-accessible" aria-label="Office agents">{office.avatars.map(a => {
+    <ul className="office-accessible" aria-label="Office agents">{office.avatars.filter(a => a.pose !== "leave").map(a => {
       const s = byId.get(a.sessionId)!;
       return <li key={a.key}><button type="button" onClick={() => setSelected(a.sessionId)}>{a.name}, {a.app}, {a.project}, {statusText(s)}</button></li>;
     })}</ul>

@@ -7,7 +7,7 @@ import { OfficeView } from "./OfficeView";
 import type { Session } from "../types";
 const mocks = vi.hoisted(() => ({ renderer: vi.fn<typeof import("./render").startRenderer>(() => vi.fn()), state: { sessions: [] as Session[], connection: "live", loaded: true } }));
 vi.mock("./render", () => ({ startRenderer: mocks.renderer }));
-vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () => Date.parse("2026-11-17T12:00:00Z") }));
+vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () => Date.parse("2026-11-17T12:00:00Z"), useGhostNow: () => Date.parse("2026-11-17T12:00:00Z") }));
 const session = (id = "one"): Session => ({ session_id: id, source: "claude", source_label: id, status: "running", status_since: "2026-11-17T11:00:00Z", started_at: "2026-11-17T10:00:00Z", last_event_at: "2026-11-17T11:00:00Z", workspace: { cwd: "/repo", branch: "main" }, capabilities: [], needs_you: false, open_label: "Open in Orca" });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mocks.state.connection = "live"; mocks.state.sessions = []; mocks.state.loaded = true; mocks.renderer.mockClear(); });
 describe("office page", () => {

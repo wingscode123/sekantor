@@ -108,6 +108,18 @@ it("assigns distinct bounded shared-place slots in stable start/id order", () =>
       expect(a.targetTile!.y).toBeLessThan(office.height);
     }
   }
+  const targets = office.avatars.map(a => JSON.stringify(a.targetTile));
+  expect(new Set(targets).size).toBe(sessions.length);
+  const furniture = new Set([...office.clusters.flatMap(c => c.desks), office.door, office.rack, office.pantry, office.yourDesk, { x: office.width - 2, y: 1 }].map(p => JSON.stringify(p)));
+  for (const a of office.avatars) {
+    const anchor = a.place === "pantry" ? office.pantry : a.place === "rack" ? office.rack : office.yourDesk;
+    const count = office.avatars.filter(b => b.place === a.place).length;
+    expect(a.targetTile!.x).toBeGreaterThanOrEqual(anchor.x);
+    expect(a.targetTile!.x).toBeLessThan(anchor.x + 6);
+    expect(a.targetTile!.y).toBeGreaterThan(anchor.y);
+    expect(a.targetTile!.y).toBeLessThanOrEqual(anchor.y + Math.ceil(count / 6));
+    expect(furniture.has(JSON.stringify(a.targetTile))).toBe(false);
+  }
   expect(layoutOffice([...sessions].reverse())).toEqual(office);
 });
 
@@ -117,4 +129,29 @@ it("groups OpenBot source and host sessions together while using friendly app la
   expect(office.avatars.map(a => a.project)).toEqual(["OpenBot agents", "OpenBot agents"]);
   expect(office.avatars[0].app).toBe("Orca");
   expect(office.avatars[1].app).toBe("openbot");
+});
+
+it("reserves a leaver's desk and seat for 20 seconds before reflowing", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const a = session({ session_id: "a", started_at: "2026-01-01", workspace: { cwd: "/p" } });
+  const b = session({ session_id: "b", started_at: "2026-01-02", workspace: { cwd: "/p" } });
+  const original = layoutOffice([a, b], now);
+  const ended = { ...a, status: "ended" as const, ended_at: new Date(now).toISOString() };
+  const ghost = layoutOffice([ended, b], now + 19_999);
+  expect(ghost.clusters).toEqual(original.clusters);
+  expect(ghost.avatars.find(a => a.key === "b")!.deskTile).toEqual(original.avatars[1].deskTile);
+  expect(ghost.avatars.find(a => a.key === "b")!.seat).toBe(1);
+  expect(ghost.avatars[0]).toMatchObject({ place: "door", pose: "leave", deskTile: original.avatars[0].deskTile });
+  const expired = layoutOffice([ended, b], now + 20_000);
+  expect(expired.avatars).toHaveLength(1);
+  expect(expired.avatars[0].deskTile).not.toEqual(original.avatars[1].deskTile);
+  expect(expired.avatars[0].seat).toBe(0);
+});
+
+it("keeps a departed project's cluster until its last ghost expires", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z");
+  const a = session({ workspace: { cwd: "/a" }, status: "ended", ended_at: new Date(now).toISOString() });
+  const b = session({ session_id: "b", workspace: { cwd: "/p" } });
+  expect(layoutOffice([a, b], now + 19_999).clusters.map(c => c.project)).toEqual(["a", "p"]);
+  expect(layoutOffice([a, b], now + 20_000).clusters.map(c => c.project)).toEqual(["p"]);
 });

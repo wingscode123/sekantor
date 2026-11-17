@@ -7,7 +7,7 @@ import { layoutOffice } from "./model";
 import type { Session } from "../types";
 const mocks = vi.hoisted(() => ({ renderer: vi.fn<typeof import("./render").startRenderer>(() => vi.fn()), state: { sessions: [] as Session[], connection: "live", loaded: true } }));
 vi.mock("./render", () => ({ startRenderer: mocks.renderer }));
-vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () => Date.parse("2026-11-17T12:00:00Z") }));
+vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () => Date.parse("2026-11-17T12:00:00Z"), useGhostNow: () => Date.parse("2026-11-17T12:00:00Z") }));
 const session = (id: string, status: Session["status"] = "waiting_input"): Session => ({ session_id: id, source: "claude", source_label: id, status, status_since: "2026-11-17T11:00:00Z", started_at: "2026-11-17T10:00:00Z", last_event_at: "2026-11-17T11:00:00Z", workspace: { cwd: "/repo" }, capabilities: [], needs_you: status.startsWith("waiting_") });
 afterEach(() => { cleanup(); mocks.state.sessions = []; mocks.state.connection = "live"; mocks.state.loaded = true; mocks.renderer.mockClear(); });
 it("shows only waiting non-snoozed avatars, preserving their full-office looks", () => {

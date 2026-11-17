@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { isSnoozed } from "../SessionMenu";
-import { useNow, useSessions } from "../useSessions";
+import { useGhostNow, useNow, useSessions } from "../useSessions";
 import { layoutOffice, type Office } from "./model";
 import { startRenderer } from "./render";
 import { defaultTheme, type Theme } from "./sprites";
@@ -14,13 +14,14 @@ const openFullOffice = (url: string) => window.location.assign(url);
 
 export function MiniView({ navigate = openFullOffice }: { navigate?: (url: string) => void }) {
   const { sessions, connection, loaded } = useSessions();
+  const layoutNow = useGhostNow(sessions);
   const now = useNow(1000, sessions.some(s => s.status !== "ended" && isSnoozed(s, Date.now())));
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const waiting = awake.filter(s => s.status === "waiting_approval" || s.status === "waiting_input");
   const waitingIds = new Set(waiting.map(s => s.session_id));
   const busy = awake.filter(s => s.status === "running").length;
   const latest = [...waiting].sort((a, b) => b.last_event_at.localeCompare(a.last_event_at) || b.status_since.localeCompare(a.status_since)).find(s => s.summary);
-  const office = useMemo(() => layoutOffice(sessions), [sessions]);
+  const office = useMemo(() => layoutOffice(sessions, layoutNow), [sessions, layoutNow]);
   // Preserve full-office identities and looks, with space to gather around your desk.
   const avatars = office.avatars.filter(a => waitingIds.has(a.sessionId));
   const rows = Math.ceil(avatars.length / 18);
