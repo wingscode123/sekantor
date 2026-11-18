@@ -6,7 +6,7 @@ import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 export type FramePositions = ReadonlyMap<string, Readonly<Pt>>;
 
 /** Dispatch `officechange` on the canvas after replacing an empty office, or restart this renderer. */
-export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void): () => void {
+export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void, onJuniorDeparture?: (keys: string[]) => void): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -15,6 +15,8 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
   const paths = new Map<string, { target: Pt; waypoints: Pt[] }>();
   let geometry: string | undefined;
   let previousOffice: Office | undefined;
+  const handoffs = new Map<string, { remaining: number; leaving: boolean }>();
+  const receiving = new Set<string>();
   const retained = new Map<string, Avatar>(), departures = new Departures(), finished = new Set<string>();
   const live = new Set<string>(), targets = new Map<string, Pt>(), sorted: Avatar[] = [];
   const layer = document.createElement("canvas"), layerCtx = layer.getContext("2d");
@@ -38,7 +40,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       for (const room of rooms) for (const desk of room.desks) addDesk(desk);
       for (const avatar of retained.values()) {
         const room = rooms.find(r => r.project === avatar.project);
-        if (room && avatar.deskTile.x > room.x && avatar.deskTile.x < room.x + room.w - 1 &&
+        if (room && !avatar.junior && avatar.deskTile.x > room.x && avatar.deskTile.x < room.x + room.w - 1 &&
             avatar.deskTile.y > room.y && avatar.deskTile.y < room.y + room.h - 1) {
           addDesk(avatar.deskTile);
         }
@@ -100,11 +102,21 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     if (stopped || document.hidden) return;
     const office = getOffice(), now = performance.now(), dt = Math.min(250, now - last);
     last = now;
+    const juniorDepartures: string[] = [];
     live.clear();
     for (const avatar of office.avatars) live.add(avatar.key);
     for (const key of finished) if (!live.has(key)) finished.delete(key);
     for (const avatar of office.avatars) {
-      if (avatar.pose !== "leave") { finished.delete(avatar.key); departures.cancel(avatar.key); }
+      if (avatar.junior?.status === "reported" && !retained.has(avatar.key) && !finished.has(avatar.key)) {
+        // A junior first seen as reported has already handed off.
+        finished.add(avatar.key);
+        juniorDepartures.push(avatar.key);
+      }
+      if (avatar.pose !== "leave" && avatar.junior?.status !== "reported") {
+        finished.delete(avatar.key);
+        departures.cancel(avatar.key);
+        handoffs.delete(avatar.key);
+      }
       if (!finished.has(avatar.key)) retained.set(avatar.key, avatar);
     }
     if (office !== previousOffice) {
@@ -136,14 +148,24 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       previousOffice = office;
     }
     targets.clear();
+    receiving.clear();
     for (const [key, avatar] of retained) {
-      const leaving = !live.has(key) || avatar.pose === "leave";
+      const junior = avatar.junior;
+      const isLive = live.has(key);
+      let handoff = handoffs.get(key);
+      if (!handoff && junior?.status === "reported" && isLive) {
+        handoff = { remaining: 750, leaving: false };
+        handoffs.set(key, handoff);
+      }
+      const leaving = !isLive || avatar.pose === "leave" || handoff?.leaving;
       if (leaving) departures.mark(key);
-      const target = leaving ? office.door : avatar.targetTile ? avatar.targetTile : avatar.place === "desk" ? avatar.deskTile
+      const exit = junior && (isLive ? junior.door : office.rooms.find(r => r.project === avatar.project)?.door);
+      const target = leaving ? exit || office.door
+        : handoff && junior ? junior.meeting : avatar.targetTile ? avatar.targetTile : avatar.place === "desk" ? avatar.deskTile
         : avatar.place === "your_desk" ? office.yourDesk : avatar.place === "rack" ? office.rack
         : avatar.place === "pantry" ? office.pantry : office.door;
       targets.set(key, target);
-      let position = positions.get(key) ?? office.door;
+      let position = positions.get(key) ?? (junior ? avatar.deskTile : office.door);
       let path = paths.get(key);
       if (!path || path.target.x !== target.x || path.target.y !== target.y) {
         const waypoints = route(office, position, target);
@@ -152,11 +174,25 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
         path = { target, waypoints };
         paths.set(key, path);
       }
-      positions.set(key, followRoute(position, path.waypoints, dt));
+      const wasAtMeeting = handoff && !leaving && position.x === target.x && position.y === target.y;
+      position = followRoute(position, path.waypoints, dt);
+      positions.set(key, position);
+      if (handoff && !leaving && position.x === target.x && position.y === target.y) {
+        receiving.add(avatar.sessionId);
+        if (wasAtMeeting) handoff.remaining -= dt;
+        handoff.leaving = handoff.remaining <= 0;
+      }
     }
     for (const [key, position] of positions) if (departures.leaving(key)) {
-      departures.arrive(key, position, office.door);
-      if (!departures.leaving(key)) { retained.delete(key); positions.delete(key); paths.delete(key); finished.add(key); }
+      departures.arrive(key, position, targets.get(key)!);
+      if (!departures.leaving(key)) {
+        if (retained.get(key)?.junior) juniorDepartures.push(key);
+        retained.delete(key);
+        positions.delete(key);
+        paths.delete(key);
+        handoffs.delete(key);
+        finished.add(key);
+      }
     }
     ctx!.setTransform(1, 0, 0, 1, 0, 0); ctx!.clearRect(0, 0, canvas.width, canvas.height);
     ctx!.setTransform(canvas.width / (office.width * TILE), 0, 0, canvas.height / (office.height * TILE), 0, 0); ctx!.imageSmoothingEnabled = false;
@@ -175,11 +211,18 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     for (const avatar of sorted) {
       const p = positions.get(avatar.key)!, target = targets.get(avatar.key)!;
       const moving = p.x !== target.x || p.y !== target.y;
-      const x = p.x * TILE, y = p.y * TILE - (CHARACTER_HEIGHT - TILE);
+      const x = p.x * TILE;
+      const y = (p.y + 1) * TILE - CHARACTER_HEIGHT;
       framePositions?.set(avatar.key, { x, y });
-      theme.character(avatar.look, moving ? "run" : avatar.pose, frame, ctx!, x, y);
+      const pose = avatar.junior
+        ? departures.leaving(avatar.key) ? "leave"
+          : avatar.pose === "deliver" && !moving ? "report" : avatar.pose
+        : receiving.has(avatar.sessionId) ? "receive" : moving ? "run" : avatar.pose;
+      if (avatar.junior) theme.character(avatar.look, pose, frame, ctx!, x, y, true);
+      else theme.character(avatar.look, pose, frame, ctx!, x, y);
     }
     if (framePositions) onFrame!(framePositions);
+    if (juniorDepartures.length) onJuniorDeparture?.(juniorDepartures);
     frame++;
     if (office.avatars.some(a => !finished.has(a.key)) || retained.size) timer = setTimeout(tick, Math.ceil(1000 / 12));
   }

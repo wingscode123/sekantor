@@ -69,3 +69,11 @@ it("draws rooms and lobby for all 8 kinds without throwing", () => {
   vi.restoreAllMocks();
 });
 
+
+it("adds a junior badge without resampling the character or changing its face", () => {
+  const adult = characterGrid(look, "work", 0);
+  const junior = characterGrid(look, "work", 0, true);
+  expect(junior.map(row => row.length)).toEqual(Array(CHARACTER_HEIGHT).fill(TILE));
+  expect(junior.slice(0, 23)).toEqual(adult.slice(0, 23));
+  expect(junior.slice(23, 35)).not.toEqual(adult.slice(23, 35));
+});

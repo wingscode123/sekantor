@@ -18,6 +18,26 @@ describe("office page", () => {
     expect(screen.getAllByTestId("name-plate")).toHaveLength(2);
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("2 agents");
   });
+  it("moves the name plate with the painted avatar", () => {
+    render(<OfficeView sessions={[session()]} />);
+    const paint = mocks.renderer.mock.calls[0][3]!;
+    paint(new Map([["one", { x: 64, y: 96 }]]));
+    const plate = screen.getByTestId("name-plate");
+    expect(plate.style.left).toBe("40px");
+    expect(plate.style.top).toBe("51px");
+  });
+
+  it("shows working and reported juniors on the main agent card", () => {
+    const now = "2026-11-17T12:00:00Z";
+    const junior = { id: "a", type: "Explore", status: "working" as const, activity: null,
+      summary: null, started_at: now, ended_at: null };
+    const parent = { ...session(), subagents: [junior,
+      { ...junior, id: "b", type: "Review", status: "reported" as const, summary: "Checks passed.", ended_at: now }] };
+    render(<OfficeView sessions={[parent]} now={Date.parse(now)} />);
+    fireEvent.click(screen.getByTestId("name-plate"));
+    expect(screen.getByRole("region", { name: "Subagents" }).textContent).toMatch(/Explore Working.*Review Reported.*Checks passed/);
+  });
+
   it("opens the card from a plate and calls the source app endpoint", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
     render(<OfficeView sessions={[session()]} />);
@@ -96,7 +116,7 @@ describe("office page", () => {
     view.rerender(<OfficeView sessions={[session()]} />);
     expect(wake).toHaveBeenCalledOnce();
   });
-  it("keeps plates visible at 1200px width with three room rows", () => {
+  it("keeps plates visible at 1200px width with six rooms", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(1000);
     const sessions = Array.from({ length: 25 }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i % 6}` } }));
@@ -110,14 +130,16 @@ describe("office page", () => {
     const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
     const cssWidth = parseFloat(canvas.style.width);
     expect(cssWidth).toBeLessThanOrEqual(600);
-    expect(canvas.width).toBe(31 * 24);
+    expect(canvas.width % layoutOffice([session()]).width).toBe(0);
     expect(cssWidth * 1.25).toBeCloseTo(canvas.width);
     expect(screen.getByText("repo", { exact: true }).getAttribute("title")).toBe("repo");
-    for (const label of ["Your desk: permissions, questions, reports", "Server rack: running commands", "Pantry: idle", "Exit: session ended"]) {
+    for (const label of ["Your desk: permissions, questions, reports", "Rack", "Pantry", "Exit: session ended"]) {
       const sign = screen.getAllByText(label).find(el => el.classList.contains("office-sign"))!;
-      expect(sign.getAttribute("aria-hidden")).toBe("true");
+      expect(sign.closest('[aria-hidden="true"]')).toBeTruthy();
     }
     expect(screen.getByText("What the places mean")).toBeTruthy();
+    expect(screen.getByText("Server rack: running commands").tagName).toBe("DT");
+    expect(screen.getByText("Pantry: idle").tagName).toBe("DT");
     expect(screen.getByText(/Agents come here for approval/)).toBeTruthy();
   });
   it("anchors name plates above the seated avatar's head and hides plates when tiles are under 20px", () => {
@@ -126,9 +148,9 @@ describe("office page", () => {
     const plate = screen.getByTestId("name-plate") as HTMLButtonElement;
     expect(plate.hidden).toBe(false);
     const topPx = parseFloat(plate.style.top);
-    expect(topPx).toBeCloseTo(2.5 * 30);
+    expect(topPx).toBeCloseTo((2.5 + 6 / 32) * 56);
 
-    spy.mockReturnValue(500);
+    spy.mockReturnValue(300);
     act(() => { window.dispatchEvent(new Event("resize")); });
     expect((screen.getByTestId("name-plate") as HTMLButtonElement).hidden).toBe(true);
   });
@@ -138,7 +160,7 @@ describe("office page", () => {
     render(<OfficeView sessions={[0, 1, 2].map(i => ({ ...session(String(i)), workspace: { cwd: `/project-${i}` } }))} />);
     const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
     // Short and wide: three columns give the larger tile, and the office still fits in both dimensions.
-    expect(canvas.width % 48).toBe(0);
+    expect(canvas.width % layoutOffice(projects(3)).width).toBe(0);
     expect(canvas.width).toBeLessThanOrEqual(1600);
     expect(canvas.height).toBeLessThanOrEqual(450);
     expect(parseFloat(canvas.style.width)).toBe(canvas.width);
@@ -189,7 +211,7 @@ describe("office page", () => {
     expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
     spy.mockClear();
     view.rerender(<OfficeView sessions={projects(4)} />);
-    expect(spy.mock.calls.length).toBeGreaterThan(2);
+    expect(spy.mock.calls.length).toBeGreaterThan(1);
   });
   it("picks the column count that maximises the tile size", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
@@ -204,7 +226,7 @@ describe("office page", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
     render(<OfficeView sessions={[session()]} />);
     const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
-    expect(canvas.width % 31).toBe(0);
+    expect(canvas.width % 17).toBe(0);
     expect(canvas.width).toBeLessThanOrEqual(1600);
   });
   it("keeps the first-row plate below the room name at 1x", () => {

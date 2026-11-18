@@ -9,6 +9,10 @@
 .office-plate[hidden] { display: none; }
 .office-plate small { display: block; font-size: 9px; overflow: hidden; text-overflow: ellipsis; }
 .office-sign { position: absolute; transform: translate(-50%, -50%); padding: 1px 4px; border: 1px solid #536878; background: #202c34; color: #f4eedb; font-size: 10px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.office-landmark { position: absolute; container-type: inline-size; font: 10px monospace; }
+.office-landmark .office-sign { display: none; left: 0; transform: translateY(-50%); font: inherit; }
+@container (min-width: calc(4ch + 10px)) { .office-landmark .office-landmark__rack { display: block; } }
+@container (min-width: calc(6ch + 10px)) { .office-landmark .office-landmark__pantry { display: block; } }
 .office-sign--room { z-index: 2; border: 0; background: transparent; font-weight: 700; }
 .office-accessible { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); }
 .office-accessible:focus-within { position: static; width: auto; height: auto; margin: 8px; clip-path: none; overflow: visible; }
