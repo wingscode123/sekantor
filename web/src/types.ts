@@ -1,3 +1,5 @@
+import type { Kind } from "./office/model";
+
 export type Status = "waiting_approval" | "waiting_input" | "error" | "running" | "reported" | "done" | "ended";
 
 /** The `status--*` modifier in site/app.css for each status. */
@@ -6,6 +8,7 @@ export const STATUS_CLASS: Record<Status, string> = {
 };
 
 export interface Session {
+  project?: { name: string; kind: Kind; signals: string[] } | null;
   session_id: string;
   source: string;
   status: Status;

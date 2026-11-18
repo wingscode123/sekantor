@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "../App";
 import { OfficeView } from "./OfficeView";
 
@@ -94,12 +94,78 @@ describe("office page", () => {
     view.rerender(<OfficeView sessions={[session()]} />);
     expect(wake).toHaveBeenCalledOnce();
   });
-  it("keeps plates visible at 1200px width with three cluster rows", () => {
+  it("keeps plates visible at 1200px width with three room rows", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
     const sessions = Array.from({ length: 25 }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i % 6}` } }));
     render(<OfficeView sessions={sessions} />);
     expect(screen.getAllByTestId("name-plate").every(p => !(p as HTMLButtonElement).hidden)).toBe(true);
+  });
+  it("fits the canvas to whole device pixels per tile and labels the room and its landmarks", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    vi.stubGlobal("devicePixelRatio", 1.25);
+    render(<OfficeView sessions={[session()]} />);
+    const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+    const cssWidth = parseFloat(canvas.style.width);
+    expect(cssWidth).toBeLessThanOrEqual(600);
+    expect(canvas.width).toBe(31 * 24);
+    expect(cssWidth * 1.25).toBeCloseTo(canvas.width);
+    expect(screen.getByText("repo", { exact: true }).getAttribute("title")).toBe("repo");
+    for (const label of ["Your desk: permissions, questions, reports", "Server rack: running commands", "Pantry: idle", "Exit: session ended"]) {
+      const sign = screen.getAllByText(label).find(el => el.classList.contains("office-sign"))!;
+      expect(sign.getAttribute("aria-hidden")).toBe("true");
+    }
+    expect(screen.getByText("What the places mean")).toBeTruthy();
+    expect(screen.getByText(/Agents come here for approval/)).toBeTruthy();
+  });
+  it("anchors name plates above the seated avatar's head and hides plates when tiles are under 20px", () => {
+    const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
+    render(<OfficeView sessions={[session()]} />);
+    const plate = screen.getByTestId("name-plate") as HTMLButtonElement;
+    expect(plate.hidden).toBe(false);
+    const topPx = parseFloat(plate.style.top);
+    expect(topPx).toBeCloseTo(2.5 * 30);
+
+    spy.mockReturnValue(500);
+    act(() => { window.dispatchEvent(new Event("resize")); });
+    expect((screen.getByTestId("name-plate") as HTMLButtonElement).hidden).toBe(true);
+  });
+  it("fills the width with multiple room columns on wide viewports at 100% zoom", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    render(<OfficeView sessions={[0, 1, 2].map(i => ({ ...session(String(i)), workspace: { cwd: `/project-${i}` } }))} />);
+    const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+    expect(canvas.width).toBe(48 * 32);
+    expect(parseFloat(canvas.style.width)).toBe(48 * 32);
+  });
+  it("fills at least 90% of the width at scaled DPI without horizontal overflow", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    const sessions = Array.from({ length: 6 }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i}` } }));
+    for (const dpr of [1, 1.25, 1.5]) {
+      vi.stubGlobal("devicePixelRatio", dpr);
+      const view = render(<OfficeView sessions={sessions} />);
+      const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+      const cssWidth = parseFloat(canvas.style.width);
+      expect(cssWidth).toBeLessThanOrEqual(1600);
+      expect(cssWidth).toBeGreaterThanOrEqual(0.9 * 1600);
+      view.unmount();
+    }
+  });
+  it("does not add empty room columns for a single project", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    render(<OfficeView sessions={[session()]} />);
+    const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+    expect(canvas.width % 31).toBe(0);
+    expect(canvas.width).toBeLessThanOrEqual(1600);
+  });
+  it("keeps the first-row plate below the room name at 1x", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    render(<OfficeView sessions={[session()]} />);
+    const sign = screen.getByText("repo", { exact: true });
+    const plate = screen.getByTestId("name-plate");
+    // Plate height is two text lines plus padding: 11px*1.2 + 9px*1.2 + 4px + 2px border.
+    const plateHeight = 11 * 1.2 + 9 * 1.2 + 6;
+    const signBottom = parseFloat(sign.style.top) + 12;
+    expect(parseFloat(plate.style.top) - plateHeight).toBeGreaterThan(signBottom);
   });
   it("excludes ended and snoozed agents from canvas counts but keeps snoozed live avatars", () => {
     mocks.state.sessions = [session(), { ...session("ended"), status: "ended" }, { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, { ...session("waiting"), status: "waiting_input", needs_you: true }];

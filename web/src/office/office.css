@@ -2,14 +2,21 @@
 .office-page { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 12px; }
 .office-counts { font-size: 14px; margin: 0; }
 .office-banner { padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-failing); margin-bottom: 12px; }
-.office-viewport { flex: 1; min-height: 0; overflow: auto; background: #202c34; }
-.office-floor { position: relative; margin: auto; }
+.office-viewport { flex: 1; min-height: 0; overflow: hidden auto; background: #202c34; scrollbar-gutter: stable; }
+.office-floor { position: relative; }
 .office-floor canvas { display: block; image-rendering: pixelated; max-width: none; }
 .office-plate { position: absolute; transform: translate(-50%, -100%); padding: 2px 4px; border: 1px solid #536878; background: #f4eedb; color: #202c34; font-size: 11px; line-height: 1.2; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.office-plate small { display: block; font-size: 9px; overflow: hidden; text-overflow: ellipsis; }
 .office-plate[hidden] { display: none; }
+.office-plate small { display: block; font-size: 9px; overflow: hidden; text-overflow: ellipsis; }
+.office-sign { position: absolute; transform: translate(-50%, -50%); padding: 1px 4px; border: 1px solid #536878; background: #202c34; color: #f4eedb; font-size: 10px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.office-sign--room { z-index: 2; border: 0; background: transparent; font-weight: 700; }
 .office-accessible { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); }
 .office-accessible:focus-within { position: static; width: auto; height: auto; margin: 8px; clip-path: none; overflow: visible; }
+.office-legend { margin-bottom: 8px; }
+.office-legend summary { cursor: pointer; font-weight: 600; }
+.office-legend dl { margin: 4px 0 0; }
+.office-legend dt { font-weight: 600; margin-top: 4px; }
+.office-legend dd { margin: 0 0 4px 8px; }
 .avatar-card { position: absolute; z-index: 10; right: 24px; top: 24px; width: min(440px, calc(100% - 48px)); max-height: calc(100% - 48px); overflow: auto; padding: 20px; background: var(--color-paper-2, #fff); border: 1px solid var(--color-rule); border-radius: 8px; box-shadow: 0 8px 40px #0004; }
 .avatar-card__close { float: right; }
 .avatar-card p { overflow-wrap: anywhere; }

@@ -28,7 +28,9 @@ export function MiniView({ navigate = openFullOffice }: { navigate?: (url: strin
   const rows = Math.ceil(avatars.length / 18);
   const height = Math.max(7, rows * 2 + 3);
   const yourDesk = { x: 10, y: height - 2 };
-  const scene: Office = { ...office, width: 20, height, clusters: [], yourDesk, door: { x: 1, y: height - 2 },
+  const door = { x: 1, y: height - 2 };
+  const scene: Office = { ...office, width: 20, height, clusters: [], rooms: [], places: [], yourDesk, door,
+    lobby: { x: 0, y: 0, w: 0, h: 0, yourDesk, door, corridorY: 0 },
     avatars: avatars.map((a, i) => ({ ...a, place: "desk", deskTile: { x: 1 + i % 18, y: 2 + Math.floor(i / 18) * 2 }, targetTile: { x: 1 + i % 18, y: 2 + Math.floor(i / 18) * 2 } })) };
   const current = useRef(scene);
   const canvas = useRef<HTMLCanvasElement>(null);
