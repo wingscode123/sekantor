@@ -1,8 +1,8 @@
 import type { Avatar, Office } from "./model";
 import { Departures, step, type Pt } from "./motion";
-import { defaultTheme, type Theme } from "./sprites";
+import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
-/** Native-pixel avatar top-left positions (16x24 sprites), keyed by avatar.key in paint order. */
+/** Native-pixel avatar top-left positions (32x48 sprites), keyed by avatar.key in paint order. */
 export type FramePositions = ReadonlyMap<string, Readonly<Pt>>;
 
 /** Dispatch `officechange` on the canvas after replacing an empty office, or restart this renderer. */
@@ -31,18 +31,33 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     if (!changed || !layerCtx) return;
     previousLayout.length = 0;
     for (const value of layout) previousLayout.push(value);
-    layer.width = office.width * 16; layer.height = office.height * 16;
+    layer.width = office.width * TILE; layer.height = office.height * TILE;
     layerCtx.imageSmoothingEnabled = false;
     for (let y = 0; y < office.height; y++) for (let x = 0; x < office.width; x++)
-      theme.tile(y === 0 ? "wall" : "floor", layerCtx, x * 16, y * 16);
-    for (let i = 10; i < layout.length; i += 2) {
-      theme.furniture("chair", layerCtx, layout[i] * 16, layout[i + 1] * 16 + 8);
-      theme.furniture("desk", layerCtx, layout[i] * 16, layout[i + 1] * 16);
+      theme.tile(y === 0 ? "wall" : "floor", layerCtx, x * TILE, y * TILE);
+    for (let x = 0; x < office.width; x++) {
+      const panel = x % 7;
+      if (panel === 2 || panel === 3) {
+        theme.furniture("window", layerCtx, x * TILE, 0);
+        theme.furniture("sunlight", layerCtx, x * TILE, TILE);
+      }
+      if (panel === 1 || panel === 4) theme.furniture("lamp", layerCtx, x * TILE, 0);
+      if (panel === 6) theme.furniture("bookshelf", layerCtx, x * TILE, 0);
     }
-    theme.furniture("your_desk", layerCtx, office.yourDesk.x * 16, office.yourDesk.y * 16);
-    theme.furniture("coffee", layerCtx, office.pantry.x * 16, office.pantry.y * 16);
-    theme.furniture("door", layerCtx, office.door.x * 16, office.door.y * 16);
-    theme.furniture("plant", layerCtx, Math.max(0, office.width - 2) * 16, 16);
+    for (let i = 10; i < layout.length; i += 2) {
+      const x = layout[i] * TILE, y = layout[i + 1] * TILE;
+      theme.furniture("rug", layerCtx, x, y + TILE / 2);
+      theme.furniture("chair", layerCtx, x, y + TILE / 2);
+      theme.furniture("desk", layerCtx, x, y);
+    }
+    theme.furniture("rug", layerCtx, office.door.x * TILE, (office.door.y + 1) * TILE);
+    theme.furniture("rug", layerCtx, office.pantry.x * TILE, (office.pantry.y + 1) * TILE);
+    theme.furniture("chair", layerCtx, office.yourDesk.x * TILE, office.yourDesk.y * TILE + TILE / 2);
+    theme.furniture("your_desk", layerCtx, office.yourDesk.x * TILE, office.yourDesk.y * TILE);
+    theme.furniture("coffee", layerCtx, office.pantry.x * TILE, office.pantry.y * TILE);
+    theme.furniture("door", layerCtx, office.door.x * TILE, office.door.y * TILE);
+    theme.furniture("plant", layerCtx, Math.max(0, office.width - 2) * TILE, TILE);
+    theme.furniture("plant", layerCtx, (office.pantry.x + 1) * TILE, office.pantry.y * TILE);
   }
   function tick() {
     timer = undefined;
@@ -72,15 +87,15 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       if (!departures.leaving(key)) { retained.delete(key); positions.delete(key); finished.add(key); }
     }
     // Keep a native-resolution backing store even in a smaller CSS viewport.
-    if (canvas.width < office.width * 16) canvas.width = office.width * 16;
-    if (canvas.height < office.height * 16) canvas.height = office.height * 16;
-    const scale = Math.max(1, Math.floor(Math.min(canvas.width / (office.width * 16), canvas.height / (office.height * 16))));
+    if (canvas.width < office.width * TILE) canvas.width = office.width * TILE;
+    if (canvas.height < office.height * TILE) canvas.height = office.height * TILE;
+    const scale = Math.max(1, Math.floor(Math.min(canvas.width / (office.width * TILE), canvas.height / (office.height * TILE))));
     ctx!.setTransform(1, 0, 0, 1, 0, 0); ctx!.clearRect(0, 0, canvas.width, canvas.height);
     ctx!.setTransform(scale, 0, 0, scale, 0, 0); ctx!.imageSmoothingEnabled = false;
     staticLayer(office);
     ctx!.drawImage(layer, 0, 0);
     // Only the rack blinks; all other furniture is part of the static layer.
-    theme.furniture("rack", ctx!, office.rack.x * 16, office.rack.y * 16, frame);
+    theme.furniture("rack", ctx!, office.rack.x * TILE, office.rack.y * TILE, frame);
     sorted.length = 0;
     for (const avatar of retained.values()) sorted.push(avatar);
     sorted.sort((a, b) => positions.get(a.key)!.y - positions.get(b.key)!.y);
@@ -88,8 +103,9 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     for (const avatar of sorted) {
       const p = positions.get(avatar.key)!, target = targets.get(avatar.key)!;
       const moving = p.x !== target.x || p.y !== target.y;
-      framePositions?.set(avatar.key, { x: p.x * 16, y: p.y * 16 - 8 });
-      theme.character(avatar.look, moving ? "run" : avatar.pose, frame, ctx!, p.x * 16, p.y * 16 - 8);
+      const x = p.x * TILE, y = p.y * TILE - (CHARACTER_HEIGHT - TILE);
+      framePositions?.set(avatar.key, { x, y });
+      theme.character(avatar.look, moving ? "run" : avatar.pose, frame, ctx!, x, y);
     }
     if (framePositions) onFrame!(framePositions);
     frame++;
