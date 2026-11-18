@@ -1,0 +1,231 @@
+{
+  "worktree_ps": {
+    "ok": true,
+    "result": {
+      "truncated": false,
+      "totalCount": 4,
+      "worktrees": [
+        {
+          "worktreeId": "wt_main",
+          "repo": "Sample Project",
+          "hostId": "example_host",
+          "path": "X:/example/main",
+          "isMainWorktree": true,
+          "agents": [
+            {
+              "paneKey": "structured-agent-session-claude_example:pane_main",
+              "agentType": "claude",
+              "state": "idle"
+            }
+          ]
+        },
+        {
+          "worktreeId": "wt_codex",
+          "repo": "Sample Project",
+          "hostId": "example_host",
+          "path": "X:/example/codex",
+          "isMainWorktree": false,
+          "agents": [
+            {
+              "paneKey": "structured-agent-session-example_codex:pane_codex",
+              "agentType": "codex",
+              "state": "working"
+            }
+          ]
+        },
+        {
+          "worktreeId": "wt_gemini",
+          "repo": "Sample Project",
+          "hostId": "example_host",
+          "path": "X:/example/gemini",
+          "isMainWorktree": false,
+          "agents": [
+            {
+              "paneKey": "structured-agent-session-example_gemini:pane_gemini",
+              "agentType": "gemini",
+              "state": "working"
+            }
+          ]
+        },
+        {
+          "worktreeId": "wt_claude",
+          "repo": "Sample Project",
+          "hostId": "example_host",
+          "path": "X:/example/claude",
+          "isMainWorktree": false,
+          "agents": [
+            {
+              "paneKey": "structured-agent-session-example_claude:pane_claude",
+              "agentType": "claude",
+              "state": "working"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "worker_list": {
+    "ok": true,
+    "result": {
+      "scope": {
+        "source": "all"
+      },
+      "page": {
+        "hasMore": false,
+        "nextCursor": null
+      },
+      "workers": [
+        {
+          "dispatchId": "ctx_codex",
+          "taskId": "task_codex",
+          "resource": {
+            "endpointIncarnation": "structured:example_codex",
+            "ownerDispatchId": "ctx_codex",
+            "ownershipState": "owned"
+          },
+          "projection": {
+            "provider": {
+              "id": "codex",
+              "model": "gpt-6.2-sol"
+            },
+            "stage": {
+              "detail": "input_accepted",
+              "activity": "working"
+            },
+            "outcome": "in_progress",
+            "liveness": {
+              "verdict": "live"
+            }
+          },
+          "workerState": "ready"
+        },
+        {
+          "dispatchId": "ctx_gemini",
+          "taskId": "task_gemini",
+          "resource": {
+            "endpointIncarnation": "structured:example_gemini",
+            "ownerDispatchId": "ctx_gemini",
+            "ownershipState": "owned"
+          },
+          "projection": {
+            "provider": null,
+            "stage": {
+              "activity": "working",
+              "detail": "input_accepted"
+            },
+            "outcome": "in_progress",
+            "liveness": {
+              "verdict": "live"
+            }
+          },
+          "workerState": "ready"
+        },
+        {
+          "dispatchId": "ctx_claude",
+          "taskId": "task_claude",
+          "resource": {
+            "endpointIncarnation": "structured:example_claude",
+            "ownerDispatchId": "ctx_claude",
+            "ownershipState": "owned"
+          },
+          "projection": {
+            "provider": {
+              "id": "claude",
+              "model": null
+            },
+            "stage": {
+              "activity": "working",
+              "detail": "input_accepted"
+            },
+            "outcome": "in_progress",
+            "liveness": {
+              "verdict": "live"
+            }
+          },
+          "workerState": "ready"
+        }
+      ]
+    }
+  },
+  "dispatch_show": {
+    "task_codex": {
+      "ok": true,
+      "result": {
+        "dispatch": {
+          "id": "ctx_codex",
+          "assignee_orca_session_id": "example_codex",
+          "creator_orca_session_id": "orca_session_id:claude_example"
+        }
+      }
+    },
+    "task_gemini": {
+      "ok": true,
+      "result": {
+        "dispatch": {
+          "id": "ctx_gemini",
+          "assignee_orca_session_id": "example_gemini",
+          "creator_orca_session_id": "claude_example"
+        }
+      }
+    },
+    "task_claude": {
+      "ok": true,
+      "result": {
+        "dispatch": {
+          "id": "ctx_claude",
+          "assignee_orca_session_id": "example_claude",
+          "creator_orca_session_id": "claude_example"
+        }
+      }
+    },
+    "task_follow": {
+      "ok": true,
+      "result": {
+        "dispatch": {
+          "id": "ctx_follow",
+          "assignee_orca_session_id": "example_codex",
+          "creator_orca_session_id": "claude_follow_up_sender",
+          "follow_up_of_dispatch_id": "ctx_codex"
+        }
+      }
+    }
+  },
+  "follow_up_worker": {
+    "dispatchId": "ctx_follow",
+    "taskId": "task_follow",
+    "resource": {
+      "endpointIncarnation": "structured:example_codex",
+      "ownerDispatchId": "ctx_follow",
+      "ownershipState": "owned"
+    },
+    "projection": {
+      "provider": {
+        "id": "codex",
+        "model": null
+      },
+      "stage": {
+        "detail": "input_accepted",
+        "activity": "working"
+      },
+      "outcome": "in_progress",
+      "liveness": {
+        "verdict": "live"
+      }
+    },
+    "workerState": "ready"
+  },
+  "bound_worker_list": {
+    "ok": true,
+    "result": {
+      "scope": {
+        "source": "bound",
+        "run": "run_example"
+      },
+      "workers": [],
+      "page": {
+        "hasMore": false,
+        "nextCursor": null
+      }
+    }
+  }
+}
