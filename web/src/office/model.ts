@@ -1,4 +1,14 @@
 import type { Session } from "../types";
+import type { Pt } from "./motion";
+
+export type Kind = "web" | "backend" | "data" | "mobile" | "game" | "infra" | "docs" | "other";
+export interface Room {
+  project: string; kind: Kind; x: number; y: number; w: number; h: number;
+  door: Pt; sign: Pt; desks: Pt[]; rack: Pt; pantry: Pt;
+}
+export interface Lobby {
+  x: number; y: number; w: number; h: number; yourDesk: Pt; door: Pt; corridorY: number;
+}
 
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
 export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave" | "report";
@@ -9,6 +19,7 @@ export interface Avatar {
 }
 export interface Cluster { project: string; origin: { x: number; y: number }; desks: { x: number; y: number }[] }
 export interface Office {
+  rooms?: Room[]; lobby?: Lobby;
   width: number; height: number; clusters: Cluster[]; yourDesk: { x: number; y: number };
   rack: { x: number; y: number }; pantry: { x: number; y: number }; door: { x: number; y: number }; avatars: Avatar[];
 }

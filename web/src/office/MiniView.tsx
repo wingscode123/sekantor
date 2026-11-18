@@ -7,7 +7,7 @@ import { defaultTheme, TILE, type Theme } from "./sprites";
 import "./mini.css";
 
 // Keep the original floor and characters, with only your desk in this close-up.
-const miniTheme: Theme = { ...defaultTheme, furniture(kind, ctx, x, y, frame) {
+const miniTheme: Theme = { ...defaultTheme, room: undefined, lobby: undefined, furniture(kind, ctx, x, y, frame) {
   if (kind === "your_desk") defaultTheme.furniture(kind, ctx, x, y, frame);
 } };
 const openFullOffice = (url: string) => window.location.assign(url);

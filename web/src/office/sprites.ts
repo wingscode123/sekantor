@@ -1,14 +1,16 @@
-import type { Look, Pose } from "./model";
+import type { Kind, Lobby, Look, Pose, Room } from "./model";
 
 export const TILE = 32;
 export const CHARACTER_HEIGHT = TILE * 3 / 2;
-export type TileKind = "floor" | "wall";
+export type TileKind = "floor" | "wall" | "corridor";
 export type FurnitureKind = "desk" | "chair" | "rack" | "coffee" | "plant" | "door" | "your_desk" | "window" | "lamp" | "bookshelf" | "rug" | "sunlight";
 export interface Theme {
   palette: string[];
   tile(kind: TileKind, ctx: CanvasRenderingContext2D, x: number, y: number): void;
   character(look: Look, pose: Pose, frame: number, ctx: CanvasRenderingContext2D, x: number, y: number): void;
   furniture(kind: FurnitureKind, ctx: CanvasRenderingContext2D, x: number, y: number, frame?: number): void;
+  room?(kind: Kind, ctx: CanvasRenderingContext2D, room: Room): void;
+  lobby?(ctx: CanvasRenderingContext2D, lobby: Lobby): void;
 }
 
 // Apricot plaster, oiled walnut and pools of gold, with petrol blue accents.
@@ -60,6 +62,15 @@ export function tileGrid(kind: TileKind, grain = 0): Grid {
     rect(0, 26, TILE, 5, Ink.Walnut);
     rect(0, 27, TILE, 1, Ink.Brass);
     rect(0, 31, TILE, 1, Ink.Cocoa);
+  } else if (kind === "corridor") {
+    rect(0, 0, TILE, TILE, Ink.Linen);
+    for (let y = 0; y < TILE; y += 16) {
+      const seam = (y + grain * 8) % TILE;
+      rect(0, y, TILE, 15, Ink.Plaster);
+      rect(seam, y, 1, 15, Ink.Stripe);
+      rect(0, y + 1, TILE, 1, Ink.Rim);
+      rect(0, y + 15, TILE, 1, Ink.Stripe);
+    }
   } else {
     const planks = [Ink.Wood, Ink.WoodLight, Ink.Wood, Ink.WoodDark];
     for (let row = 0; row < 4; row++) {
@@ -228,6 +239,103 @@ export function furnitureGrid(kind: FurnitureKind, frame = 0): Grid {
   return done();
 }
 
+type Decor = "sketch" | "screen" | "cables" | "chart" | "flasks" | "phones" | "arcade" | "server" | "sign";
+
+function decorGrid(kind: Decor): Grid {
+  const { rect, done } = grid();
+  switch (kind) {
+    case "sketch":
+    case "chart":
+      rect(2, 3, 28, 22, Ink.Walnut);
+      rect(4, 5, 24, 17, Ink.Cream);
+      rect(4, 22, 24, 2, Ink.Rim);
+      if (kind === "sketch") {
+        rect(6, 7, 10, 12, Ink.Glass);
+        rect(7, 10, 8, 8, Ink.Daylight);
+        rect(8, 12, 6, 2, Ink.Teal);
+        rect(19, 8, 6, 5, Ink.Gold);
+        rect(21, 14, 5, 5, Ink.Rose);
+      } else {
+        rect(6, 7, 1, 13, Ink.Ash);
+        rect(6, 19, 20, 1, Ink.Ash);
+        for (const [i, height] of [4, 8, 6, 11].entries())
+          rect(9 + i * 4, 19 - height, 3, height, i % 2 ? Ink.Teal : Ink.Lilac);
+      }
+      break;
+    case "screen":
+      rect(1, 5, 30, 15, Ink.Ink);
+      rect(3, 7, 26, 11, Ink.Petrol);
+      rect(4, 8, 8, 9, Ink.Teal);
+      rect(14, 8, 13, 5, Ink.Glass);
+      rect(14, 15, 7, 1, Ink.Mint);
+      rect(23, 15, 4, 1, Ink.Rose);
+      rect(14, 20, 4, 3, Ink.Slate);
+      rect(10, 23, 12, 2, Ink.Walnut);
+      break;
+    case "cables":
+      rect(2, 4, 28, 6, Ink.Slate);
+      for (const [i, color] of [Ink.Gold, Ink.Glass, Ink.Rose].entries()) {
+        const x = 5 + i * 5, y = 13 + i * 4;
+        rect(x, 7, 2, y - 5, color);
+        rect(x, y, 20 - i * 4, 2, color);
+        rect(x + 18 - i * 4, y, 2, 7, color);
+        rect(x + 17 - i * 4, y + 6, 4, 3, Ink.Ink);
+      }
+      break;
+    case "flasks":
+      rect(2, 23, 28, 3, Ink.Walnut);
+      for (const [i, color] of [Ink.Mint, Ink.Lilac, Ink.Glass].entries()) {
+        const x = 5 + i * 8;
+        rect(x + 2, 9 - i, 3, 8 + i, Ink.Daylight);
+        rect(x + 1, 16, 5, 6, Ink.Daylight);
+        rect(x, 19, 7, 4, color);
+        rect(x + 1, 19, 1, 2, Ink.Cream);
+      }
+      break;
+    case "phones":
+      for (const y of [3, 15]) {
+        rect(2, y + 10, 28, 2, Ink.Walnut);
+        for (const [i, color] of [Ink.Glass, Ink.Lilac, Ink.Teal].entries()) {
+          const x = 5 + i * 8;
+          rect(x, y, 6, 10, Ink.Ink);
+          rect(x + 1, y + 1, 4, 7, color);
+          rect(x + 2, y + 8, 2, 1, Ink.Linen);
+        }
+      }
+      break;
+    case "arcade":
+      rect(7, 2, 18, 26, Ink.Plum);
+      rect(8, 3, 16, 4, Ink.Gold);
+      rect(10, 9, 12, 9, Ink.Ink);
+      rect(11, 10, 10, 6, Ink.Petrol);
+      rect(13, 12, 2, 2, Ink.Mint);
+      rect(18, 13, 2, 1, Ink.Lilac);
+      rect(5, 18, 22, 4, Ink.Lilac);
+      rect(10, 17, 2, 3, Ink.Rose);
+      rect(19, 19, 4, 1, Ink.Gold);
+      rect(11, 24, 10, 2, Ink.Slate);
+      break;
+    case "server":
+      rect(2, 2, 28, 27, Ink.Ink);
+      rect(3, 2, 26, 2, Ink.Ash);
+      for (const x of [5, 17]) for (let y = 6; y < 26; y += 5) {
+        rect(x, y, 10, 4, Ink.Slate);
+        rect(x + 1, y + 1, 5, 2, Ink.Ink);
+        rect(x + 7, y + 1, 2, 1, y % 2 ? Ink.Gold : Ink.Mint);
+      }
+      break;
+    case "sign":
+      rect(1, 6, 30, 16, Ink.Cocoa);
+      rect(2, 6, 28, 14, Ink.Petrol);
+      rect(3, 7, 26, 1, Ink.Gold);
+      rect(3, 18, 26, 1, Ink.Teal);
+      rect(4, 11, 1, 3, Ink.Brass);
+      rect(27, 11, 1, 3, Ink.Brass);
+      break;
+  }
+  return done();
+}
+
 const index = <T,>(n: number, choices: readonly T[]) => choices[((n % choices.length) + choices.length) % choices.length];
 const skinTones = [[Ink.Sand, Ink.Peach], [Ink.Peach, Ink.Rose], [Ink.Ochre, Ink.Umber], [Ink.Umber, Ink.Cocoa]];
 const hairTones = [[Ink.Ink, Ink.Slate], [Ink.Cocoa, Ink.Umber], [Ink.Walnut, Ink.Ochre], [Ink.Brass, Ink.Gold], [Ink.Slate, Ink.Ash], [Ink.Oxide, Ink.Clay], [Ink.Plum, Ink.Lilac], [Ink.Ash, Ink.Linen]];
@@ -355,15 +463,114 @@ function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x:
   }
   ctx.drawImage(sprite, Math.round(x), Math.round(y));
 }
+
+type WallDecor = Decor | "rack" | "bookshelf" | "window" | "lamp";
+const roomDecor: Record<Kind, readonly WallDecor[]> = {
+  web: ["sketch", "screen"],
+  backend: ["rack", "cables", "rack"],
+  data: ["chart", "flasks"],
+  mobile: ["phones", "phones", "screen"],
+  game: ["arcade", "arcade", "arcade"],
+  infra: ["server", "server", "server", "cables"],
+  docs: ["bookshelf", "bookshelf", "bookshelf"],
+  other: ["window", "lamp", "bookshelf"],
+};
+const roomTrim: Record<Kind, Ink> = {
+  web: Ink.Teal, backend: Ink.Slate, data: Ink.Leaf, mobile: Ink.Glass,
+  game: Ink.Plum, infra: Ink.Petrol, docs: Ink.Oxide, other: Ink.Brass,
+};
+
+function fill(ctx: CanvasRenderingContext2D, color: Ink, x: number, y: number, w: number, h: number) {
+  ctx.fillStyle = palette[color];
+  ctx.fillRect(x, y, w, h);
+}
+
+function doorway(ctx: CanvasRenderingContext2D, x: number, y: number, side: boolean) {
+  fill(ctx, Ink.Cocoa, x, y, side ? 8 : TILE, side ? TILE : 8);
+  fill(ctx, Ink.Rim, x + (side ? 0 : 4), y + (side ? 4 : 0), side ? 8 : 24, side ? 24 : 8);
+  fill(ctx, Ink.Brass, x + (side ? 0 : 5), y + (side ? 5 : 7), side ? 8 : 22, side ? 22 : 1);
+  for (const end of [0, TILE - 5]) {
+    fill(ctx, Ink.Walnut, x + (side ? 0 : end), y + (side ? end : 0), side ? 8 : 5, side ? 5 : 14);
+    fill(ctx, Ink.Rim, x + (side ? 1 : end + 1), y + (side ? end + 1 : 1), side ? 6 : 1, side ? 1 : 12);
+  }
+}
+
 export const defaultTheme: Theme = {
   palette,
   tile(kind, ctx, x, y) {
-    const grain = kind === "floor" ? (Math.floor(x / TILE) + 3 * Math.floor(y / TILE)) % 4 : 0;
+    const grain = kind === "wall" ? 0 : (Math.floor(x / TILE) + 3 * Math.floor(y / TILE)) % 4;
     paint(`${kind}:${grain}`, () => tileGrid(kind, grain), ctx, x, y);
   },
   furniture(kind, ctx, x, y, frame = 0) {
     const f = kind === "rack" ? Math.floor(frame / 6) % 2 : 0;
     paint(`${kind}:${f}`, () => furnitureGrid(kind, f), ctx, x, y);
+  },
+  room(kind, ctx, room) {
+    const right = room.x + room.w - 1, front = room.y + room.h - 1;
+    const trim = roomTrim[kind];
+    for (let y = room.y; y <= front; y++) for (let x = room.x; x <= right; x++) {
+      const px = x * TILE, py = y * TILE;
+      const isSide = x === room.x || x === right;
+      if (x === room.door.x && y === room.door.y) {
+        doorway(ctx, px + (x === right ? TILE - 8 : 0), py, isSide);
+      } else if (y === room.y) {
+        this.tile("wall", ctx, px, py);
+        fill(ctx, trim, px, py + 28, TILE, 3);
+      } else {
+        if (y === front) {
+          fill(ctx, Ink.Cocoa, px, py, TILE, 8);
+          fill(ctx, trim, px, py + 2, TILE, 4);
+          fill(ctx, Ink.Rim, px, py + 2, TILE, 1);
+        }
+        if (!isSide) continue;
+        const edge = px + (x === right ? TILE - 8 : 0);
+        fill(ctx, Ink.Cocoa, edge, py, 8, TILE);
+        fill(ctx, trim, edge + 2, py, 4, TILE);
+        fill(ctx, Ink.Rim, edge + 2, py, 1, TILE);
+      }
+    }
+
+    const slots = [];
+    for (let x = room.x + 1; x < right; x++) {
+      if (room.door.y === room.y && room.door.x === x) continue;
+      if (room.sign.y === room.y && room.sign.x === x) continue;
+      slots.push(x);
+    }
+    const decor = roomDecor[kind];
+    for (const [i, piece] of decor.slice(0, slots.length).entries()) {
+      const slot = Math.floor((i + 0.5) * slots.length / Math.min(decor.length, slots.length));
+      const x = slots[slot] * TILE, y = room.y * TILE;
+      if (piece === "rack" || piece === "bookshelf" || piece === "lamp" || piece === "window") {
+        this.furniture(piece, ctx, x, y);
+      } else {
+        paint(`decor:${piece}`, () => decorGrid(piece), ctx, x, y);
+      }
+      if (kind === "game" && room.h > 2) {
+        fill(ctx, Ink.Plum, x + 1, y + TILE, 30, 11);
+        fill(ctx, Ink.Lilac, x + 3, y + TILE + 2, 26, 7);
+        fill(ctx, Ink.Gold, x + 13, y + TILE + 4, 6, 3);
+      }
+    }
+    paint("decor:sign", () => decorGrid("sign"), ctx, room.sign.x * TILE, room.sign.y * TILE);
+  },
+  lobby(ctx, lobby) {
+    const { x, y, w, h, door, yourDesk } = lobby;
+    for (let row = y; row < y + h; row++) for (let col = x; col < x + w; col++) {
+      this.tile("corridor", ctx, col * TILE, row * TILE);
+    }
+    for (const edge of [x * TILE, (x + w) * TILE - 8]) {
+      fill(ctx, Ink.Walnut, edge, y * TILE, 8, h * TILE);
+      fill(ctx, Ink.Teal, edge + 2, y * TILE, 4, h * TILE);
+      fill(ctx, Ink.Rim, edge + 2, y * TILE, 1, h * TILE);
+    }
+    if (w >= 5 && h >= 3) {
+      this.furniture("plant", ctx, (x + 1) * TILE, (y + 1) * TILE);
+      this.furniture("plant", ctx, (x + w - 2) * TILE, (y + 1) * TILE);
+    }
+    this.furniture("rug", ctx, yourDesk.x * TILE, yourDesk.y * TILE + TILE / 2);
+    this.furniture("chair", ctx, yourDesk.x * TILE, yourDesk.y * TILE + TILE / 2);
+    this.furniture("your_desk", ctx, yourDesk.x * TILE, yourDesk.y * TILE);
+    this.furniture("door", ctx, door.x * TILE, door.y * TILE);
   },
   character(look, pose, frame, ctx, x, y) {
     const f = pose === "run" || pose === "leave" || pose === "type" || pose === "smoke" ? frame % 4 : Math.floor(frame / 4) % 2;
