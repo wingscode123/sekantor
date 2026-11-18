@@ -499,7 +499,7 @@ export const defaultTheme: Theme = {
   },
   room(kind, ctx, room) {
     const right = room.x + room.w - 1, front = room.y + room.h - 1;
-    const trim = roomTrim[kind];
+    const trim = roomTrim[kind] ?? roomTrim.other;
     for (let y = room.y; y <= front; y++) for (let x = room.x; x <= right; x++) {
       const px = x * TILE, py = y * TILE;
       const isSide = x === room.x || x === right;
@@ -530,7 +530,7 @@ export const defaultTheme: Theme = {
       if (room.sign.y === room.y && x >= signStart && x < signStart + signWidth) continue;
       slots.push(x);
     }
-    const decor = roomDecor[kind];
+    const decor = roomDecor[kind] ?? roomDecor.other;
     for (const [i, piece] of decor.slice(0, slots.length).entries()) {
       const slot = Math.floor((i + 0.5) * slots.length / Math.min(decor.length, slots.length));
       const x = slots[slot] * TILE, y = room.y * TILE;

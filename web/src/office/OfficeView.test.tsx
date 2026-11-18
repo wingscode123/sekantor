@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "../App";
 import { OfficeView } from "./OfficeView";
 
@@ -112,8 +112,31 @@ describe("office page", () => {
     expect(cssWidth * 1.25).toBeCloseTo(canvas.width);
     expect(screen.getByText("repo", { exact: true }).getAttribute("title")).toBe("repo");
     for (const label of ["Your desk: permissions, questions, reports", "Server rack: running commands", "Pantry: idle", "Exit: session ended"]) {
-      expect(screen.getByText(label).getAttribute("title")!.length).toBeGreaterThan(label.length);
+      const sign = screen.getAllByText(label).find(el => el.classList.contains("office-sign"))!;
+      expect(sign.getAttribute("aria-hidden")).toBe("true");
     }
+    expect(screen.getByText("What the places mean")).toBeTruthy();
+    expect(screen.getByText(/Agents come here for approval/)).toBeTruthy();
+  });
+  it("anchors name plates above the seated avatar's head and hides plates when tiles are under 20px", () => {
+    const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
+    render(<OfficeView sessions={[session()]} />);
+    const plate = screen.getByTestId("name-plate") as HTMLButtonElement;
+    expect(plate.hidden).toBe(false);
+    const topPx = parseFloat(plate.style.top);
+    expect(topPx).toBeLessThan(2 * 30);
+    expect(topPx).toBeCloseTo(1.5 * 30);
+
+    spy.mockReturnValue(500);
+    act(() => { window.dispatchEvent(new Event("resize")); });
+    expect((screen.getByTestId("name-plate") as HTMLButtonElement).hidden).toBe(true);
+  });
+  it("fills the width with multiple room columns on wide viewports at 100% zoom", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    render(<OfficeView sessions={[session()]} />);
+    const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+    expect(canvas.width).toBe(48 * 32);
+    expect(parseFloat(canvas.style.width)).toBe(48 * 32);
   });
   it("excludes ended and snoozed agents from canvas counts but keeps snoozed live avatars", () => {
     mocks.state.sessions = [session(), { ...session("ended"), status: "ended" }, { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, { ...session("waiting"), status: "waiting_input", needs_you: true }];

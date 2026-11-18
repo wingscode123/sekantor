@@ -14,7 +14,11 @@ export interface Room {
   project: string; kind: Kind; x: number; y: number; w: number; h: number;
   door: Pt; sign: Pt; desks: Pt[]; rack: Pt; pantry: Pt;
 }
-export interface Lobby { x: number; y: number; w: number; h: number; yourDesk: Pt; door: Pt; corridorY: number }
+const VALID_KINDS = new Set<Kind>(["web", "backend", "data", "mobile", "game", "infra", "docs", "other"]);
+export function normaliseKind(kind: unknown): Kind {
+  return typeof kind === "string" && VALID_KINDS.has(kind as Kind) ? (kind as Kind) : "other";
+}
+export interface Lobby { x: number; y: number; w: number; h: number; yourDesk: Pt; door: Pt; corridorY: number; numCols?: number }
 export interface PlaceLabel { kind: Exclude<Place, "desk">; at: Pt; room?: string }
 export interface Office {
   rooms: Room[]; lobby: Lobby; places: PlaceLabel[];
@@ -64,15 +68,13 @@ export function isGhost(s: Session, now: number): boolean {
   const ended = Date.parse(s.ended_at || "");
   return s.status === "ended" && ended <= now && now < ended + GHOST_MS;
 }
-const ROOM_WIDTH = 14;
-const CORRIDOR_WIDTH = 3;
-const OFFICE_WIDTH = ROOM_WIDTH * 2 + CORRIDOR_WIDTH;
-const CENTRE = Math.floor(OFFICE_WIDTH / 2);
+export const ROOM_WIDTH = 14;
+export const CORRIDOR_WIDTH = 3;
 const slot = (anchor: Pt, i: number): Pt => ({
   x: anchor.x + i % 6, y: anchor.y + 1 + Math.floor(i / 6),
 });
 
-export function layoutOffice(sessions: Session[], now = Date.now()): Office {
+export function layoutOffice(sessions: Session[], now = Date.now(), availableWidth?: number): Office {
   const ordered = sessions.filter(s => s.status !== "ended" || isGhost(s, now))
     .sort((a, b) => compare(a.started_at, b.started_at) || compare(a.session_id, b.session_id));
   const membersByProject = new Map<string, Session[]>();
@@ -83,18 +85,26 @@ export function layoutOffice(sessions: Session[], now = Date.now()): Office {
     membersByProject.set(project, members);
   }
 
+  const numCols = availableWidth !== undefined
+    ? Math.max(2, Math.floor((availableWidth + CORRIDOR_WIDTH) / (ROOM_WIDTH + CORRIDOR_WIDTH)))
+    : 2;
+  const officeWidth = numCols * ROOM_WIDTH + (numCols - 1) * CORRIDOR_WIDTH;
+  const centre = Math.floor(officeWidth / 2);
+
   const rooms: Room[] = [], avatars: Avatar[] = [], places: PlaceLabel[] = [];
   const projects = [...membersByProject.keys()].sort(compare);
   let y = 0, rowHeight = 0;
   for (const [index, project] of projects.entries()) {
     const members = membersByProject.get(project)!;
-    const left = index % 2 === 0;
-    const x = left ? 0 : ROOM_WIDTH + CORRIDOR_WIDTH;
+    const col = index % numCols;
+    const x = col * (ROOM_WIDTH + CORRIDOR_WIDTH);
     const furnitureY = y + 3 + Math.ceil(members.length / 4) * 2;
     const h = furnitureY - y + Math.ceil(members.length / 6) + 2;
+    const doorOnRight = col === 0 || (col < numCols - 1 && col % 2 === 0);
+    const doorX = doorOnRight ? x + ROOM_WIDTH - 1 : x;
     const room: Room = {
-      project, kind: members.find(s => s.project)?.project?.kind ?? "other", x, y, w: ROOM_WIDTH, h,
-      door: { x: left ? x + ROOM_WIDTH - 1 : x, y: y + h - 2 },
+      project, kind: normaliseKind(members.find(s => s.project)?.project?.kind), x, y, w: ROOM_WIDTH, h,
+      door: { x: doorX, y: y + h - 2 },
       sign: { x: x + Math.floor(ROOM_WIDTH / 2), y },
       desks: [],
       rack: { x: x + 1, y: furnitureY },
@@ -117,7 +127,7 @@ export function layoutOffice(sessions: Session[], now = Date.now()): Office {
         place, pose, deskTile, targetTile, name: s.agent?.name || s.source_label || appOf(s), app: s.host_label || appOf(s), project });
     }
     rowHeight = Math.max(h, rowHeight);
-    if (!left) {
+    if (col === numCols - 1) {
       y += rowHeight + 1;
       rowHeight = 0;
     }
@@ -126,10 +136,11 @@ export function layoutOffice(sessions: Session[], now = Date.now()): Office {
   const lobbyY = y + (rowHeight ? rowHeight + 1 : 1);
   const lobbyRows = Math.ceil(avatars.length / 6);
   const lobby: Lobby = {
-    x: CENTRE - 8, y: lobbyY, w: 17, h: 5 + lobbyRows,
-    yourDesk: { x: CENTRE, y: lobbyY + 2 },
-    door: { x: CENTRE, y: lobbyY + 4 + lobbyRows },
+    x: centre - 8, y: lobbyY, w: 17, h: 5 + lobbyRows,
+    yourDesk: { x: centre, y: lobbyY + 2 },
+    door: { x: centre, y: lobbyY + 4 + lobbyRows },
     corridorY: lobbyY - 1,
+    numCols,
   };
   places.push({ kind: "your_desk", at: lobby.yourDesk }, { kind: "door", at: lobby.door });
   const bySession = new Map(avatars.map(a => [a.sessionId, a]));
@@ -144,7 +155,7 @@ export function layoutOffice(sessions: Session[], now = Date.now()): Office {
   }
 
   return {
-    width: OFFICE_WIDTH, height: lobby.y + lobby.h, rooms, lobby, places, avatars,
+    width: officeWidth, height: lobby.y + lobby.h, rooms, lobby, places, avatars,
     clusters: rooms.map(room => ({ project: room.project, origin: room.desks[0], desks: room.desks })),
     yourDesk: lobby.yourDesk, door: lobby.door,
     rack: rooms[0]?.rack ?? { x: lobby.x + 1, y: lobby.y + 2 },
@@ -157,7 +168,21 @@ export function roomSignWidth(room: Room): number {
 }
 
 export function isCorridorTile(lobby: Lobby, x: number, y: number): boolean {
-  return y <= lobby.corridorY && Math.abs(x - lobby.door.x) <= (CORRIDOR_WIDTH - 1) / 2;
+  if (y > lobby.corridorY) return false;
+  if (!lobby.numCols || lobby.numCols <= 2) {
+    return Math.abs(x - lobby.door.x) <= (CORRIDOR_WIDTH - 1) / 2;
+  }
+  const numCorridors = lobby.numCols - 1;
+  for (let k = 0; k < numCorridors; k++) {
+    const corrX = (k + 1) * ROOM_WIDTH + k * CORRIDOR_WIDTH;
+    if (x >= corrX && x < corrX + CORRIDOR_WIDTH) return true;
+  }
+  if (y === lobby.corridorY) {
+    const minX = Math.min(ROOM_WIDTH, lobby.door.x - 1);
+    const maxX = Math.max(numCorridors * (ROOM_WIDTH + CORRIDOR_WIDTH) - 1, lobby.door.x + 1);
+    if (x >= minX && x <= maxX) return true;
+  }
+  return false;
 }
 
 export function isWalkable(office: Office, point: Pt): boolean {
@@ -174,10 +199,9 @@ export function isWalkable(office: Office, point: Pt): boolean {
     && point.y > bounds.y && point.y < bounds.y + bounds.h - 1;
 }
 
-/** Return axis-aligned waypoints, excluding the starting tile. */
-export function route(office: Office, from: Pt, to: Pt): Pt[] {
-  const start = { x: Math.round(from.x), y: Math.round(from.y) };
-  if (!isWalkable(office, start) || !isWalkable(office, to)) return [];
+function bfsPath(office: Office, start: Pt, to: Pt): Pt[] | null {
+  if (!isWalkable(office, start) || !isWalkable(office, to)) return null;
+  if (start.x === to.x && start.y === to.y) return [];
   const key = ({ x, y }: Pt) => y * office.width + x;
   const parents = new Map<number, Pt | null>([[key(start), null]]);
   const queue = [start];
@@ -186,7 +210,6 @@ export function route(office: Office, from: Pt, to: Pt): Pt[] {
     if (point.x === to.x && point.y === to.y) {
       const path: Pt[] = [];
       for (let p = point; p !== start; p = parents.get(key(p))!) path.push(p);
-      if (from.x !== start.x || from.y !== start.y) path.push(start);
       return path.reverse();
     }
     for (const next of [
@@ -199,5 +222,42 @@ export function route(office: Office, from: Pt, to: Pt): Pt[] {
       queue.push(next);
     }
   }
-  return [];
+  return null;
+}
+
+/** Return axis-aligned waypoints, excluding the starting tile. */
+export function route(office: Office, from: Pt, to: Pt): Pt[] {
+  if (!isWalkable(office, to)) return [];
+  const isIntX = Math.abs(from.x - Math.round(from.x)) < 1e-6;
+  const isIntY = Math.abs(from.y - Math.round(from.y)) < 1e-6;
+  if (isIntX && isIntY) {
+    const start = { x: Math.round(from.x), y: Math.round(from.y) };
+    const path = bfsPath(office, start, to);
+    return path ?? [];
+  }
+  const x1 = Math.floor(from.x), x2 = Math.ceil(from.x);
+  const y1 = Math.floor(from.y), y2 = Math.ceil(from.y);
+  const p1 = { x: x1, y: y1 };
+  const p2 = isIntX ? { x: x1, y: y2 } : { x: x2, y: y1 };
+
+  const candidates: { first: Pt; path: Pt[]; cost: number }[] = [];
+  for (const p of [p1, p2]) {
+    if (!isWalkable(office, p)) continue;
+    const distToP = Math.abs(from.x - p.x) + Math.abs(from.y - p.y);
+    const subPath = bfsPath(office, p, to);
+    if (subPath !== null) {
+      candidates.push({
+        first: p,
+        path: subPath,
+        cost: distToP + subPath.length,
+      });
+    }
+  }
+  if (!candidates.length) return [];
+  candidates.sort((a, b) => a.cost - b.cost);
+  const best = candidates[0];
+  if (Math.abs(from.x - best.first.x) > 1e-6 || Math.abs(from.y - best.first.y) > 1e-6) {
+    return [best.first, ...best.path];
+  }
+  return best.path;
 }

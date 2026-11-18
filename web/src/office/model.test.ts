@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Session, Status } from "../types";
-import { identityOf, layoutOffice, lookFor, poseFor, route } from "./model";
+import { identityOf, layoutOffice, lookFor, normaliseKind, poseFor, route } from "./model";
 
 const session = (overrides: Partial<Session> = {}): Session => ({
   session_id: "one", source: "claude_code", source_label: "Claude Code",
@@ -206,6 +206,59 @@ it("uses detected projects and routes through room doors and the corridor withou
           && (point.x === x || point.x === x + w - 1 || point.y === y || point.y === y + h - 1);
         if (wall) expect(doors).toContainEqual(point);
       }
+    }
+  }
+});
+
+it("normalises unknown project kind to other in model", () => {
+  expect(normaliseKind("web")).toBe("web");
+  expect(normaliseKind("unknown-kind")).toBe("other");
+  expect(normaliseKind(undefined)).toBe("other");
+  const office = layoutOffice([session({ project: { name: "Custom", kind: "invalid-kind" as any, signals: [] } })]);
+  expect(office.rooms[0].kind).toBe("other");
+});
+
+it("supports 3 and 4 room columns when available width fits", () => {
+  const sessions = [
+    session({ session_id: "1", project: { name: "P1", kind: "web", signals: [] } }),
+    session({ session_id: "2", project: { name: "P2", kind: "backend", signals: [] } }),
+    session({ session_id: "3", project: { name: "P3", kind: "data", signals: [] } }),
+    session({ session_id: "4", project: { name: "P4", kind: "mobile", signals: [] } }),
+  ];
+  // 48 tiles fits 3 room columns
+  const office3 = layoutOffice(sessions, undefined, 48);
+  expect(office3.width).toBe(48);
+  expect(office3.rooms[0].x).toBe(0);
+  expect(office3.rooms[1].x).toBe(17);
+  expect(office3.rooms[2].x).toBe(34);
+  expect(office3.rooms[3].x).toBe(0); // next row
+  expect(office3.lobby.x).toBe(Math.floor(48 / 2) - 8);
+
+  // 65 tiles fits 4 room columns
+  const office4 = layoutOffice(sessions, undefined, 65);
+  expect(office4.width).toBe(65);
+  expect(office4.rooms.map(r => r.x)).toEqual([0, 17, 34, 51]);
+});
+
+it("routes smoothly from a fractional position without backtracking", () => {
+  const office = layoutOffice([session({ project: { name: "Studio", kind: "web", signals: [] } })]);
+  const start = office.rooms[0].desks[0];
+  // Move horizontally towards desk + 2
+  const target = { x: start.x + 2, y: start.y };
+  // Fractional position between start and target
+  const mid = { x: start.x + 0.5, y: start.y };
+  const waypoints = route(office, mid, target);
+  expect(waypoints[0].x).toBeGreaterThan(mid.x);
+  expect(waypoints.at(-1)).toEqual(target);
+});
+
+
+it("keeps every desk connected to the lobby door at 1 to 4 room columns", () => {
+  const sessions = Array.from({ length: 9 }, (_, i) => session({ session_id: String(i), project: { name: "P" + i, kind: "web", signals: [] } }));
+  for (const width of [31, 48, 65]) {
+    const office = layoutOffice(sessions, undefined, width);
+    for (const room of office.rooms) {
+      for (const desk of room.desks) expect(route(office, desk, office.door).length).toBeGreaterThan(0);
     }
   }
 });

@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
-import { CHARACTER_HEIGHT, TILE, characterGrid, furnitureGrid, palette, tileGrid, type FurnitureKind } from "./sprites";
-import type { Pose } from "./model";
+// @vitest-environment jsdom
+import { expect, it, vi } from "vitest";
+import { CHARACTER_HEIGHT, defaultTheme, TILE, characterGrid, furnitureGrid, palette, tileGrid, type FurnitureKind } from "./sprites";
+import type { Kind, Pose } from "./model";
 
 const look = { body: 0, hair: 1, shirt: 2, accessory: 3 };
 const fixtures: FurnitureKind[] = [
@@ -43,3 +44,28 @@ it("gives the report pose a separate silhouette for its held sheet", () => {
   expect(report[24][28]).not.toBe("0");
   expect(characterGrid(look, "work", 0)[24][28]).toBe("0");
 });
+
+it("draws rooms and lobby for all 8 kinds without throwing", () => {
+  const kinds: Kind[] = ["web", "backend", "data", "mobile", "game", "infra", "docs", "other"];
+  const ctx = {
+    fillStyle: "",
+    fillRect: vi.fn(),
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D;
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ fillStyle: "", fillRect: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  const room = {
+    project: "test", kind: "web" as Kind, x: 0, y: 0, w: 14, h: 6,
+    door: { x: 13, y: 4 }, sign: { x: 7, y: 0 }, desks: [{ x: 2, y: 2 }],
+    rack: { x: 1, y: 4 }, pantry: { x: 7, y: 4 },
+  };
+  for (const kind of kinds) {
+    expect(() => defaultTheme.room!(kind, ctx, { ...room, kind })).not.toThrow();
+  }
+  expect(ctx.drawImage).toHaveBeenCalled();
+  const lobby = {
+    x: 7, y: 7, w: 17, h: 6, yourDesk: { x: 15, y: 9 }, door: { x: 15, y: 12 }, corridorY: 6,
+  };
+  expect(() => defaultTheme.lobby!(ctx, lobby)).not.toThrow();
+  vi.restoreAllMocks();
+});
+

@@ -1,4 +1,4 @@
-import { isCorridorTile, route, type Avatar, type Office } from "./model";
+import { isCorridorTile, isWalkable, route, type Avatar, type Office } from "./model";
 import { Departures, followRoute, type Pt } from "./motion";
 import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
@@ -36,10 +36,17 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       office.rack.x, office.rack.y, office.pantry.x, office.pantry.y, office.door.x, office.door.y);
     if (lobby) {
       for (const room of rooms) for (const desk of room.desks) addDesk(desk);
+      for (const avatar of retained.values()) {
+        const room = rooms.find(r => r.project === avatar.project);
+        if (room && avatar.deskTile.x > room.x && avatar.deskTile.x < room.x + room.w - 1 &&
+            avatar.deskTile.y > room.y && avatar.deskTile.y < room.y + room.h - 1) {
+          addDesk(avatar.deskTile);
+        }
+      }
     } else {
       for (const cluster of office.clusters) for (const desk of cluster.desks) addDesk(desk);
+      for (const avatar of retained.values()) addDesk(avatar.deskTile);
     }
-    for (const avatar of retained.values()) addDesk(avatar.deskTile);
     let changed = architecture !== previousArchitecture || layout.length !== previousLayout.length;
     for (let i = 0; !changed && i < layout.length; i++) changed = layout[i] !== previousLayout[i];
     if (!changed || !layerCtx) return;
@@ -49,8 +56,15 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     layer.width = office.width * TILE; layer.height = office.height * TILE;
     layerCtx.imageSmoothingEnabled = false;
     for (let y = 0; y < office.height; y++) for (let x = 0; x < office.width; x++) {
-      const tile = lobby && isCorridorTile(lobby, x, y) ? "corridor" : !lobby && y === 0 ? "wall" : "floor";
-      theme.tile(tile, layerCtx, x * TILE, y * TILE);
+      if (lobby) {
+        if (isCorridorTile(lobby, x, y)) {
+          theme.tile("corridor", layerCtx, x * TILE, y * TILE);
+        } else if (rooms.some(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)) {
+          theme.tile("floor", layerCtx, x * TILE, y * TILE);
+        }
+      } else {
+        theme.tile(y === 0 ? "wall" : "floor", layerCtx, x * TILE, y * TILE);
+      }
     }
     if (lobby) {
       for (const room of rooms) theme.room!(room.kind, layerCtx, room);
@@ -97,6 +111,25 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       const nextGeometry = JSON.stringify([office.width, office.height, office.lobby,
         office.rooms.map(({ x, y, w, h, door }) => [x, y, w, h, door])]);
       if (nextGeometry !== geometry) {
+        if (previousOffice) {
+          const roomOf = (o: Office, project: string) => o.rooms.find(r => r.project === project);
+          const inLobby = (o: Office, p: Pt) => p.x >= o.lobby.x && p.x < o.lobby.x + o.lobby.w && p.y >= o.lobby.y && p.y < o.lobby.y + o.lobby.h;
+          for (const [key, avatar] of retained) {
+            const prevRoom = roomOf(previousOffice, avatar.project), nextRoom = roomOf(office, avatar.project);
+            const roomShift = prevRoom && nextRoom ? { x: nextRoom.x - prevRoom.x, y: nextRoom.y - prevRoom.y } : undefined;
+            const lobbyShift = { x: office.lobby.x - previousOffice.lobby.x, y: office.lobby.y - previousOffice.lobby.y };
+            // Departing avatars still carry the old layout's desk: move it with its room.
+            if (!live.has(key) && roomShift) {
+              retained.set(key, { ...avatar, deskTile: { x: avatar.deskTile.x + roomShift.x, y: avatar.deskTile.y + roomShift.y } });
+            }
+            const pos = positions.get(key);
+            if (!pos) continue;
+            const shift = inLobby(previousOffice, pos) || !roomShift ? lobbyShift : roomShift;
+            const translated = { x: pos.x + shift.x, y: pos.y + shift.y };
+            if (isWalkable(office, { x: Math.round(translated.x), y: Math.round(translated.y) })) positions.set(key, translated);
+            else positions.set(key, avatar.targetTile ?? avatar.deskTile);
+          }
+        }
         paths.clear();
         geometry = nextGeometry;
       }
@@ -115,7 +148,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       if (!path || path.target.x !== target.x || path.target.y !== target.y) {
         const waypoints = route(office, position, target);
         // A reflow can leave a previous position outside the new walkable layout.
-        if (!waypoints.length) position = target;
+        if (!waypoints.length && (position.x !== target.x || position.y !== target.y)) position = target;
         path = { target, waypoints };
         paths.set(key, path);
       }

@@ -109,3 +109,190 @@ it("publishes key-based native positions in paint order across office replacemen
   expect([...onFrame.mock.lastCall![0]]).toEqual([...positions]);
   stop();
 });
+
+it("walks an avatar along route waypoints through doors, not in a straight line", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const room = {
+    project: "p", kind: "web" as const, x: 0, y: 0, w: 14, h: 6,
+    door: { x: 13, y: 4 }, sign: { x: 7, y: 0 }, desks: [{ x: 2, y: 2 }],
+    rack: { x: 1, y: 4 }, pantry: { x: 7, y: 4 },
+  };
+  const lobby = {
+    x: 7, y: 7, w: 17, h: 5, yourDesk: { x: 15, y: 9 }, door: { x: 15, y: 11 }, corridorY: 6,
+  };
+  const avatar = {
+    key: "a", sessionId: "a", identity: "a", seat: 0,
+    look: { body: 0, hair: 0, shirt: 0, accessory: 0 },
+    place: "desk" as const, pose: "type" as const,
+    deskTile: { x: 2, y: 2 }, targetTile: { x: 2, y: 2 },
+    name: "a", app: "a", project: "p",
+  };
+  let current: Office = {
+    width: 31, height: 12, clusters: [], rooms: [room], places: [],
+    lobby, yourDesk: lobby.yourDesk, rack: room.rack, pantry: room.pantry,
+    door: lobby.door, avatars: [avatar],
+  };
+  const visited: { x: number; y: number }[] = [];
+  let record = false;
+  const stop = startRenderer(canvas, () => current, { ...theme, room: vi.fn(), lobby: vi.fn() }, positions => {
+    const p = positions.get("a");
+    if (p && record) visited.push({ x: p.x / TILE, y: (p.y + CHARACTER_HEIGHT - TILE) / TILE });
+  });
+  vi.advanceTimersByTime(5000);
+  record = true;
+  current = { ...current, avatars: [{ ...avatar, targetTile: lobby.yourDesk }] };
+  canvas.dispatchEvent(new Event("officechange"));
+  for (let i = 0; i < 40; i++) vi.advanceTimersByTime(100);
+  stop();
+  const passedDoor = visited.some(p => Math.abs(p.x - room.door.x) < 0.5 && Math.abs(p.y - room.door.y) < 0.5);
+  expect(passedDoor).toBe(true);
+  const throughWall = visited.some(p => p.x < 13 && p.y > 5 && p.y < 6);
+  expect(throughWall).toBe(false);
+});
+
+it("re-targets mid-route from a fractional position without a jump", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const room = {
+    project: "p", kind: "web" as const, x: 0, y: 0, w: 14, h: 6,
+    door: { x: 13, y: 4 }, sign: { x: 7, y: 0 }, desks: [{ x: 2, y: 2 }],
+    rack: { x: 1, y: 4 }, pantry: { x: 7, y: 4 },
+  };
+  const lobby = {
+    x: 7, y: 7, w: 17, h: 5, yourDesk: { x: 15, y: 9 }, door: { x: 15, y: 11 }, corridorY: 6,
+  };
+  const avatar = {
+    key: "a", sessionId: "a", identity: "a", seat: 0,
+    look: { body: 0, hair: 0, shirt: 0, accessory: 0 },
+    place: "desk" as const, pose: "work" as const,
+    deskTile: { x: 2, y: 2 }, targetTile: { x: 2, y: 2 },
+    name: "a", app: "a", project: "p",
+  };
+  let current: Office = {
+    width: 31, height: 12, clusters: [], rooms: [room], places: [],
+    lobby, yourDesk: lobby.yourDesk, rack: room.rack, pantry: room.pantry,
+    door: lobby.door, avatars: [avatar],
+  };
+  let lastPos: { x: number; y: number } | undefined;
+  const stop = startRenderer(canvas, () => current, { ...theme, room: vi.fn(), lobby: vi.fn() }, positions => {
+    const p = positions.get("a");
+    if (p) lastPos = { x: p.x / TILE, y: (p.y + CHARACTER_HEIGHT - TILE) / TILE };
+  });
+  vi.advanceTimersByTime(8000);
+  expect(lastPos).toEqual({ x: 2, y: 2 });
+  current = { ...current, avatars: [{ ...avatar, targetTile: { x: 10, y: 2 } }] };
+  canvas.dispatchEvent(new Event("officechange"));
+  vi.advanceTimersByTime(200);
+  const midPos = { ...lastPos! };
+  expect(midPos.x).toBeGreaterThan(2);
+  expect(midPos.x).toBeLessThan(10);
+  current = { ...current, avatars: [{ ...avatar, targetTile: { x: 7, y: 4 } }] };
+  canvas.dispatchEvent(new Event("officechange"));
+  vi.advanceTimersByTime(100);
+  expect(Math.abs(lastPos!.x - midPos.x)).toBeLessThan(1.0);
+  expect(Math.abs(lastPos!.y - midPos.y)).toBeLessThan(1.0);
+  stop();
+});
+
+it("translates a walking avatar by its room's offset on reflow instead of snapping to the target", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const room1 = {
+    project: "p", kind: "web" as const, x: 0, y: 0, w: 14, h: 6,
+    door: { x: 13, y: 4 }, sign: { x: 7, y: 0 }, desks: [{ x: 2, y: 2 }],
+    rack: { x: 1, y: 4 }, pantry: { x: 7, y: 4 },
+  };
+  const lobby1 = {
+    x: 7, y: 7, w: 17, h: 5, yourDesk: { x: 15, y: 9 }, door: { x: 15, y: 11 }, corridorY: 6,
+  };
+  const avatar = {
+    key: "a", sessionId: "a", identity: "a", seat: 0,
+    look: { body: 0, hair: 0, shirt: 0, accessory: 0 },
+    place: "desk" as const, pose: "work" as const,
+    deskTile: { x: 2, y: 2 }, targetTile: { x: 2, y: 2 },
+    name: "a", app: "a", project: "p",
+  };
+  let current: Office = {
+    width: 31, height: 12, clusters: [], rooms: [room1], places: [],
+    lobby: lobby1, yourDesk: lobby1.yourDesk, rack: room1.rack, pantry: room1.pantry,
+    door: lobby1.door, avatars: [avatar],
+  };
+  let lastPos: { x: number; y: number } | undefined;
+  const stop = startRenderer(canvas, () => current, { ...theme, room: vi.fn(), lobby: vi.fn() }, positions => {
+    const p = positions.get("a");
+    if (p) lastPos = { x: p.x / TILE, y: (p.y + CHARACTER_HEIGHT - TILE) / TILE };
+  });
+  vi.advanceTimersByTime(8000);
+  expect(lastPos).toEqual({ x: 2, y: 2 });
+  current = { ...current, avatars: [{ ...avatar, targetTile: { x: 10, y: 2 } }] };
+  canvas.dispatchEvent(new Event("officechange"));
+  vi.advanceTimersByTime(400);
+  const walking = { ...lastPos! };
+  expect(walking.x).toBeGreaterThan(2);
+  expect(walking.x).toBeLessThan(10);
+  const room2 = { ...room1, y: 4, door: { x: 13, y: 8 }, desks: [{ x: 2, y: 6 }], rack: { x: 1, y: 8 }, pantry: { x: 7, y: 8 } };
+  const lobby2 = { ...lobby1, y: 11, corridorY: 10, yourDesk: { x: 15, y: 13 }, door: { x: 15, y: 15 } };
+  current = {
+    ...current, height: 16, rooms: [room2], lobby: lobby2,
+    avatars: [{ ...avatar, deskTile: { x: 2, y: 6 }, targetTile: { x: 10, y: 6 } }],
+  };
+  canvas.dispatchEvent(new Event("officechange"));
+  vi.advanceTimersByTime(90);
+  expect(lastPos!.y).toBeCloseTo(walking.y + 4, 5);
+  expect(Math.abs(lastPos!.x - walking.x)).toBeLessThan(1);
+  stop();
+});
+
+it("moves a departing avatar's old desk with its room instead of leaving it in the walls", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const furniture = vi.fn();
+  const room1 = {
+    project: "p", kind: "web" as const, x: 0, y: 0, w: 14, h: 6,
+    door: { x: 13, y: 4 }, sign: { x: 7, y: 0 }, desks: [{ x: 2, y: 2 }],
+    rack: { x: 1, y: 4 }, pantry: { x: 7, y: 4 },
+  };
+  const lobby1 = { x: 7, y: 7, w: 17, h: 5, yourDesk: { x: 15, y: 9 }, door: { x: 15, y: 11 }, corridorY: 6 };
+  const avatar = {
+    key: "a", sessionId: "a", identity: "a", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 },
+    place: "desk" as const, pose: "work" as const, deskTile: { x: 2, y: 2 }, targetTile: { x: 2, y: 2 }, name: "a", app: "a", project: "p",
+  };
+  let current: Office = {
+    width: 31, height: 12, clusters: [], rooms: [room1], places: [], lobby: lobby1,
+    yourDesk: lobby1.yourDesk, rack: room1.rack, pantry: room1.pantry, door: lobby1.door, avatars: [avatar],
+  };
+  const stop = startRenderer(canvas, () => current, { ...theme, furniture, room: vi.fn(), lobby: vi.fn() });
+  vi.advanceTimersByTime(1000);
+  const room2 = { ...room1, y: 4, door: { x: 13, y: 8 }, desks: [], rack: { x: 1, y: 8 }, pantry: { x: 7, y: 8 } };
+  const lobby2 = { ...lobby1, y: 11, corridorY: 10, yourDesk: { x: 15, y: 13 }, door: { x: 15, y: 15 } };
+  furniture.mockClear();
+  current = { ...current, height: 16, rooms: [room2], lobby: lobby2, avatars: [], rack: room2.rack, pantry: room2.pantry,
+    yourDesk: lobby2.yourDesk, door: lobby2.door };
+  canvas.dispatchEvent(new Event("officechange"));
+  vi.advanceTimersByTime(100);
+  const desks = furniture.mock.calls.filter(c => c[0] === "desk").map(c => [c[2] / TILE, c[3] / TILE]);
+  expect(desks).toContainEqual([2, 6]);
+  expect(desks).not.toContainEqual([2, 2]);
+  stop();
+});
+
+it("does not paint walkable-looking floor outside rooms/corridor/lobby", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const tile = vi.fn();
+  const room = {
+    project: "p", kind: "web" as const, x: 0, y: 0, w: 14, h: 6,
+    door: { x: 13, y: 4 }, sign: { x: 7, y: 0 }, desks: [{ x: 2, y: 2 }],
+    rack: { x: 1, y: 4 }, pantry: { x: 7, y: 4 },
+  };
+  const lobby = {
+    x: 7, y: 7, w: 17, h: 5, yourDesk: { x: 15, y: 9 }, door: { x: 15, y: 11 }, corridorY: 6,
+  };
+  const current: Office = {
+    width: 48, height: 12, clusters: [], rooms: [room], places: [],
+    lobby, yourDesk: lobby.yourDesk, rack: room.rack, pantry: room.pantry,
+    door: lobby.door, avatars: [],
+  };
+  const stop = startRenderer(canvas, () => current, { ...theme, tile, room: vi.fn(), lobby: vi.fn() });
+  const outsideFloor = tile.mock.calls.some(([kind, , px, py]) => kind === "floor" && px === 35 * TILE && py === 2 * TILE);
+  expect(outsideFloor).toBe(false);
+  stop();
+});
+
+
