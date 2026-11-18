@@ -5,12 +5,12 @@ Pure functions, no I/O: ``apply`` (one event), ``inbox_order`` (FR-10), ``sweep`
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Callable, Iterable
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Iterable, Literal
 
 from pydantic import BaseModel
 
-from sekantor.schema import Agent, Capability, Event, Host, Request, Status, Workspace
+from sekantor.schema import SUBAGENT_EVENTS, Activity, Agent, Capability, Event, Host, Request, Status, Workspace
 
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
 WAITING = {Status.waiting_approval, Status.waiting_input}
@@ -28,6 +28,17 @@ PRIORITY = {
 
 SILENCE_TIMEOUT = timedelta(minutes=10)
 ENDED_GRACE = timedelta(seconds=15)
+SUBAGENT_REPORT_TTL = timedelta(seconds=60)
+
+
+class SubagentState(BaseModel):
+    id: str
+    type: str = "unknown"
+    status: Literal["working", "reported"] = "working"
+    activity: Activity | None = None
+    summary: str | None = None
+    started_at: datetime
+    ended_at: datetime | None = None
 
 
 class SessionState(BaseModel):
@@ -48,7 +59,12 @@ class SessionState(BaseModel):
     capabilities: list[Capability] = []
     pid: int | None = None
     activity: dict | None = None  # {"tool", "kind"} of the last tool started while running (ADR-0022)
+    subagents: list[SubagentState] = []
     snoozed_until: datetime | None = None  # FR-15: no notifications until then
+
+    def prune_subagents(self, now: datetime) -> None:
+        cutoff = now - SUBAGENT_REPORT_TTL
+        self.subagents = [a for a in self.subagents if a.ended_at is None or a.ended_at > cutoff]
 
     def snoozed(self, now: datetime) -> bool:
         return self.snoozed_until is not None and self.snoozed_until > now
@@ -76,8 +92,46 @@ def _activity(event: Event) -> dict | None:
     return event.activity.model_dump() if event.activity else None
 
 
+def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
+    # A child can arrive before SessionStart. Allow an earlier parent event to replace the default status.
+    s = state.model_copy(deep=True) if state else SessionState(
+        session_id=event.session_id,
+        source=event.source,
+        status=Status.running,
+        status_since=event.ts,
+        status_ts=datetime.min.replace(tzinfo=timezone.utc),
+        started_at=event.ts,
+        last_event_at=event.ts,
+        agent=event.agent,
+        workspace=_merge_workspace(Workspace(), event.workspace),
+        host=event.host,
+        pid=event.process.pid if event.process else None,
+    )
+    s.last_event_at = max(s.last_event_at, event.ts)
+    if event.subagent is None or event.type not in SUBAGENT_EVENTS:
+        return s
+    worker = next((a for a in s.subagents if a.id == event.subagent.id), None)
+    if worker is None:
+        worker = SubagentState(id=event.subagent.id, started_at=event.ts)
+        s.subagents.append(worker)
+    worker.started_at = min(worker.started_at, event.ts)
+    if event.subagent.type:
+        worker.type = event.subagent.type
+    if event.type == "subagent_ended" and (worker.ended_at is None or event.ts >= worker.ended_at):
+        worker.status = "reported"
+        worker.summary = event.summary
+        worker.ended_at = event.ts
+        worker.activity = None
+    elif event.type == "subagent_activity" and worker.status == "working":
+        worker.activity = event.activity
+    s.subagents.sort(key=lambda a: a.status == "reported")
+    return s
+
+
 def apply(state: SessionState | None, event: Event) -> SessionState:
     """Return the session state after ``event``. Never mutates ``state``."""
+    if event.type in SUBAGENT_EVENTS or event.subagent is not None:
+        return _apply_subagent(state, event)
     if state is None:
         status = event.status or Status.running
         return SessionState(
@@ -102,6 +156,8 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     s = state.model_copy(deep=True)
     newer = event.ts >= s.status_ts
     s.last_event_at = max(s.last_event_at, event.ts)
+    if event.type == "session_started":
+        s.started_at = min(s.started_at, event.ts)
 
     # Details that are safe to take from any event, in any order.
     if event.agent is not None:

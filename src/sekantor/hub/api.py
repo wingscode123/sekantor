@@ -29,6 +29,9 @@ MAX_BATCH = 100
 def session_json(s: SessionState, settings: Settings | None = None) -> dict[str, Any]:
     from sekantor.hub.opener import plan
 
+    # Action responses may serialize a state loaded directly for a write.
+    s = s.model_copy()
+    s.prune_subagents(datetime.now(timezone.utc))
     d = s.model_dump(mode="json", exclude={"status_ts"})
     project = None
     if s.source == "openbot" or (s.host and s.host.app == "openbot"):

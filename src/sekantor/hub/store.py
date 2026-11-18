@@ -78,6 +78,7 @@ class Store:
                     self._db.execute("ROLLBACK")
                     return None
                 state = apply(self._get_session(event.session_id), event)
+                state.prune_subagents(received_at)
                 self._put_session(state)
                 self._db.execute("COMMIT")
                 return state
@@ -124,7 +125,10 @@ class Store:
 
     def session(self, session_id: str) -> SessionState | None:
         with self._lock:
-            return self._get_session(session_id)
+            state = self._get_session(session_id)
+        if state is not None:
+            state.prune_subagents(_now())
+        return state
 
     def sessions(self, status: Status | None = None) -> list[SessionState]:
         with self._lock:
@@ -132,7 +136,11 @@ class Store:
                 rows = self._db.execute("SELECT body FROM sessions").fetchall()
             else:
                 rows = self._db.execute("SELECT body FROM sessions WHERE status = ?", (status.value,)).fetchall()
-        return [SessionState.model_validate_json(r[0]) for r in rows]
+        now = _now()
+        states = [SessionState.model_validate_json(r[0]) for r in rows]
+        for state in states:
+            state.prune_subagents(now)
+        return states
 
     def events(self, session_id: str, limit: int = 50) -> list[Event]:
         """The latest ``limit`` events of a session, oldest first."""

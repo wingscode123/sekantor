@@ -40,6 +40,41 @@ def test_first_event_creates_session():
     assert s.workspace.cwd == "/w" and s.workspace.branch == "main"
 
 
+def test_subagent_lifecycle_preserves_parent_state():
+    parent = run(ev(Status.running, summary="Parent is editing", activity={"tool": "Edit", "kind": "edit"}))
+    junior = {"id": "junior"}
+    started = apply(parent, ev(None, at=1, type="subagent_started", subagent={**junior, "type": "Explore"}))
+    working = apply(started, ev(None, at=2, type="subagent_activity", subagent=junior,
+                                activity={"tool": "Read", "kind": "read"}))
+    assert working.subagents[0].activity.tool == "Read"
+    assert working.subagents[0].status == "working"
+    ended = apply(working, ev(None, at=3, type="subagent_ended", subagent=junior, summary="Found it"))
+    another = apply(ended, ev(None, at=4, type="subagent_started", subagent={"id": "another"}))
+    assert [a.id for a in another.subagents] == ["another", "junior"]
+    assert another.subagents[1].model_dump() == {
+        "id": "junior", "type": "Explore", "status": "reported", "activity": None, "summary": "Found it",
+        "started_at": T0 + timedelta(seconds=1), "ended_at": T0 + timedelta(seconds=3),
+    }
+    for state in (started, working, ended, another):
+        assert (state.status, state.status_ts, state.activity, state.summary) == (
+            parent.status, parent.status_ts, parent.activity, parent.summary,
+        )
+    assert parent.subagents == []
+
+
+def test_late_subagent_start_and_activity_do_not_reopen_report():
+    s = run(
+        ev(None, at=3, type="subagent_ended", subagent={"id": "junior"}, summary="Found it"),
+        ev(Status.waiting_input, type="session_started", summary="Parent started"),
+        ev(None, at=1, type="subagent_started", subagent={"id": "junior", "type": "Explore"}),
+        ev(None, at=2, type="subagent_activity", subagent={"id": "junior"}, activity={"tool": "Read", "kind": "read"}),
+    )
+    assert s.status is Status.waiting_input and s.summary == "Parent started"
+    worker, = s.subagents
+    assert worker.status == "reported" and worker.summary == "Found it" and worker.activity is None
+    assert worker.type == "Explore" and worker.started_at == T0 + timedelta(seconds=1)
+
+
 def test_running_then_waiting_then_ended():
     s = run(
         ev(Status.waiting_input, at=0, type="session_started"),

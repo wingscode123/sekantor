@@ -1,6 +1,6 @@
 """Claude Code hook payload -> SeKantor event v1 (as a plain dict; stdlib only, the hook imports this).
 
-Mapping per ADR-0002. Returns None for hooks that must not change anything (e.g. SubagentStop).
+Mapping per ADR-0002 and ADR-0028. Returns None for hooks with no state update.
 """
 
 from __future__ import annotations
@@ -110,9 +110,27 @@ def translate(payload: dict) -> dict | None:
     summary: str | None = None
     request: dict | None = None
     activity: dict | None = None
+    subagent: dict | None = None
     tool = payload.get("tool_name")
+    agent_id = payload.get("agent_id")
 
-    if name == "SessionStart":
+    if name in ("SubagentStart", "SubagentStop") or agent_id:
+        if not isinstance(agent_id, str) or not agent_id:
+            return None
+        subagent = {"id": agent_id}
+        if agent_type := payload.get("agent_type"):
+            subagent["type"] = agent_type
+        if name == "SubagentStart":
+            etype = "subagent_started"
+        elif name == "SubagentStop":
+            etype = "subagent_ended"
+            summary = _clip(payload.get("last_assistant_message"), SUMMARY_MAX)
+        elif name == "PreToolUse" and tool:
+            etype = "subagent_activity"
+            activity = {"tool": str(tool)[:100], "kind": activity_kind(tool)}
+        else:
+            return None  # other hooks from a subagent must not change the parent
+    elif name == "SessionStart":
         etype = "session_started"
         source = payload.get("source")
         status = None if source == "compact" else "waiting_input"
@@ -170,7 +188,7 @@ def translate(payload: dict) -> dict | None:
         status = "ended"
         summary = _clip(f"Ended ({payload.get('reason')})" if payload.get("reason") else "Ended", SUMMARY_MAX)
     else:
-        return None  # SubagentStart/Stop and anything else never changes the session
+        return None
 
     cwd = payload.get("cwd")
     event = {
@@ -186,5 +204,6 @@ def translate(payload: dict) -> dict | None:
         "summary": summary,
         "request": request,
         "activity": activity,
+        "subagent": subagent,
     }
     return {k: v for k, v in event.items() if v is not None}
