@@ -26,7 +26,7 @@ export default function App() {
   }));
   const [chosen, setChosen] = useState<Floor>();
   const active = available.some(floor => floor.id === chosen) ? chosen : defaultFloor(available);
-  useEffect(() => { if (active) setChosen(active); }, [active]);
+  if (active && active !== chosen) setChosen(active);
   useEffect(() => { document.title = needs ? `(${needs}) SeKantor` : "SeKantor"; }, [needs]);
   return <>
     <a className="skip" href="#main">Skip to the office</a>

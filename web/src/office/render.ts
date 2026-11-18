@@ -1,9 +1,21 @@
-import { isCorridorTile, isWalkable, route, type Avatar, type Office } from "./model";
+import { isCorridorTile, isWalkable, route, SUBAGENT_REPORT_MS, type Avatar, type Office } from "./model";
 import { Departures, followRoute, type Pt } from "./motion";
 import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
 /** Native-pixel avatar top-left positions (32x48 sprites), keyed by avatar.key in paint order. */
 export type FramePositions = ReadonlyMap<string, Readonly<Pt>>;
+
+const walkedReports = new Map<string, number>();
+
+function claimTeamReport(sessionId: string, since: string): boolean {
+  const now = Date.now(), started = Date.parse(since), expiry = started + SUBAGENT_REPORT_MS;
+  if (!(started <= now && now < expiry)) return false;
+  const id = JSON.stringify([sessionId, since]);
+  if (walkedReports.has(id)) return false;
+  for (const [key, until] of walkedReports) if (until <= now) walkedReports.delete(key);
+  walkedReports.set(id, expiry);
+  return true;
+}
 
 /** Dispatch `officechange` on the canvas after replacing an empty office, or restart this renderer. */
 export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void, onJuniorDeparture?: (keys: string[]) => void): () => void {
@@ -154,8 +166,12 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       const report = avatar.teamReport;
       const isLive = live.has(key);
       let handoff = handoffs.get(key);
-      if (isLive && ((!handoff && junior?.status === "reported") || (report && handoff?.since !== report.since))) {
-        handoff = { remaining: 750, delivered: false, since: report?.since };
+      if (isLive && !handoff && junior?.status === "reported") {
+        handoff = { remaining: 750, delivered: false };
+        handoffs.set(key, handoff);
+      }
+      if (isLive && report && handoff?.since !== report.since) {
+        handoff = { remaining: 750, delivered: !claimTeamReport(avatar.sessionId, report.since), since: report.since };
         handoffs.set(key, handoff);
       }
       const leaving = !isLive || avatar.pose === "leave" || (junior && handoff?.delivered);
@@ -180,7 +196,8 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       position = followRoute(position, path.waypoints, dt);
       positions.set(key, position);
       if (handoff && meeting && !leaving && position.x === target.x && position.y === target.y) {
-        receiving.add(report?.lead ?? avatar.sessionId);
+        const recipient = report ? report.lead : avatar.sessionId;
+        if (recipient) receiving.add(recipient);
         if (wasAtMeeting) handoff.remaining -= dt;
         handoff.delivered = handoff.remaining <= 0;
       }

@@ -3,7 +3,7 @@ import { isSnoozed } from "../SessionMenu";
 import type { Session } from "../types";
 import { juniorKey, layoutOffice, roomSignWidth, type PlaceLabel } from "./model";
 import { startRenderer, type FramePositions } from "./render";
-import { CHARACTER_HEIGHT, floorBackground, TILE } from "./sprites";
+import { CHARACTER_HEIGHT, floorBackground, FLOOR_PERIOD, TILE } from "./sprites";
 import { modelBadge } from "./floors";
 
 import { AvatarCard, statusText } from "./AvatarCard";
@@ -106,7 +106,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const avatar = mainAvatars.find(a => a.sessionId === selected);
   return <>
     <div className="office-viewport" ref={viewport} style={{
-      backgroundImage: floorBackground, backgroundSize: `${tileSize}px ${tileSize}px`,
+      backgroundImage: floorBackground, backgroundSize: `${tileSize * FLOOR_PERIOD}px ${tileSize * FLOOR_PERIOD}px`,
       backgroundPosition: `${size.inset}px ${size.insetY}px`, backgroundRepeat: "repeat",
     }}>
       <div className="office-floor" style={{ marginLeft: size.inset, marginTop: size.insetY, width, height }}>

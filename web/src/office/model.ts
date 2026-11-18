@@ -8,7 +8,7 @@ export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | 
 export interface Look { body: number; hair: number; shirt: number; accessory: number }
 export interface Avatar {
   junior?: { status: Subagent["status"]; meeting: Pt; door: Pt };
-  teamReport?: { lead: string; meeting: Pt; since: string };
+  teamReport?: { lead?: string; meeting: Pt; since: string };
   key: string; sessionId: string; identity: string; seat: number; look: Look;
   place: Place; pose: Pose; targetTile?: { x: number; y: number }; deskTile: { x: number; y: number }; name: string; app: string; project: string;
 }
@@ -96,6 +96,7 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
   const seats = new Map<string, number>();
   const desks: Pt[] = [];
   const people: Avatar[] = [];
+  const leadDesks: Pt[] = [];
   const worktrees: NonNullable<Room["worktrees"]> = [];
   const groupOf = (s: Session) => floorOf(s) === "orca" && s.team
     ? s.team.role === "lead" ? "" : s.team.worktree : undefined;
@@ -113,8 +114,8 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
       col = 0;
       shelfHeight = 1;
       if (group) {
-        if (people.length) row++;
-        worktrees.push({ name: group, sign: { x: 2, y: 1 + 2 * row } });
+        row++;
+        worktrees.push({ name: group, sign: { x: 2, y: 2 * row } });
       }
       lastGroup = group;
     }
@@ -140,6 +141,7 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
     const look = lookFor(identity, seat);
     const app = s.host_label || appOf(s);
     desks.push(deskTile);
+    if (group === "") leadDesks.push(deskTile);
     people.push({ key: s.session_id, sessionId: s.session_id, identity, seat, look, ...poseFor(s),
       deskTile, name: s.agent?.name || s.source_label || appOf(s), app, project });
     for (const [i, junior] of juniors.entries()) {
@@ -148,6 +150,7 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
       const meeting = { x: deskTile.x, y: deskTile.y + 1 };
       const juniorDesk = deskAt(i + 1);
       desks.push(juniorDesk);
+      if (group === "") leadDesks.push(juniorDesk);
       people.push({
         key: juniorKey(s.session_id, junior.id), sessionId: s.session_id, identity, seat, look,
         place: "desk", pose: reporting ? "deliver" : activityPose(junior.activity).pose,
@@ -160,9 +163,21 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
     shelfHeight = Math.max(shelfHeight, Math.ceil(groupSize / columns));
   }
   const w = Math.max(7, usedColumns * 3 + 2);
-  if (groupOf(arranged[0]) === "" && (arranged.length === 1 || groupOf(arranged[1]) !== "") &&
-      !(arranged[0].subagents?.length)) {
-    desks[0].x = Math.floor(w / 2);
+  const leadRows = new Map<number, Pt[]>();
+  for (const desk of leadDesks) {
+    const line = leadRows.get(desk.y) ?? [];
+    line.push(desk);
+    leadRows.set(desk.y, line);
+  }
+  const leadOffsets = new Map<number, number>();
+  for (const [y, line] of leadRows) {
+    const right = Math.max(...line.map(desk => desk.x));
+    const offset = Math.ceil((w - 1 - line[0].x - right) / 2);
+    leadOffsets.set(y, offset);
+    for (const desk of line) desk.x += offset;
+  }
+  for (const avatar of people) {
+    if (avatar.junior) avatar.junior.meeting.x += leadOffsets.get(avatar.junior.meeting.y - 1) ?? 0;
   }
   const sharedColumns = Math.floor((w - 2) / 2);
   const furnitureY = 3 + 2 * (row + shelfHeight);
@@ -251,11 +266,12 @@ export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns =
   let waiting = 0;
   for (const s of ordered) {
     const avatar = bySession.get(s.session_id)!;
-    if (s.status === "reported" && s.report_to === "lead" && floorOf(s) === "orca" && s.team?.role === "junior" && s.team.lead) {
-      const lead = bySession.get(s.team.lead);
-      if (lead && lead !== avatar) avatar.teamReport = {
-        lead: lead.sessionId, meeting: { x: lead.deskTile.x, y: lead.deskTile.y + 1 }, since: s.status_since,
-      };
+    if (s.status === "reported" && s.report_to === "lead" && floorOf(s) === "orca") {
+      const lead = bySession.get(s.team?.lead ?? "");
+      const room = rooms.find(r => r.project === avatar.project)!;
+      avatar.teamReport = lead && lead !== avatar && lead.pose !== "leave"
+        ? { lead: lead.sessionId, meeting: { x: lead.deskTile.x, y: lead.deskTile.y + 1 }, since: s.status_since }
+        : { meeting: room.door, since: s.status_since };
     }
     if (avatar.place === "your_desk") {
       const point = slot(lobby.yourDesk, waiting++);

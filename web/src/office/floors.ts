@@ -17,7 +17,7 @@ export function floorAttention(sessions: Session[], now: number): { alerts: numb
   let alerts = 0, needsYou = false;
   for (const s of sessions) {
     if (s.status === "ended" || isSnoozed(s, now)) continue;
-    if (s.needs_you || s.report_pending) alerts++;
+    if (s.needs_you || (s.report_pending && s.report_to !== "lead")) alerts++;
     needsYou ||= s.needs_you;
   }
   return { alerts, needsYou };
@@ -39,7 +39,7 @@ export function rememberFloor(floor: Floor): void {
 }
 
 export function modelBadge(s: Session): string | undefined {
-  if (floorOf(s) !== "orca" || !s.agent?.name || s.agent.name.toLowerCase() === "claude") return undefined;
+  if (!s.agent?.name || /^claude/i.test(s.agent.name)) return undefined;
   const model = s.team?.model || s.agent.model;
   if (model?.toLowerCase().startsWith("gpt")) return "GPT";
   if (/gemini|antigravity/i.test(`${s.agent.name} ${model ?? ""}`)) return "Gemini";

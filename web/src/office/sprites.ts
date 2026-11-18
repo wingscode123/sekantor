@@ -87,18 +87,26 @@ export function tileGrid(kind: TileKind, grain = 0): Grid {
 }
 
 /** Repeat a native floor tile outside the scene canvas without painting it each frame. */
+export const FLOOR_PERIOD = 4;
+const floorGrain = (x: number, y: number) => (x + 3 * y) % FLOOR_PERIOD;
+
 export const floorBackground = (() => {
   const paths = new Map<string, string>();
-  for (const [y, row] of tileGrid("floor").entries()) {
-    for (let x = 0; x < row.length;) {
-      let end = x + 1;
-      while (row[end] === row[x]) end++;
-      const color = palette[parseInt(row[x], 36)];
-      paths.set(color, (paths.get(color) ?? "") + `M${x} ${y}h${end - x}v1H${x}z`);
-      x = end;
+  const grids = Array.from({ length: FLOOR_PERIOD }, (_, grain) => tileGrid("floor", grain));
+  for (let ty = 0; ty < FLOOR_PERIOD; ty++) for (let tx = 0; tx < FLOOR_PERIOD; tx++) {
+    for (const [y, row] of grids[floorGrain(tx, ty)].entries()) {
+      for (let x = 0; x < row.length;) {
+        let end = x + 1;
+        while (row[end] === row[x]) end++;
+        const color = palette[parseInt(row[x], 36)];
+        const left = tx * TILE + x;
+        paths.set(color, (paths.get(color) ?? "") + `M${left} ${ty * TILE + y}h${end - x}v1H${left}z`);
+        x = end;
+      }
     }
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${TILE} ${TILE}" shape-rendering="crispEdges">${[...paths].map(([color, path]) => `<path fill="${color}" d="${path}"/>`).join("")}</svg>`;
+  const extent = FLOOR_PERIOD * TILE;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${extent} ${extent}" shape-rendering="crispEdges">${[...paths].map(([color, path]) => `<path fill="${color}" d="${path}"/>`).join("")}</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 })();
 
@@ -521,7 +529,7 @@ function doorway(ctx: CanvasRenderingContext2D, x: number, y: number, side: bool
 export const defaultTheme: Theme = {
   palette,
   tile(kind, ctx, x, y) {
-    const grain = kind === "wall" ? 0 : (Math.floor(x / TILE) + 3 * Math.floor(y / TILE)) % 4;
+    const grain = kind === "wall" ? 0 : floorGrain(Math.floor(x / TILE), Math.floor(y / TILE));
     paint(`${kind}:${grain}`, () => tileGrid(kind, grain), ctx, x, y);
   },
   furniture(kind, ctx, x, y, frame = 0) {

@@ -31,6 +31,37 @@ it("uses Orca projects for rooms and seats lead desks ahead of grouped worktrees
   expect(avatar("a").targetTile).toEqual(avatar("a").deskTile);
 });
 
+it("centres the front row with two leads and a Claude subagent", () => {
+  const team = { project: "SeKantor", worktree: "main", role: "lead", lead: null, model: null } as const;
+  const subagent: Subagent = { id: "helper", type: "Explore", status: "working",
+    activity: null, summary: null, started_at: "2026-01-01", ended_at: null };
+  const office = layoutOffice([
+    session({ session_id: "lead-a", team, subagents: [subagent] }),
+    session({ session_id: "lead-b", team }),
+    ...[0, 1, 2, 3].map(i => session({ session_id: `worker-${i}`,
+      team: { ...team, role: "junior", worktree: "feature" } })),
+  ]);
+  const room = office.rooms[0];
+  const head = office.avatars.filter(a => a.deskTile.y === room.y + 3);
+  expect(head.map(a => a.key)).toEqual(["lead-a", juniorKey("lead-a", "helper"), "lead-b"]);
+  expect(Math.abs(head[0].deskTile.x + head[2].deskTile.x - (2 * room.x + room.w - 1))).toBeLessThanOrEqual(1);
+  expect(head[1].deskTile.x - head[0].deskTile.x).toBe(3);
+  expect(head[1].junior?.meeting.x).toBe(head[0].deskTile.x);
+});
+
+it("routes a junior report to its own room door when the lead is missing or ended", () => {
+  const lead = session({ session_id: "lead", status: "ended", ended_at: "2026-01-01T00:00:00Z" });
+  const junior = session({ session_id: "junior", status: "reported", report_to: "lead",
+    team: { project: "ronda", worktree: "feature", role: "junior", lead: "lead", model: null } });
+  for (const sessions of [[junior], [lead, junior]]) {
+    const office = layoutOffice(sessions, Date.parse("2026-01-01T00:00:01Z"));
+    const avatar = office.avatars.find(a => a.key === "junior")!;
+    expect(avatar.teamReport).toEqual({ meeting: office.rooms[0].door, since: junior.status_since });
+    expect(route(office, avatar.deskTile, avatar.teamReport!.meeting).at(-1)).toEqual(office.rooms[0].door);
+    expect(avatar.targetTile).toEqual(avatar.deskTile);
+  }
+});
+
 describe("poseFor", () => {
   const statuses: [Status, string, string][] = [
     ["waiting_approval", "your_desk", "ask"], ["waiting_input", "your_desk", "ask"],

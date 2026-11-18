@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from "vitest";
-import { CHARACTER_HEIGHT, defaultTheme, TILE, characterGrid, furnitureGrid, palette, tileGrid, type FurnitureKind } from "./sprites";
+import { CHARACTER_HEIGHT, defaultTheme, floorBackground, FLOOR_PERIOD, TILE, characterGrid, furnitureGrid, palette, tileGrid, type FurnitureKind } from "./sprites";
 import type { Kind, Pose } from "./model";
 
 const look = { body: 0, hair: 1, shirt: 2, accessory: 3 };
@@ -8,6 +8,22 @@ const fixtures: FurnitureKind[] = [
   "desk", "chair", "rack", "coffee", "plant", "door", "your_desk", "window", "lamp", "bookshelf", "rug", "sunlight",
 ];
 const poses: Pose[] = ["type", "read", "run", "web", "work", "ask", "smoke", "coffee", "leave", "report"];
+
+it("repeats the same four-grain floor tiles as the canvas", () => {
+  const extent = FLOOR_PERIOD * TILE;
+  const svg = decodeURIComponent(floorBackground.split(",")[1].slice(0, -2));
+  const pixels = Array.from({ length: extent }, () => Array<string>(extent));
+  for (const [, color, path] of svg.matchAll(/<path fill="([^"]+)" d="([^"]+)"\/>/g)) {
+    for (const [, x, y, length] of path.matchAll(/M(\d+) (\d+)h(\d+)v1H\d+z/g)) {
+      pixels[Number(y)].fill(color, Number(x), Number(x) + Number(length));
+    }
+  }
+  for (let y = 0; y < FLOOR_PERIOD; y++) for (let x = 0; x < FLOOR_PERIOD; x++) {
+    const canvasTile = tileGrid("floor", (x + 3 * y) % 4);
+    const actual = pixels.slice(y * TILE, (y + 1) * TILE).map(row => row.slice(x * TILE, (x + 1) * TILE));
+    expect(actual).toEqual(canvasTile.map(row => [...row].map(index => palette[parseInt(index, 36)])));
+  }
+});
 
 it("uses 32px tiles and 32x48 characters with only palette indexes", () => {
   expect(TILE).toBe(32);

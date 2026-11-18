@@ -21,6 +21,7 @@ it("carries an Orca junior report to the lead desk and returns to its own desk o
     workspace: {}, capabilities: [], needs_you: false,
     team: { project: "Orca project", worktree: "main", role: "lead", lead: null, model: null } };
   const junior: Session = { ...lead, session_id: "junior", status: "reported", report_to: "lead",
+    status_since: new Date().toISOString(),
     team: { ...lead.team!, worktree: "feature", role: "junior", lead: "lead" } };
   const layout = layoutOffice([lead, junior]);
   const worker = layout.avatars.find(a => a.key === "junior")!;
@@ -41,6 +42,18 @@ it("carries an Orca junior report to the lead desk and returns to its own desk o
   vi.advanceTimersByTime(3000);
   expect(character.mock.calls.filter(([look]) => look === worker.look).every(([, pose]) => pose === "work")).toBe(true);
   stop();
+  for (const report of [junior, { ...junior, session_id: "old", status_since: new Date(Date.now() - 61_000).toISOString() }]) {
+    character.mockClear();
+    const reopened = layoutOffice([lead, report]);
+    const desk = reopened.avatars.find(a => a.key === report.session_id)!.deskTile;
+    const close = startRenderer(canvas, () => reopened, { ...theme, character }, onFrame);
+    vi.advanceTimersByTime(4000);
+    expect(character.mock.calls.some(([, pose]) => pose === "deliver" || pose === "report")).toBe(false);
+    expect(onFrame.mock.lastCall![0].get(report.session_id)).toEqual({
+      x: desk.x * TILE, y: (desk.y + 1) * TILE - CHARACTER_HEIGHT,
+    });
+    close();
+  }
 });
 it("never schedules while hidden, and cancels and resumes on visibility", () => {
   const canvas = setup(); let hidden = true;
