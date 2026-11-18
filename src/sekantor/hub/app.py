@@ -16,7 +16,6 @@ from fastapi.staticfiles import StaticFiles
 
 from sekantor import config
 from sekantor.hub.api import publish_session, publish_snapshot, router
-from sekantor.hub.teams import floor
 from sekantor.hub.notify import Notifier
 from sekantor.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from sekantor.hub.store import SLOW_S, Store
@@ -92,8 +91,8 @@ async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Se
     expired = await asyncio.to_thread(store.expire_placements)
     ended = await asyncio.to_thread(run_sweep, store)
     for s in ended:
-        await publish_session(store, broadcaster, s, settings)
-    if expired or any(floor(s) == "orca" for s in ended):
+        await publish_session(broadcaster, s, settings)
+    if expired or any(s.floor == "orca" for s in ended):
         await publish_snapshot(store, broadcaster, settings)
 
 

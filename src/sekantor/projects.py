@@ -219,7 +219,9 @@ def _inspect(folder: Path) -> Detection:
     elif stat.S_ISREG(mode):
         marker = _read(root / ".git", max_bytes=4096).strip()
         if marker.startswith("gitdir: "):
-            gitdir = Path(os.path.normpath(root / marker.removeprefix("gitdir: ").strip()))
+            target = marker.removeprefix("gitdir: ").strip()
+            windows = PureWindowsPath(target)
+            gitdir = windows if windows.is_absolute() else Path(os.path.normpath(root / target))
             if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
                 checkout = (gitdir.parent.parent.parent.name, root.name, False)
 

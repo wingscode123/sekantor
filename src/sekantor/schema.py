@@ -5,6 +5,7 @@ Additions to the PRD example, optional and backward-compatible:
 - ``activity`` (ADR-0022): the tool in use and its kind.
 - ``subagent`` (ADR-0028): the Claude Code worker that owns a lifecycle or activity event.
 - ``orca`` and Orca hook identity (ADR-0029): team placement and identity for Orca sessions.
+- ``activity`` events (ADR-0029) update the current tool without requiring a status transition.
 
 Deprecated (ADR-0021: SeKantor watches and does not answer): ``capabilities`` and ``request.id``. They are still
 accepted so an older pos keeps working, and are otherwise ignored.

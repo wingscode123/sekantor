@@ -5,10 +5,11 @@ Pure functions, no I/O: ``apply`` (one event), ``inbox_order`` (FR-10), ``sweep`
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from sekantor.schema import SUBAGENT_EVENTS, Activity, Agent, Capability, Event, Host, OrcaPlacement, Request, Status, Workspace
 
@@ -41,6 +42,15 @@ class SubagentState(BaseModel):
     ended_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class Team:
+    project: str
+    worktree: str
+    role: Literal["lead", "junior"]
+    lead: str | None = None
+    model: str | None = None
+
+
 class SessionState(BaseModel):
     session_id: str
     source: str
@@ -64,6 +74,23 @@ class SessionState(BaseModel):
     orca: OrcaPlacement | None = None
     orca_session_id: str | None = None
     orca_terminal_handle: str | None = None
+    team: Team | None = Field(default=None, exclude=True)
+    team_resolved: bool = Field(default=False, exclude=True)
+
+    @property
+    def floor(self) -> Literal["claude", "orca", "openbot"]:
+        host = self.host.app if self.host else None
+        if "openbot" in (self.source, host):
+            return "openbot"
+        if "orca" in (self.source, host):
+            return "orca"
+        return "claude"
+
+    @property
+    def report_to(self) -> Literal["you", "lead"]:
+        if self.status is Status.reported and self.team and self.team.lead:
+            return "lead"
+        return "you"
 
     def prune_subagents(self, now: datetime) -> None:
         cutoff = now - SUBAGENT_REPORT_TTL
@@ -80,7 +107,7 @@ class SessionState(BaseModel):
 
     @property
     def report_pending(self) -> bool:
-        return self.status is Status.reported and (
+        return self.status is Status.reported and self.report_to == "you" and (
             self.acknowledged_at is None or self.acknowledged_at < self.status_since
         )
 
@@ -265,7 +292,8 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
 
 def sort_key(s: SessionState) -> tuple:
     """Status priority first, then the longest wait (oldest status_since) first."""
-    return (PRIORITY[s.status], s.status_since)
+    status = Status.done if s.report_to == "lead" else s.status
+    return (PRIORITY[status], s.status_since)
 
 
 def inbox_order(sessions: Iterable[SessionState]) -> list[SessionState]:

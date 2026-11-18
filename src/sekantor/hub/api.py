@@ -17,9 +17,9 @@ from pydantic import BaseModel, Field, StrictInt, TypeAdapter, ValidationError
 
 from sekantor import __version__, labels, projects
 from sekantor.config import Settings
-from sekantor.hub import teams
 from sekantor.hub.status import SessionState, inbox_order
 from sekantor.hub.store import SLOW_S
+from sekantor.hub.teams import placement_key
 from sekantor.schema import Event, Status
 
 log = logging.getLogger("sekantor.hub")
@@ -28,17 +28,16 @@ _events = TypeAdapter(Event | list[Event])
 MAX_BATCH = 100
 
 
-def session_json(s: SessionState, settings: Settings | None = None,
-                 team: teams.Team | None = None) -> dict[str, Any]:
+def session_json(s: SessionState, settings: Settings | None = None) -> dict[str, Any]:
     from sekantor.hub.opener import plan
 
     # Action responses may serialize a state loaded directly for a write.
     s = s.model_copy()
     s.prune_subagents(datetime.now(timezone.utc))
     d = s.model_dump(mode="json", exclude={"status_ts", "orca", "orca_session_id", "orca_terminal_handle"})
-    floor = teams.floor(s)
-    if floor == "orca" and team is None:
-        team = teams.resolve([s], {}).get(s.session_id)
+    floor = s.floor
+    if floor == "orca" and not s.team_resolved:
+        raise ValueError("Orca session must have its team resolved before serialization")
     project = None
     if floor == "openbot":
         project = {"name": "OpenBot agents", "kind": "other", "signals": []}
@@ -50,10 +49,9 @@ def session_json(s: SessionState, settings: Settings | None = None,
     d["project"] = project
     d["needs_you"] = s.needs_you
     d["floor"] = floor
-    d["team"] = asdict(team) if team else None
-    to_lead = s.status is Status.reported and team is not None and team.lead is not None
-    d["report_to"] = "lead" if to_lead else "you"
-    d["report_pending"] = s.report_pending and not to_lead
+    d["team"] = asdict(s.team) if s.team else None
+    d["report_to"] = s.report_to
+    d["report_pending"] = s.report_pending
     d["source_label"] = labels.source(s.source)
     d["host_label"] = labels.host(s.host.app) if s.host else None
     try:
@@ -65,27 +63,18 @@ def session_json(s: SessionState, settings: Settings | None = None,
 
 
 def _sessions_json(store, settings: Settings | None, status: Status | None = None) -> list[dict[str, Any]]:
-    sessions = store.sessions()
-    memberships = teams.resolve(sessions, store.placements())
-    return [session_json(s, settings, memberships.get(s.session_id)) for s in inbox_order(sessions)
-            if status is None or s.status is status]
+    return [session_json(s, settings) for s in inbox_order(store.sessions(status))]
 
 
 def snapshot(store, settings: Settings | None = None) -> dict[str, Any]:
     return {"type": "snapshot", "sessions": _sessions_json(store, settings)}
 
 
-def _current_session_json(store, s: SessionState, settings: Settings | None) -> dict[str, Any]:
-    team = None
-    if teams.floor(s) == "orca":
-        sessions = [other for other in store.sessions() if other.session_id != s.session_id]
-        team = teams.resolve([*sessions, s], store.placements()).get(s.session_id)
-    return session_json(s, settings, team)
-
-
-async def publish_session(store, broadcaster, s: SessionState, settings: Settings | None,
+async def publish_session(broadcaster, s: SessionState, settings: Settings | None,
                           event: Event | None = None) -> None:
-    session = await run_in_threadpool(_current_session_json, store, s, settings)
+    if not broadcaster.clients:
+        return
+    session = await run_in_threadpool(session_json, s, settings)
     msg = {"type": "session", "session": session}
     if event is not None:
         msg["event"] = event.model_dump(mode="json", exclude_none=True)
@@ -113,8 +102,8 @@ async def post_events(request: Request, body: Any = Body(...)):
     refresh_teams = False
     for ev in events:
         if ev.type == "orca_placement":
-            stored = await run_in_threadpool(st.store.add_placement, ev)
-            refresh_teams |= stored
+            refresh_teams |= await run_in_threadpool(st.store.add_placement, ev)
+            stored = True
         else:
             stored, affected = await _store_event(st, ev)
             refresh_teams |= affected
@@ -148,8 +137,14 @@ async def _store_event(st, ev: Event, notify: bool = True) -> tuple[bool, bool]:
         return False, False
     if notify:
         st.notifier.maybe(prev, state)
-    await publish_session(st.store, st.broadcaster, state, st.settings, ev)
-    return True, teams.floor(state) == "orca" or (prev is not None and teams.floor(prev) == "orca")
+    await publish_session(st.broadcaster, state, st.settings, ev)
+    if state.floor != "orca" and (prev is None or prev.floor != "orca"):
+        return True, False
+    if (prev is None or placement_key(prev) != placement_key(state)
+            or (prev.status is Status.ended) != (state.status is Status.ended)):
+        return True, True
+    competing = state.team is not None and state.team.role == "lead" and state.last_event_at != prev.last_event_at
+    return True, competing and await run_in_threadpool(st.store.competing_leads, state.session_id)
 
 
 async def _store(st, ev: Event, notify: bool = True) -> bool:
@@ -258,7 +253,7 @@ async def acknowledge(request: Request, session_id: str):
         raise HTTPException(404, detail="no such session")
     if s.status is not Status.reported:
         raise HTTPException(409, detail="session has no report")
-    await publish_session(st.store, st.broadcaster, s, st.settings)
+    await publish_session(st.broadcaster, s, st.settings)
     return {"acknowledged_at": s.acknowledged_at}
 
 
@@ -269,7 +264,7 @@ async def snooze(request: Request, session_id: str, body: SnoozeIn):
     s = await run_in_threadpool(st.store.set_snooze, session_id, until)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    await publish_session(st.store, st.broadcaster, s, st.settings)
+    await publish_session(st.broadcaster, s, st.settings)
     return {"snoozed_until": s.snoozed_until.isoformat()}
 
 
@@ -279,7 +274,7 @@ async def unsnooze(request: Request, session_id: str):
     s = await run_in_threadpool(st.store.set_snooze, session_id, None)
     if s is None:
         raise HTTPException(404, detail="no such session")
-    await publish_session(st.store, st.broadcaster, s, st.settings)
+    await publish_session(st.broadcaster, s, st.settings)
     return {"snoozed_until": None}
 
 

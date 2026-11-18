@@ -15,6 +15,7 @@ from typing import Any
 from sekantor import config
 
 CHAIN_DEPTH = 8
+ORCA_IDENTITY_ENV = {"orca_session_id": "ORCA_AGENT_SESSION_ID", "orca_terminal_handle": "ORCA_TERMINAL_HANDLE"}
 
 
 def rules_path() -> Path:
@@ -118,7 +119,8 @@ def env_names(rules: dict) -> set[str]:
     """Env names for host classification and session identity."""
     groups = [h.get("signals", []) for h in rules.get("hosts", [])]
     groups.append(((rules.get("fallback") or {}).get("terminal") or {}).get("signals", []))
-    return {s["env"] for signals in groups for s in signals if "env" in s} | set(rules.get("forward_env", []))
+    signals = {s["env"] for group in groups for s in group if "env" in s}
+    return signals | set(rules.get("forward_env", [])) | set(ORCA_IDENTITY_ENV.values())
 
 
 def collect(agent_pid: int | None, deep: bool, from_agent: bool = False) -> tuple[list[str], str | None, str | None]:
