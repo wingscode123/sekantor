@@ -176,3 +176,14 @@ def test_no_tmux_server_ends_sessions():
     pos.tick()
     pos.tick()
     assert [e["type"] for e in hub.events] == ["session_started", "session_ended"]
+
+
+def test_run_hidden_opens_no_console_window(monkeypatch):
+    import subprocess
+
+    from sekantor.pos.tmux import pos
+
+    seen = {}
+    monkeypatch.setattr(pos.subprocess, "run", lambda args, **kw: seen.update(kw))
+    pos.run_hidden(["tmux"], capture_output=True)
+    assert seen["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)
