@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+from sekantor.projects import KINDS, Kind
+
 HOST = "127.0.0.1"  # never configurable: the hub binds to loopback only
 DEFAULT_PORT = 7878
 
@@ -108,7 +110,7 @@ DEFAULT_IGNORE_CWD = [r"/Programs/OpenBot(/|$)", r"/OpenBot\.app/", r"^/opt/Open
 
 class Settings:
     def __init__(self, notify: bool = True, quiet_hours: str | None = None, ignore_cwd: list[str] | None = None,
-                 orca_pos: bool = False, keep_in_ram: bool | None = None):
+                 orca_pos: bool = False, keep_in_ram: bool | None = None, projects: dict[str, Kind] | None = None):
         self.notify = bool(notify)
         self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
         self.ignore_cwd = list(ignore_cwd) if ignore_cwd is not None else list(DEFAULT_IGNORE_CWD)
@@ -117,6 +119,12 @@ class Settings:
             raise TypeError("keep_in_ram must be true or false")
         # ADR-0020 is for the Python hub; a frozen install has the Rust forwarder and no slow hook to protect.
         self.keep_in_ram = (not getattr(sys, "frozen", False)) if keep_in_ram is None else keep_in_ram
+
+        if projects is not None and (not isinstance(projects, dict) or any(
+            not isinstance(kind, str) or kind not in KINDS for kind in projects.values()
+        )):
+            raise ValueError("projects must map project names to kinds")
+        self.projects = dict(projects or {})
 
     def ignored(self, cwd: str | None) -> bool:
         import re
@@ -177,7 +185,7 @@ def read_toml(base: Path | None = None) -> dict:
 
 # config.toml key -> Settings argument
 SETTING_KEYS = {"notify": "notify", "quiet_hours": "quiet_hours", "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos",
-                "keep_in_ram": "keep_in_ram"}
+                "keep_in_ram": "keep_in_ram", "projects": "projects"}
 # Keys of the answering era (ADR-0021): an old config.toml still has them, and that is not a problem.
 OLD_KEYS = {"approval_wait", "reply_wait", "risky_commands", "reply_entrypoints"}
 
@@ -202,6 +210,15 @@ def load(base: Path | None = None) -> tuple[Settings, list[str]]:
             continue  # removed features (relay, answering); an old config.toml may still have these
         if key not in SETTING_KEYS:
             problems.append(f"unknown setting {key!r}")
+            continue
+        if key == "projects" and isinstance(value, dict):
+            valid = {}
+            for name, kind in value.items():
+                if isinstance(kind, str) and kind in KINDS:
+                    valid[name] = kind
+                else:
+                    problems.append(f"projects[{name!r}] = {kind!r} is not valid, detection applies")
+            good["projects"] = valid
             continue
         try:
             Settings(**{SETTING_KEYS[key]: value})
