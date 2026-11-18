@@ -1,7 +1,7 @@
 import type { Session } from "../types";
 
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
-export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave";
+export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave" | "report";
 export interface Look { body: number; hair: number; shirt: number; accessory: number }
 export interface Avatar {
   key: string; sessionId: string; identity: string; seat: number; look: Look;

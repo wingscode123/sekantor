@@ -2,14 +2,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { startRenderer } from "./render";
 import type { Office } from "./model";
-import type { Theme } from "./sprites";
+import { CHARACTER_HEIGHT, TILE, type Theme } from "./sprites";
 const office: Office = { width: 20, height: 10, clusters: [], yourDesk: { x: 2, y: 2 }, rack: { x: 3, y: 3 }, pantry: { x: 4, y: 4 }, door: { x: 1, y: 1 }, avatars: [] };
 const theme: Theme = { palette: [], tile: vi.fn(), furniture: vi.fn(), character: vi.fn() };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 function setup() {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ setTransform: vi.fn(), clearRect: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
-  const canvas = document.createElement("canvas"); canvas.width = 640; canvas.height = 320;
+  const canvas = document.createElement("canvas"); canvas.width = office.width * TILE; canvas.height = office.height * TILE;
   return canvas;
 }
 it("never schedules while hidden, and cancels and resumes on visibility", () => {
@@ -46,7 +46,7 @@ it("retains a removed session and its desk until walking to the door", () => {
   current = { ...office, width: office.width + 1, avatars: [] }; character.mockClear(); furniture.mockClear();
   vi.advanceTimersByTime(100);
   expect(character).toHaveBeenCalled();
-  expect(furniture.mock.calls.some(call => call[0] === "desk" && call[2] === 80)).toBe(true);
+  expect(furniture.mock.calls.some(call => call[0] === "desk" && call[2] === 5 * TILE)).toBe(true);
   furniture.mockClear();
   vi.advanceTimersByTime(2000); expect(vi.getTimerCount()).toBe(0);
   expect(furniture.mock.calls.some(call => call[0] === "desk")).toBe(false);
@@ -78,7 +78,7 @@ it("publishes key-based native positions in paint order across office replacemen
   vi.advanceTimersByTime(2500);
   const positions = onFrame.mock.lastCall![0] as Map<string, { x: number; y: number }>;
   expect([...positions.keys()]).toEqual(["back", "front"]);
-  expect(positions.get("front")).toEqual({ x: 80, y: 56 });
+  expect(positions.get("front")).toEqual({ x: 5 * TILE, y: 5 * TILE - CHARACTER_HEIGHT });
   current = { ...current, avatars: current.avatars.map(a => ({ ...a, look: { ...a.look } })) };
   vi.advanceTimersByTime(100);
   expect([...onFrame.mock.lastCall![0]]).toEqual([...positions]);

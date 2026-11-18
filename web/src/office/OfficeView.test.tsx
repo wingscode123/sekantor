@@ -50,7 +50,7 @@ describe("office page", () => {
     const view = render(<OfficeView sessions={[session(), session("two")]} />);
     // The next frame has not run; equivalent new avatars must retain valid hit areas.
     view.rerender(<OfficeView sessions={[{ ...session(), summary: "Updated" }, session("two")]} />);
-    fireEvent.click(screen.getByRole("img"), { clientX: 85, clientY: 45 });
+    fireEvent.click(screen.getByRole("img"), { clientX: 42, clientY: 23 });
     expect(screen.getByRole("dialog", { name: "one details" }).textContent).toContain("Updated");
     expect(mocks.renderer).toHaveBeenCalledTimes(1);
   });

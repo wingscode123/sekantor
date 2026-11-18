@@ -3,7 +3,7 @@ import { isSnoozed } from "../SessionMenu";
 import { useGhostNow, useNow, useSessions } from "../useSessions";
 import { layoutOffice, type Office } from "./model";
 import { startRenderer } from "./render";
-import { defaultTheme, type Theme } from "./sprites";
+import { defaultTheme, TILE, type Theme } from "./sprites";
 import "./mini.css";
 
 // Keep the original floor and characters, with only your desk in this close-up.
@@ -43,7 +43,7 @@ export function MiniView({ navigate = openFullOffice }: { navigate?: (url: strin
   const connectionText = connection === "down" ? "Hub disconnected" : connection === "unauthorized" ? "Not signed in" : "";
   const label = `${busy} busy, ${waiting.length} needs you. ${waiting.map(s => s.agent?.name || s.source_label).join(", ")}. ${summary}${connectionText ? ` ${connectionText}.` : ""} Open full office`;
   return <button type="button" className="mini-office" aria-label={label} onClick={() => navigate("/")}>
-    <span className="mini-office__scene"><canvas ref={canvas} width={320} height={height * 16} aria-hidden="true" /></span>
+    <span className="mini-office__scene"><canvas ref={canvas} width={scene.width * TILE} height={scene.height * TILE} aria-hidden="true" /></span>
     <span className="mini-office__counts">{busy} busy · {waiting.length} needs you{connectionText && ` · ${connectionText}`}</span>
     <span className="mini-office__summary">{summary}</span>
   </button>;

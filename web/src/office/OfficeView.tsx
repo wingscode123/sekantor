@@ -3,6 +3,7 @@ import { isSnoozed } from "../SessionMenu";
 import type { Session } from "../types";
 import { layoutOffice } from "./model";
 import { startRenderer, type FramePositions } from "./render";
+import { CHARACTER_HEIGHT, TILE } from "./sprites";
 
 import { AvatarCard, statusText } from "./AvatarCard";
 
@@ -15,19 +16,23 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const viewport = useRef<HTMLDivElement>(null);
   const hits = useRef<FramePositions>(new Map());
   const byId = useMemo(() => new Map(sessions.map(s => [s.session_id, s])), [sessions]);
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(0.5);
   const [selected, setSelected] = useState<string | null>(null);
   useLayoutEffect(() => {
     current.current = office;
     const node = canvas.current;
-    if (node && node.width !== office.width * 16) node.width = office.width * 16;
-    if (node && node.height !== office.height * 16) node.height = office.height * 16;
+    if (node && node.width !== office.width * TILE) node.width = office.width * TILE;
+    if (node && node.height !== office.height * TILE) node.height = office.height * TILE;
     canvas.current?.dispatchEvent(new Event("officechange"));
   }, [sceneKey]);
   useEffect(() => {
     const measure = () => {
       const box = viewport.current;
-      if (box) setScale(Math.max(1, Math.floor(box.clientWidth / (office.width * 16))));
+      if (box) {
+        // Keep the existing minimum display size with a denser backing store.
+        const fit = box.clientWidth / (office.width * TILE);
+        setScale(fit >= 1 ? Math.floor(fit) : 0.5);
+      }
     };
     measure();
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
@@ -43,14 +48,14 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const avatar = office.avatars.find(a => a.sessionId === selected);
   return <>
     <div className="office-viewport" ref={viewport}>
-      <div className="office-floor" style={{ width: office.width * 16 * scale, height: office.height * 16 * scale }}>
-        <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} needs you, ${awake.filter(s => s.status === "error").length} errors`} style={{ width: office.width * 16 * scale, height: office.height * 16 * scale }} onClick={e => {
+      <div className="office-floor" style={{ width: office.width * TILE * scale, height: office.height * TILE * scale }}>
+        <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} needs you, ${awake.filter(s => s.status === "error").length} errors`} style={{ width: office.width * TILE * scale, height: office.height * TILE * scale }} onClick={e => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = (e.clientX - rect.left) / scale, y = (e.clientY - rect.top) / scale;
-          const hit = [...hits.current].reverse().find(([, p]) => x >= p.x && x < p.x + 16 && y >= p.y && y < p.y + 24);
+          const hit = [...hits.current].reverse().find(([, p]) => x >= p.x && x < p.x + TILE && y >= p.y && y < p.y + CHARACTER_HEIGHT);
           if (hit && byId.has(hit[0])) setSelected(hit[0]);
         }} />
-        {office.avatars.map(a => <button type="button" className="office-plate" data-testid="name-plate" key={a.key} tabIndex={-1} hidden={scale < 2 || byId.get(a.sessionId)?.status === "ended"} style={{ left: (a.deskTile.x * 16 + 8) * scale, top: (a.deskTile.y * 16 - 20) * scale, maxWidth: 46 * scale }} onClick={() => setSelected(a.sessionId)}>{a.name}<small>{a.app} · {a.project}{byId.get(a.sessionId)?.workspace.branch ? ` / ${byId.get(a.sessionId)!.workspace.branch}` : ""}</small></button>)}
+        {office.avatars.map(a => <button type="button" className="office-plate" data-testid="name-plate" key={a.key} tabIndex={-1} hidden={scale < 1 || byId.get(a.sessionId)?.status === "ended"} style={{ left: (a.deskTile.x * TILE + TILE / 2) * scale, top: (a.deskTile.y * TILE - TILE * 1.25) * scale, maxWidth: TILE * 3 * scale }} onClick={() => setSelected(a.sessionId)}>{a.name}<small>{a.app} · {a.project}{byId.get(a.sessionId)?.workspace.branch ? ` / ${byId.get(a.sessionId)!.workspace.branch}` : ""}</small></button>)}
       </div>
     </div>
     {loaded && !office.avatars.length && <p className="office-empty">Your office is quiet. Agents appear when their sessions connect. If an agent is running, install its hooks with <code>sekantor install claude --project</code>.</p>}
