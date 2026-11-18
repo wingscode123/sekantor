@@ -1,12 +1,12 @@
 import { isCorridorTile, isWalkable, route, type Avatar, type Office } from "./model";
 import { Departures, followRoute, type Pt } from "./motion";
-import { CHARACTER_HEIGHT, defaultTheme, JUNIOR_SCALE, TILE, type Theme } from "./sprites";
+import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
 /** Native-pixel avatar top-left positions (32x48 sprites), keyed by avatar.key in paint order. */
 export type FramePositions = ReadonlyMap<string, Readonly<Pt>>;
 
 /** Dispatch `officechange` on the canvas after replacing an empty office, or restart this renderer. */
-export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void): () => void {
+export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void, onJuniorDeparture?: (keys: string[]) => void): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -102,10 +102,16 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     if (stopped || document.hidden) return;
     const office = getOffice(), now = performance.now(), dt = Math.min(250, now - last);
     last = now;
+    const juniorDepartures: string[] = [];
     live.clear();
     for (const avatar of office.avatars) live.add(avatar.key);
     for (const key of finished) if (!live.has(key)) finished.delete(key);
     for (const avatar of office.avatars) {
+      if (avatar.junior?.status === "reported" && !retained.has(avatar.key) && !finished.has(avatar.key)) {
+        // A junior first seen as reported has already handed off.
+        finished.add(avatar.key);
+        juniorDepartures.push(avatar.key);
+      }
       if (avatar.pose !== "leave" && avatar.junior?.status !== "reported") {
         finished.delete(avatar.key);
         departures.cancel(avatar.key);
@@ -180,6 +186,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     for (const [key, position] of positions) if (departures.leaving(key)) {
       departures.arrive(key, position, targets.get(key)!);
       if (!departures.leaving(key)) {
+        if (retained.get(key)?.junior) juniorDepartures.push(key);
         retained.delete(key);
         positions.delete(key);
         paths.delete(key);
@@ -204,18 +211,18 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     for (const avatar of sorted) {
       const p = positions.get(avatar.key)!, target = targets.get(avatar.key)!;
       const moving = p.x !== target.x || p.y !== target.y;
-      const scale = avatar.junior ? JUNIOR_SCALE : 1;
-      const x = p.x * TILE + (1 - scale) * TILE / 2;
-      const y = (p.y + 1) * TILE - CHARACTER_HEIGHT * scale;
+      const x = p.x * TILE;
+      const y = (p.y + 1) * TILE - CHARACTER_HEIGHT;
       framePositions?.set(avatar.key, { x, y });
       const pose = avatar.junior
         ? departures.leaving(avatar.key) ? "leave"
           : avatar.pose === "deliver" && !moving ? "report" : avatar.pose
         : receiving.has(avatar.sessionId) ? "receive" : moving ? "run" : avatar.pose;
-      if (avatar.junior) theme.character(avatar.look, pose, frame, ctx!, x, y, scale);
+      if (avatar.junior) theme.character(avatar.look, pose, frame, ctx!, x, y, true);
       else theme.character(avatar.look, pose, frame, ctx!, x, y);
     }
     if (framePositions) onFrame!(framePositions);
+    if (juniorDepartures.length) onJuniorDeparture?.(juniorDepartures);
     frame++;
     if (office.avatars.some(a => !finished.has(a.key)) || retained.size) timer = setTimeout(tick, Math.ceil(1000 / 12));
   }

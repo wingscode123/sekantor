@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { isSnoozed } from "../SessionMenu";
 import type { Session } from "../types";
-import { layoutOffice, roomSignWidth, type PlaceLabel } from "./model";
+import { juniorKey, layoutOffice, roomSignWidth, type PlaceLabel } from "./model";
 import { startRenderer, type FramePositions } from "./render";
-import { CHARACTER_HEIGHT, JUNIOR_SCALE, TILE } from "./sprites";
+import { CHARACTER_HEIGHT, TILE } from "./sprites";
 
 import { AvatarCard, statusText } from "./AvatarCard";
 
@@ -17,7 +17,8 @@ const placeSigns: Record<PlaceLabel["kind"], { label: string; description: strin
 export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number }) {
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const [cols, setCols] = useState(2);
-  const office = useMemo(() => layoutOffice(sessions, layoutNow, cols), [sessions, layoutNow, cols]);
+  const [departed, setDeparted] = useState<ReadonlySet<string>>(() => new Set());
+  const office = useMemo(() => layoutOffice(sessions, layoutNow, cols, departed), [sessions, layoutNow, cols, departed]);
   const sceneKey = JSON.stringify(office);
   const current = useRef(office);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -40,10 +41,10 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
     if (node && node.height !== office.height * size.tilePixels) node.height = office.height * size.tilePixels;
     canvas.current?.dispatchEvent(new Event("officechange"));
   }, [sceneKey, size.tilePixels, office.width, office.height]);
-  const latest = useRef({ sessions, layoutNow });
-  latest.current = { sessions, layoutNow };
+  const latest = useRef({ sessions, layoutNow, departed });
+  latest.current = { sessions, layoutNow, departed };
   const measure = () => {
-      const { sessions, layoutNow } = latest.current;
+      const { sessions, layoutNow, departed } = latest.current;
       const box = viewport.current;
       if (!box?.clientWidth) return;
       const dpr = window.devicePixelRatio || 1;
@@ -54,7 +55,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
       // Contain: the biggest whole-device-pixel tile for which the whole office fits both ways.
       let best: { cols: number; tilePixels: number; w: number; h: number } | null = null;
       for (let c = 2; c <= maxCols; c++) {
-        const layout = layoutOffice(sessions, layoutNow, c);
+        const layout = layoutOffice(sessions, layoutNow, c, departed);
         const fit = Math.max(1, Math.min(Math.floor(width / layout.width), Math.floor(height / layout.height)));
         // Native-pixel multiples when they lose under 10%, otherwise the exact fit.
         const multiple = fit >= TILE ? TILE * Math.floor(fit / TILE) : fit;
@@ -87,10 +88,16 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
       for (const [key, plate] of plates.current) {
         const position = positions.get(key);
         if (!position) continue;
-        plate.style.left = `${(position.x + TILE / 2) * plateScale.current}px`;
+        const left = `${(position.x + TILE / 2) * plateScale.current}px`;
         // Most poses have 8 native pixels of padding above the head.
-        plate.style.top = `${(position.y + 6) * plateScale.current}px`;
+        const top = `${(position.y + 6) * plateScale.current}px`;
+        if (plate.style.left !== left) plate.style.left = left;
+        if (plate.style.top !== top) plate.style.top = top;
       }
+    }, keys => {
+      const reported = new Set(latest.current.sessions.flatMap(s =>
+        (s.subagents ?? []).filter(a => a.status === "reported").map(a => juniorKey(s.session_id, a.id))));
+      setDeparted(previous => new Set([...previous, ...keys].filter(key => reported.has(key))));
     });
   }, []);
   const session = byId.get(selected ?? "");
@@ -102,10 +109,8 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
         <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} need you, ${awake.filter(s => s.report_pending).length} reports, ${awake.filter(s => s.status === "error").length} errors`} style={{ width, height }} onClick={e => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = (e.clientX - rect.left) / scale, y = (e.clientY - rect.top) / scale;
-          const hit = [...hits.current].reverse().find(([key, p]) => {
-            const size = byId.has(key) ? 1 : JUNIOR_SCALE;
-            return x >= p.x && x < p.x + TILE * size && y >= p.y && y < p.y + CHARACTER_HEIGHT * size;
-          });
+          const hit = [...hits.current].reverse().find(([, p]) =>
+            x >= p.x && x < p.x + TILE && y >= p.y && y < p.y + CHARACTER_HEIGHT);
           const clicked = hit && office.avatars.find(a => a.key === hit[0]);
           if (clicked) setSelected(clicked.sessionId);
         }} />
@@ -115,17 +120,20 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
             maxWidth: roomSignWidth(room) * tileSize - 4,
           }}>{room.project}</span>)}
         {office.places.map(({ kind, at, room }) => {
-          const sign = placeSigns[kind];
+          const key = JSON.stringify([room, kind]);
           const furnitureRoom = office.rooms.find(r => r.project === room);
-          const columns = kind === "your_desk" ? 14 : kind === "door" ? 10 : Math.floor(((furnitureRoom?.w ?? 14) - 2) / 2);
-          const isRoomPlace = Boolean(room);
-          const left = isRoomPlace ? (at.x + 1.1) * tileSize : (at.x + 0.5) * tileSize;
-          const top = isRoomPlace ? (at.y + 0.5) * tileSize : (at.y - 0.4) * tileSize;
-          const transform = isRoomPlace ? "translateY(-50%)" : "translate(-50%, -50%)";
-          return <span className="office-sign" aria-hidden="true" key={JSON.stringify([room, kind])}
-            style={{ left, top, transform, maxWidth: (columns - (isRoomPlace ? 1.2 : 0)) * tileSize }}>
-            {sign.label}
-          </span>;
+          if (furnitureRoom) {
+            const rack = kind === "rack";
+            const end = rack ? furnitureRoom.pantry.x : furnitureRoom.x + furnitureRoom.w - 1;
+            return <span className="office-landmark" aria-hidden="true" key={key} style={{
+              left: (at.x + 0.1) * tileSize, top: (at.y - 0.15) * tileSize,
+              width: Math.max(0, (end - at.x - 0.2) * tileSize),
+            }}><span className={`office-sign office-landmark__${kind}`}>{rack ? "Rack" : "Pantry"}</span></span>;
+          }
+          return <span className="office-sign" aria-hidden="true" key={key} style={{
+            left: (at.x + 0.5) * tileSize, top: (at.y - 0.4) * tileSize,
+            maxWidth: (kind === "your_desk" ? 14 : 10) * tileSize,
+          }}>{placeSigns[kind].label}</span>;
         })}
         {mainAvatars.filter(a => a.pose !== "leave").map(a =>
           <button type="button" className="office-plate" data-testid="name-plate" key={a.key} tabIndex={-1}

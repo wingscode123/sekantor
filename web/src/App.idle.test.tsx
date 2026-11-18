@@ -98,3 +98,20 @@ it("rearms only one timeout when several ghosts expire at different times", () =
   expect(result.current).toBe(start + 20_000);
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("anchors a missing junior end timestamp to the first report received", () => {
+  vi.useFakeTimers();
+  const first = "2026-11-17T12:00:00.000Z";
+  vi.setSystemTime(new Date(first));
+  vi.stubGlobal("WebSocket", Socket);
+  const session: Session = { session_id: "main", source: "claude", source_label: "Claude",
+    status: "running", status_since: first, started_at: first, last_event_at: first, workspace: {},
+    capabilities: [], needs_you: false, subagents: [{ id: "junior", type: "Explore", status: "reported",
+      activity: null, summary: null, started_at: first, ended_at: null }] };
+  const { result } = renderHook(() => useSessions());
+  act(() => Socket.latest.onmessage?.({ data: JSON.stringify({ type: "snapshot", sessions: [session] }) }));
+  expect(result.current.sessions[0].subagents?.[0].ended_at).toBe(first);
+  vi.advanceTimersByTime(1000);
+  act(() => Socket.latest.onmessage?.({ data: JSON.stringify({ type: "session", session }) }));
+  expect(result.current.sessions[0].subagents?.[0].ended_at).toBe(first);
+});

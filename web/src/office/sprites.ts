@@ -2,13 +2,12 @@ import { roomSignWidth, type Kind, type Lobby, type Look, type Pose, type Room }
 
 export const TILE = 32;
 export const CHARACTER_HEIGHT = TILE * 3 / 2;
-export const JUNIOR_SCALE = 0.75;
 export type TileKind = "floor" | "wall" | "corridor";
 export type FurnitureKind = "desk" | "chair" | "rack" | "coffee" | "plant" | "door" | "your_desk" | "window" | "lamp" | "bookshelf" | "rug" | "sunlight";
 export interface Theme {
   palette: string[];
   tile(kind: TileKind, ctx: CanvasRenderingContext2D, x: number, y: number): void;
-  character(look: Look, pose: Pose, frame: number, ctx: CanvasRenderingContext2D, x: number, y: number, scale?: number): void;
+  character(look: Look, pose: Pose, frame: number, ctx: CanvasRenderingContext2D, x: number, y: number, junior?: boolean): void;
   furniture(kind: FurnitureKind, ctx: CanvasRenderingContext2D, x: number, y: number, frame?: number): void;
   room?(kind: Kind, ctx: CanvasRenderingContext2D, room: Room): void;
   lobby?(ctx: CanvasRenderingContext2D, lobby: Lobby): void;
@@ -334,7 +333,7 @@ const skinTones = [[Ink.Sand, Ink.Peach], [Ink.Peach, Ink.Rose], [Ink.Ochre, Ink
 const hairTones = [[Ink.Ink, Ink.Slate], [Ink.Cocoa, Ink.Umber], [Ink.Walnut, Ink.Ochre], [Ink.Brass, Ink.Gold], [Ink.Slate, Ink.Ash], [Ink.Oxide, Ink.Clay], [Ink.Plum, Ink.Lilac], [Ink.Ash, Ink.Linen]];
 const jackets = [[Ink.Teal, Ink.Petrol], [Ink.Clay, Ink.Oxide], [Ink.Leaf, Ink.Moss], [Ink.Lilac, Ink.Plum], [Ink.Gold, Ink.Brass], [Ink.Glass, Ink.Teal], [Ink.Ash, Ink.Slate], [Ink.Rose, Ink.Clay]];
 const gait = [[-3, 2, -1], [-1, 0, 0], [2, -3, -1], [0, -1, 0]];
-export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
+export function characterGrid(look: Look, pose: Pose, frame: number, junior = false): Grid {
   const { rect, oval, shadow, done } = grid(CHARACTER_HEIGHT);
   const f = ((frame % 4) + 4) % 4, beat = f % 2;
   const [skin, skinShade] = index(look.body, skinTones);
@@ -377,6 +376,13 @@ export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
   rect(22, 25 + bob, 4, 6, jacket);
   rect(6, 30 + bob + beat, 4, 4, skinShade);
   rect(22, 31 + bob - beat, 4, 4, skin);
+  if (junior) {
+    rect(12, 23 + bob, 2, 4, Ink.Gold);
+    rect(18, 23 + bob, 2, 4, Ink.Gold);
+    rect(14, 26 + bob, 4, 3, Ink.Gold);
+    rect(13, 29 + bob, 6, 5, Ink.Ink);
+    rect(14, 30 + bob, 4, 3, Ink.Cream);
+  }
   switch (pose) {
     case "type":
       rect(9, 32, 16, 4, Ink.Ink);
@@ -444,7 +450,7 @@ export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
 }
 
 const cache = new Map<string, HTMLCanvasElement>();
-function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1) {
+function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x: number, y: number) {
   let sprite = cache.get(key);
   if (!sprite) {
     const rows = build();
@@ -462,8 +468,7 @@ function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x:
     if (cache.size >= 512) cache.delete(cache.keys().next().value!);
     cache.set(key, sprite);
   }
-  if (scale === 1) ctx.drawImage(sprite, Math.round(x), Math.round(y));
-  else ctx.drawImage(sprite, Math.round(x), Math.round(y), sprite.width * scale, sprite.height * scale);
+  ctx.drawImage(sprite, Math.round(x), Math.round(y));
 }
 
 type WallDecor = Decor | "rack" | "bookshelf" | "window" | "lamp";
@@ -594,8 +599,8 @@ export const defaultTheme: Theme = {
     this.furniture("chair", ctx, yourDesk.x * TILE, yourDesk.y * TILE + TILE / 2);
     this.furniture("your_desk", ctx, yourDesk.x * TILE, yourDesk.y * TILE);
   },
-  character(look, pose, frame, ctx, x, y, scale) {
+  character(look, pose, frame, ctx, x, y, junior = false) {
     const f = pose === "run" || pose === "leave" || pose === "deliver" || pose === "type" || pose === "smoke" ? frame % 4 : Math.floor(frame / 4) % 2;
-    paint(`${look.body},${look.hair},${look.shirt},${look.accessory}:${pose}:${f}`, () => characterGrid(look, pose, f), ctx, x, y, scale);
+    paint(`${look.body},${look.hair},${look.shirt},${look.accessory}:${pose}:${f}:${junior}`, () => characterGrid(look, pose, f, junior), ctx, x, y);
   },
 };

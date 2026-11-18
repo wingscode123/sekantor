@@ -74,8 +74,8 @@ export function isGhost(s: Session, now: number): boolean {
   return s.status === "ended" && ended <= now && now < ended + GHOST_MS;
 }
 export const SUBAGENT_REPORT_MS = 60_000;
-export function subagentReportExpiry(subagent: Subagent): number {
-  return subagent.status === "reported" ? Date.parse(subagent.ended_at ?? "") + SUBAGENT_REPORT_MS : Infinity;
+export function subagentReportExpiry(subagent: Subagent, now: number): number {
+  return subagent.status === "reported" ? (subagent.ended_at ? Date.parse(subagent.ended_at) : now) + SUBAGENT_REPORT_MS : Infinity;
 }
 
 const ROOM_GAP = 2;
@@ -85,14 +85,19 @@ const slot = (anchor: Pt, i: number, columns = 6): Pt => ({
   x: anchor.x + i % columns, y: anchor.y + 1 + Math.floor(i / columns),
 });
 
-function planRoom(project: string, members: Session[], now: number) {
+export const juniorKey = (sessionId: string, id: string) => JSON.stringify([sessionId, id]);
+
+function planRoom(project: string, members: Session[], now: number, departed?: ReadonlySet<string>) {
   const seats = new Map<string, number>();
   const desks: Pt[] = [];
   const people: Avatar[] = [];
   let col = 0, row = 0, shelfHeight = 1, usedColumns = 1;
   for (const s of members) {
-    const juniors = (s.subagents ?? []).filter(a => now < subagentReportExpiry(a));
-    const groupSize = 1 + juniors.filter(a => a.status === "working").length;
+    const juniors = [...(s.subagents ?? [])].sort((a, b) => compare(a.started_at, b.started_at) || compare(a.id, b.id));
+    const hasDesk = (a: Subagent) => a.status === "working" ||
+      (departed ? !departed.has(juniorKey(s.session_id, a.id)) : now < subagentReportExpiry(a, now));
+    // Leave a gap for a departed junior when a later colleague still uses the row.
+    const groupSize = 1 + juniors.reduce((last, a, i) => hasDesk(a) ? i + 1 : last, 0);
     const columns = Math.min(groupSize, DESK_COLS);
     if (col + columns > DESK_COLS) {
       row += shelfHeight;
@@ -112,14 +117,14 @@ function planRoom(project: string, members: Session[], now: number) {
     desks.push(deskTile);
     people.push({ key: s.session_id, sessionId: s.session_id, identity, seat, look, ...poseFor(s),
       deskTile, name: s.agent?.name || s.source_label || appOf(s), app, project });
-    let juniorSeat = 1;
-    for (const junior of juniors) {
+    for (const [i, junior] of juniors.entries()) {
+      if (!hasDesk(junior)) continue;
       const reporting = junior.status === "reported";
       const meeting = { x: deskTile.x, y: deskTile.y + 1 };
-      const juniorDesk = reporting ? { x: deskTile.x + 1, y: deskTile.y } : deskAt(juniorSeat++);
-      if (!reporting) desks.push(juniorDesk);
+      const juniorDesk = deskAt(i + 1);
+      desks.push(juniorDesk);
       people.push({
-        key: JSON.stringify([s.session_id, junior.id]), sessionId: s.session_id, identity, seat, look,
+        key: juniorKey(s.session_id, junior.id), sessionId: s.session_id, identity, seat, look,
         place: "desk", pose: reporting ? "deliver" : activityPose(junior.activity).pose,
         deskTile: juniorDesk, name: junior.type, app, project,
         junior: { status: junior.status, meeting, door: meeting },
@@ -136,7 +141,7 @@ function planRoom(project: string, members: Session[], now: number) {
   return { project, members, desks, people, w, h, sharedColumns, furnitureY };
 }
 
-export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns = 3): Office {
+export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns = 3, departed?: ReadonlySet<string>): Office {
   const ordered = sessions.filter(s => s.status !== "ended" || isGhost(s, now))
     .sort((a, b) => compare(a.started_at, b.started_at) || compare(a.session_id, b.session_id));
   const membersByProject = new Map<string, Session[]>();
@@ -149,7 +154,7 @@ export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns =
 
   const rooms: Room[] = [], avatars: Avatar[] = [], places: PlaceLabel[] = [];
   const projects = [...membersByProject.keys()].sort(compare);
-  const plans = projects.map(project => planRoom(project, membersByProject.get(project)!, now));
+  const plans = projects.map(project => planRoom(project, membersByProject.get(project)!, now, departed));
   // Distribute rooms so row lengths differ by at most one.
   const rowCount = plans.length <= 3 ? 1 : Math.max(2, Math.ceil(plans.length / Math.max(2, maxColumns)));
   const rows = [];

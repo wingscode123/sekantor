@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Session, Status, Subagent } from "../types";
-import { identityOf, layoutOffice, lookFor, normaliseKind, poseFor, route } from "./model";
+import { identityOf, juniorKey, layoutOffice, lookFor, normaliseKind, poseFor, route } from "./model";
 
 const session = (overrides: Partial<Session> = {}): Session => ({
   session_id: "one", source: "claude_code", source_label: "Claude Code",
@@ -245,7 +245,7 @@ it("balances longer rows and centres the shorter last row", () => {
   expect(Math.abs(midpoint - office.width / 2)).toBeLessThanOrEqual(0.5);
 });
 
-it("puts a working junior beside its main agent and removes the desk when it reports", () => {
+it("keeps the junior desk until delivery completes, even without an end timestamp", () => {
   const started = "2026-11-17T12:00:00Z";
   const junior: Subagent = {
     id: "junior", type: "Explore", status: "working", activity: { kind: "read", tool: "Read" },
@@ -259,15 +259,25 @@ it("puts a working junior beside its main agent and removes the desk when it rep
   expect(child.deskTile).toEqual({ x: parent.deskTile.x + 3, y: parent.deskTile.y });
   expect(working.rooms[0].desks).toContainEqual(child.deskTile);
 
-  const reported = session({ subagents: [{ ...junior, status: "reported", ended_at: started }] });
+  const reported = session({ subagents: [{ ...junior, status: "reported", ended_at: null }] });
   const reporting = layoutOffice([reported], now);
   const [main, courier] = reporting.avatars;
-  expect(reporting.rooms[0].desks).toEqual([main.deskTile]);
-  expect(reporting.rooms[0].w).toBeLessThan(working.rooms[0].w);
+  expect(reporting.rooms[0].desks).toEqual(working.rooms[0].desks);
+  expect(reporting.rooms[0].w).toBe(working.rooms[0].w);
   expect(courier.junior!.meeting).toEqual({ x: main.deskTile.x, y: main.deskTile.y + 1 });
   expect(route(reporting, courier.deskTile, courier.junior!.meeting).at(-1)).toEqual(courier.junior!.meeting);
   expect(route(reporting, courier.junior!.meeting, courier.junior!.door).at(-1)).toEqual(reporting.rooms[0].door);
-  expect(layoutOffice([reported], now + 60_000).avatars).toHaveLength(1);
+  const gone = layoutOffice([reported], now, 3, new Set([courier.key]));
+  expect(gone.rooms[0].desks).toEqual([gone.avatars[0].deskTile]);
+  expect(gone.rooms[0].w).toBeLessThan(reporting.rooms[0].w);
+
+  const sibling: Subagent = { ...junior, id: "sibling", started_at: "2026-11-17T12:00:01Z" };
+  const before = layoutOffice([session({ subagents: [junior, sibling] })], now);
+  const both = session({ subagents: [sibling, ...reported.subagents!] });
+  const after = layoutOffice([both], now, 3, new Set([courier.key]));
+  const siblingKey = juniorKey(both.session_id, sibling.id);
+  expect(after.avatars.find(a => a.key === siblingKey)?.deskTile).toEqual(before.avatars[2].deskTile);
+  expect(after.rooms[0].desks).toEqual([before.avatars[0].deskTile, before.avatars[2].deskTile]);
 });
 
 it("routes smoothly from a fractional position without backtracking", () => {
@@ -283,12 +293,27 @@ it("routes smoothly from a fractional position without backtracking", () => {
 });
 
 
-it("keeps every desk connected to the lobby door at 1 to 4 room columns", () => {
-  const sessions = Array.from({ length: 9 }, (_, i) => session({ session_id: String(i), project: { name: "P" + i, kind: "web", signals: [] } }));
+it.each([1, 2, 3, 4, 5, 6, 7, 8])("connects %i rooms to the lobby through doors without crossing walls", count => {
+  const base = projects(count);
+  const sessions = [...base, ...Array.from({ length: 4 }, (_, i) =>
+    session({ session_id: `extra-${i}`, workspace: base[0].workspace }))];
   for (const columns of [2, 3, 4]) {
     const office = layoutOffice(sessions, undefined, columns);
-    for (const room of office.rooms) {
-      for (const desk of room.desks) expect(route(office, desk, office.door).length).toBeGreaterThan(0);
+    for (const room of office.rooms) for (const desk of room.desks) {
+      const path = route(office, desk, office.door);
+      expect(path.at(-1)).toEqual(office.door);
+      expect(path).toContainEqual(room.door);
+      const allowed = [room.door, office.door, { x: office.door.x, y: office.lobby.y }];
+      for (const [i, point] of path.entries()) {
+        const prior = path[i - 1] ?? desk;
+        expect(Math.abs(prior.x - point.x) + Math.abs(prior.y - point.y)).toBe(1);
+        for (const { x, y, w, h } of [...office.rooms, office.lobby]) {
+          const inside = point.x >= x && point.x < x + w && point.y >= y && point.y < y + h;
+          if (inside && (point.x === x || point.x === x + w - 1 || point.y === y || point.y === y + h - 1)) {
+            expect(allowed).toContainEqual(point);
+          }
+        }
+      }
     }
   }
 });

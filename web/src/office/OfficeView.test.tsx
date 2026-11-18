@@ -133,11 +133,13 @@ describe("office page", () => {
     expect(canvas.width % layoutOffice([session()]).width).toBe(0);
     expect(cssWidth * 1.25).toBeCloseTo(canvas.width);
     expect(screen.getByText("repo", { exact: true }).getAttribute("title")).toBe("repo");
-    for (const label of ["Your desk: permissions, questions, reports", "Server rack: running commands", "Pantry: idle", "Exit: session ended"]) {
+    for (const label of ["Your desk: permissions, questions, reports", "Rack", "Pantry", "Exit: session ended"]) {
       const sign = screen.getAllByText(label).find(el => el.classList.contains("office-sign"))!;
-      expect(sign.getAttribute("aria-hidden")).toBe("true");
+      expect(sign.closest('[aria-hidden="true"]')).toBeTruthy();
     }
     expect(screen.getByText("What the places mean")).toBeTruthy();
+    expect(screen.getByText("Server rack: running commands").tagName).toBe("DT");
+    expect(screen.getByText("Pantry: idle").tagName).toBe("DT");
     expect(screen.getByText(/Agents come here for approval/)).toBeTruthy();
   });
   it("anchors name plates above the seated avatar's head and hides plates when tiles are under 20px", () => {

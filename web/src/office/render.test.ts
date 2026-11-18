@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { startRenderer } from "./render";
 import { layoutOffice, type Office } from "./model";
 import type { Session, Subagent } from "../types";
-import { CHARACTER_HEIGHT, JUNIOR_SCALE, TILE, type Theme } from "./sprites";
+import { CHARACTER_HEIGHT, TILE, type Theme } from "./sprites";
 const office: Office = { width: 20, height: 10, clusters: [], rooms: [], places: [], lobby: { x: 0, y: 0, w: 0, h: 0, door: { x: 1, y: 1 }, yourDesk: { x: 2, y: 2 }, corridorY: 0 }, yourDesk: { x: 2, y: 2 }, rack: { x: 3, y: 3 }, pantry: { x: 4, y: 4 }, door: { x: 1, y: 1 }, avatars: [] };
 const theme: Theme = { palette: [], tile: vi.fn(), furniture: vi.fn(), character: vi.fn() };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -310,13 +310,17 @@ it("animates the junior delivering a paper, pausing while the main receives it, 
   const now = Date.parse(started);
   let current = layoutOffice([parent], now);
   const character = vi.fn<Theme["character"]>();
-  const stop = startRenderer(canvas, () => current, { ...theme, character });
+  const departed = vi.fn();
+  const stop = startRenderer(canvas, () => current, { ...theme, character }, undefined, departed);
   vi.advanceTimersByTime(5000);
-  expect(character.mock.calls.some(([, pose, , , , , scale]) => pose === "read" && scale === JUNIOR_SCALE)).toBe(true);
+  expect(character.mock.calls.some(([, pose, , , , , junior]) => pose === "read" && junior === true)).toBe(true);
 
   character.mockClear();
   current = layoutOffice([{ ...parent, subagents: [{ ...junior, status: "reported", ended_at: started }] }], now);
-  vi.advanceTimersByTime(5000);
+  vi.advanceTimersByTime(1000);
+  expect(departed).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(4000);
+  expect(departed).toHaveBeenCalledExactlyOnceWith([current.avatars[1].key]);
   const calls = character.mock.calls;
   const walk = calls.findIndex(([, pose]) => pose === "deliver");
   const receive = calls.findIndex(([, pose, , , , , scale]) => pose === "receive" && scale === undefined);
@@ -327,13 +331,31 @@ it("animates the junior delivering a paper, pausing while the main receives it, 
   const waiting = calls.slice(walk, leave).filter(([, pose]) => pose === "report");
   expect(waiting.length).toBeGreaterThanOrEqual(8);
   const meeting = current.avatars[1].junior!.meeting;
-  expect(waiting.every(([, , , , x, y]) => x === (meeting.x + (1 - JUNIOR_SCALE) / 2) * TILE &&
-    y === (meeting.y + 1) * TILE - CHARACTER_HEIGHT * JUNIOR_SCALE)).toBe(true);
+  expect(waiting.every(([, , , , x, y]) => x === meeting.x * TILE &&
+    y === (meeting.y + 1) * TILE - CHARACTER_HEIGHT)).toBe(true);
   const [, , , , lastX, lastY] = calls.filter(([, pose]) => pose === "leave").at(-1)!;
   const door = current.rooms[0].door;
-  expect(lastX).toBe((door.x + (1 - JUNIOR_SCALE) / 2) * TILE);
-  expect(lastY).toBeLessThan((door.y + 1) * TILE - CHARACTER_HEIGHT * JUNIOR_SCALE);
-  expect(lastY).toBeGreaterThan(door.y * TILE - CHARACTER_HEIGHT * JUNIOR_SCALE);
+  expect(lastX).toBe(door.x * TILE);
+  expect(lastY).toBeLessThan((door.y + 1) * TILE - CHARACTER_HEIGHT);
+  expect(lastY).toBeGreaterThan(door.y * TILE - CHARACTER_HEIGHT);
   expect(calls.at(-1)?.[6]).toBeUndefined();
+  stop();
+});
+
+it("does not replay a report that was already complete in the first snapshot", () => {
+  const canvas = setup();
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const parent = { ...office, avatars: [{
+    key: "completed", sessionId: "s", identity: "s", seat: 0,
+    look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk", pose: "deliver",
+    deskTile: { x: 5, y: 5 }, name: "Explore", app: "claude", project: "project",
+    junior: { status: "reported", meeting: { x: 6, y: 5 }, door: office.door },
+  }] } satisfies Office;
+  const character = vi.fn();
+  const departed = vi.fn();
+  const stop = startRenderer(canvas, () => parent, { ...theme, character }, undefined, departed);
+  vi.advanceTimersByTime(3000);
+  expect(character).not.toHaveBeenCalled();
+  expect(departed).toHaveBeenCalledExactlyOnceWith(["completed"]);
   stop();
 });

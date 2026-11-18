@@ -13,6 +13,13 @@ export function sessionOrder(sessions: Iterable<Session>): Session[] {
   );
 }
 
+function normalizeReports(session: Session, receivedAt: string, previous?: Session): Session {
+  if (!session.subagents?.some(a => a.status === "reported" && !a.ended_at)) return session;
+  const previousReports = new Map(previous?.subagents?.map(a => [a.id, a.ended_at]));
+  return { ...session, subagents: session.subagents.map(a => a.status === "reported" && !a.ended_at
+    ? { ...a, ended_at: previousReports.get(a.id) ?? receivedAt } : a) };
+}
+
 /** Live sessions over WS /v1/stream, reconnecting with backoff. Auth rides on the hub's cookie. */
 export function useSessions(): {
   sessions: Session[]; connection: Connection; loaded: boolean;
@@ -33,11 +40,12 @@ export function useSessions(): {
       ws.onopen = () => { retry.current = 0; setConnection("live"); };
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data) as StreamMessage;
+        const receivedAt = new Date().toISOString();
         if (msg.type === "snapshot") {
-          setById(new Map(msg.sessions.map((s) => [s.session_id, s])));
+          setById(prev => new Map(msg.sessions.map(s => [s.session_id, normalizeReports(s, receivedAt, prev.get(s.session_id))])));
           setLoaded(true);
         } else if (msg.type === "session") {
-          setById((prev) => new Map(prev).set(msg.session.session_id, msg.session));
+          setById((prev) => new Map(prev).set(msg.session.session_id, normalizeReports(msg.session, receivedAt, prev.get(msg.session.session_id))));
         }
       };
       ws.onclose = async (e) => {
@@ -81,7 +89,7 @@ export function useGhostNow(sessions: Session[]): number {
     const expiries = sessions.filter(s => isGhost(s, now)).map(s => Date.parse(s.ended_at!) + GHOST_MS);
     for (const s of sessions) {
       for (const junior of s.subagents ?? []) {
-        const expiry = subagentReportExpiry(junior);
+        const expiry = subagentReportExpiry(junior, now);
         if (Number.isFinite(expiry) && expiry > now) expiries.push(expiry);
       }
     }

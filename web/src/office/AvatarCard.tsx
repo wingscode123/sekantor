@@ -9,7 +9,7 @@ import { subagentReportExpiry, type Avatar } from "./model";
 export const statusText = (s: Session) => ({ waiting_approval: "Waiting for approval", waiting_input: s.needs_you ? "Waiting for you" : "Idle", running: "Running", error: "Error", reported: s.report_pending ? "Report ready" : "Report accepted", done: "Done", ended: "Ended" })[s.status];
 export function AvatarCard({ session: s, avatar, onClose }: { session: Session; avatar: Avatar; onClose: () => void }) {
   const now = useNow(1000);
-  const juniors = (s.subagents ?? []).filter(a => now < subagentReportExpiry(a));
+  const juniors = (s.subagents ?? []).filter(a => now < subagentReportExpiry(a, now));
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState(false);
   async function acceptReport() {
