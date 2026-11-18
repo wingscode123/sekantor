@@ -13,11 +13,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sekantor.hub.status import SessionState, apply
-from sekantor.schema import Event, Status
+from sekantor.hub.teams import TeamIndex, placement_key
+from sekantor.schema import Event, OrcaPlacement, Status
 
 log = logging.getLogger("sekantor.hub")
 SLOW_S = 1.0  # the hook stops waiting for the hub after 1 s, so anything slower gets a log line
 RETENTION = timedelta(days=7)
+PLACEMENT_TTL = timedelta(minutes=2)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -36,6 +38,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     body TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS orca_placements (
+    session_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    body TEXT NOT NULL
+);
 """
 
 
@@ -54,6 +63,16 @@ class Store:
         self._db.executescript(_SCHEMA)
         self._db.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema', '1')")
         self._lock = threading.Lock()
+        self._orca_sessions = {}
+        for (body,) in self._db.execute(
+            "SELECT body FROM sessions WHERE json_extract(body, '$.source') = 'orca' "
+            "OR json_extract(body, '$.host.app') = 'orca'"
+        ):
+            s = SessionState.model_validate_json(body)
+            if s.floor == "orca":
+                self._orca_sessions[s.session_id] = s
+        self._team_index: TeamIndex | None = None
+        self._team_index_until: datetime | None = None
 
     def close(self) -> None:
         with self._lock:
@@ -61,8 +80,47 @@ class Store:
 
     # --- writes ---------------------------------------------------------------
 
+    def add_placement(self, event: Event, received_at: datetime | None = None) -> bool:
+        placement = event.orca
+        if event.type != "orca_placement" or placement is None:
+            raise ValueError("expected an Orca placement event")
+        received_at = received_at or _now()
+        body = placement.model_dump_json()
+        with self._lock:
+            previous = self._db.execute(
+                "SELECT ts, body FROM orca_placements WHERE session_id = ?", (placement.session_id,),
+            ).fetchone()
+            ts = event.ts.isoformat()
+            newer = previous is None or ts > previous[0]
+            changed = previous is None or (newer and body != previous[1])
+            self._db.execute(
+                "INSERT INTO orca_placements(session_id, event_id, ts, received_at, body) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(session_id) DO UPDATE SET event_id=excluded.event_id, ts=excluded.ts, "
+                "received_at=MAX(orca_placements.received_at, excluded.received_at), body=excluded.body",
+                (placement.session_id, event.event_id, ts if newer else previous[0], received_at.isoformat(),
+                 body if newer else previous[1]),
+            )
+            if changed:
+                self._team_index = None
+            return changed
+
+    def expire_placements(self, now: datetime | None = None) -> bool:
+        cutoff = ((now or _now()) - PLACEMENT_TTL).isoformat()
+        with self._lock:
+            expired = self._db.execute("DELETE FROM orca_placements WHERE received_at <= ?", (cutoff,)).rowcount > 0
+            if expired:
+                self._team_index = None
+            return expired
+
+    def competing_leads(self, session_id: str) -> bool:
+        with self._lock:
+            return self._team_index is not None and self._team_index.competing_leads(session_id)
+
     def add_event(self, event: Event, received_at: datetime | None = None) -> SessionState | None:
         """Store ``event`` and return the updated session, or None if it was a duplicate."""
+        if event.type == "orca_placement":
+            self.add_placement(event, received_at)
+            return None
         received_at = received_at or _now()
         asked = time.monotonic()
         with self._lock:
@@ -81,7 +139,6 @@ class Store:
                 state.prune_subagents(received_at)
                 self._put_session(state)
                 self._db.execute("COMMIT")
-                return state
             except BaseException:
                 self._db.execute("ROLLBACK")
                 raise
@@ -90,6 +147,8 @@ class Store:
                 if done - asked > SLOW_S:
                     log.warning("store.add_event %s: waited %.2fs for the store lock, held it %.2fs",
                                 event.event_id, got - asked, done - got)
+            self._index_session(state)
+            return self._resolve_team(state)
 
     def set_snooze(self, session_id: str, until: datetime | None) -> SessionState | None:
         """Set or clear a session's snooze, keeping the rest of it as stored. None if there is no such session."""
@@ -98,12 +157,14 @@ class Store:
             if s is not None:
                 s.snoozed_until = until
                 self._put_session(s)
-            return s
+            return self._resolve_team(s) if s is not None else None
 
     def acknowledge_report(self, session_id: str) -> SessionState | None:
         """Mark the current report read. Return the resulting session if it exists."""
         with self._lock:
             s = self._get_session(session_id)
+            if s is not None:
+                self._resolve_team(s)
             if s is not None and s.report_pending:
                 s.acknowledged_at = max(_now(), s.status_since)
                 self._put_session(s)
@@ -119,13 +180,25 @@ class Store:
                 "AND session_id NOT IN (SELECT DISTINCT session_id FROM events)",
                 (Status.ended.value, cutoff),
             )
+            for sid, s in list(self._orca_sessions.items()):
+                if s.status is Status.ended and self._get_session(sid) is None:
+                    del self._orca_sessions[sid]
+                    self._team_index = None
             return n
 
     # --- reads ----------------------------------------------------------------
 
+    def placements(self, now: datetime | None = None) -> dict[str, OrcaPlacement]:
+        cutoff = ((now or _now()) - PLACEMENT_TTL).isoformat()
+        with self._lock:
+            rows = self._db.execute("SELECT session_id, body FROM orca_placements WHERE received_at > ?", (cutoff,))
+            return {session_id: OrcaPlacement.model_validate_json(body) for session_id, body in rows}
+
     def session(self, session_id: str) -> SessionState | None:
         with self._lock:
             state = self._get_session(session_id)
+            if state is not None:
+                self._resolve_team(state)
         if state is not None:
             state.prune_subagents(_now())
         return state
@@ -136,8 +209,8 @@ class Store:
                 rows = self._db.execute("SELECT body FROM sessions").fetchall()
             else:
                 rows = self._db.execute("SELECT body FROM sessions WHERE status = ?", (status.value,)).fetchall()
-        now = _now()
-        states = [SessionState.model_validate_json(r[0]) for r in rows]
+            now = _now()
+            states = [self._resolve_team(SessionState.model_validate_json(body), now) for (body,) in rows]
         for state in states:
             state.prune_subagents(now)
         return states
@@ -152,6 +225,34 @@ class Store:
         return [Event.model_validate_json(r[0]) for r in reversed(rows)]
 
     # --- internals (call with the lock held) ----------------------------------
+
+    def _index_session(self, s: SessionState) -> None:
+        previous = self._orca_sessions.get(s.session_id)
+        if s.floor == "orca":
+            self._orca_sessions[s.session_id] = s
+            if previous is None or placement_key(previous) != placement_key(s):
+                self._team_index = None
+        elif previous is not None:
+            del self._orca_sessions[s.session_id]
+            self._team_index = None
+
+    def _resolve_team(self, s: SessionState, now: datetime | None = None) -> SessionState:
+        s.team_resolved = True
+        if s.floor != "orca":
+            return s
+        now = now or _now()
+        if self._team_index is None or (self._team_index_until and now >= self._team_index_until):
+            rows = self._db.execute(
+                "SELECT session_id, received_at, body FROM orca_placements WHERE received_at > ?",
+                ((now - PLACEMENT_TTL).isoformat(),),
+            ).fetchall()
+            self._team_index_until = min((datetime.fromisoformat(row[1]) + PLACEMENT_TTL for row in rows),
+                                         default=None)
+            self._team_index = TeamIndex(
+                self._orca_sessions, {sid: OrcaPlacement.model_validate_json(body) for sid, _, body in rows},
+            )
+        s.team = self._team_index.resolve(s.session_id)
+        return s
 
     def _get_session(self, session_id: str) -> SessionState | None:
         row = self._db.execute("SELECT body FROM sessions WHERE session_id = ?", (session_id,)).fetchone()

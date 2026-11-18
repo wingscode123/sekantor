@@ -170,6 +170,11 @@ def build_event(payload: dict, env: dict[str, str], event_id: str | None = None,
     pid = _pid(env)
     if pid:
         event["process"] = {"pid": pid}
+    from sekantor.pos.claude_code.fingerprint import ORCA_IDENTITY_ENV, _env_get
+
+    for field, name in ORCA_IDENTITY_ENV.items():
+        if value := _env_get(env, name):
+            event[field] = value
     host = _host(payload, env, deep=False)
     if host:
         event["host"] = host

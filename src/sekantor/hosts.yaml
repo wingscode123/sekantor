@@ -21,6 +21,7 @@
 
 version: 1
 min_confidence: 0.5
+forward_env: [ORCA_AGENT_SESSION_ID, ORCA_TERMINAL_HANDLE]
 
 hosts:
   - id: orca

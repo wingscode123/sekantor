@@ -366,7 +366,7 @@ def test_hook_env_file_lists_rule_env_names_and_claude_pid(tmp_path):
     assert names[-1] == "" and names[:-1] == sorted(set(names[:-1]))
     want = {s["env"] for h in load_rules()["hosts"] for s in h["signals"] if "env" in s}
     want |= {s["env"] for s in load_rules()["fallback"]["terminal"]["signals"] if "env" in s}
-    assert set(names[:-1]) == want | {"CLAUDE_PID"}
+    assert set(names[:-1]) == want | {"CLAUDE_PID", "ORCA_AGENT_SESSION_ID", "ORCA_TERMINAL_HANDLE"}
     assert "CLAUDE_CODE_ENTRYPOINT" in names and "ANTHROPIC_API_KEY" not in names
 
 

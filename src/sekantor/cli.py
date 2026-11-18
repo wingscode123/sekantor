@@ -458,9 +458,12 @@ def status(as_json: bool = typer.Option(False, "--json", help="Print raw JSON.")
     if as_json:
         typer.echo(json.dumps(data, indent=2))
         return
-    sessions = data["sessions"]
-    if not sessions:
+    if not data["sessions"]:
         typer.echo("No sessions yet. Agents appear on their first hook event.")
+        return
+    sessions = [s for s in data["sessions"] if s.get("report_to") != "lead"]
+    if not sessions:
+        typer.echo("No sessions in your inbox.")
         return
     def group_status(s):
         if s["status"] == "reported":

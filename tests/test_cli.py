@@ -414,9 +414,11 @@ def test_status_groups_pending_and_accepted_reports(monkeypatch):
     monkeypatch.setattr("sekantor.cli._hub", lambda _: {"sessions": [
         {**report, "report_pending": False, "summary": "Accepted turn"},
         {**report, "report_pending": True, "summary": "Pending turn"},
+        {**report, "report_pending": False, "report_to": "lead", "summary": "Junior turn"},
     ]})
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0, result.output
     assert result.output.index("Reports pending (1)") < result.output.index("Pending turn")
     assert result.output.index("Pending turn") < result.output.index("Reports accepted (1)")
     assert result.output.index("Reports accepted (1)") < result.output.index("Accepted turn")
+    assert "Junior turn" not in result.output
