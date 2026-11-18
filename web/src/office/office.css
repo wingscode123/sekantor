@@ -2,7 +2,12 @@
 .office-page { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 12px; }
 .office-counts { font-size: 14px; margin: 0; }
 .office-banner { padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-failing); margin-bottom: 12px; }
-.office-viewport { flex: 1; min-height: 0; overflow: hidden; background: #202c34; }
+.office-viewport { flex: 1; min-height: 0; overflow: hidden; image-rendering: pixelated; }
+.floor-selector { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.floor-selector__button { padding: 4px 10px; border: 1px solid #70483d; border-radius: 3px; background: #fff0ce; color: #332b35; cursor: pointer; }
+.floor-selector__button[aria-pressed="true"] { background: #2d5558; color: #fff0ce; }
+.floor-selector__badge { display: inline-block; margin-inline-start: 6px; padding: 0 4px; border-radius: 3px; background: #f7ce82; color: #332b35; font-weight: 700; }
+.office-model-badge { display: inline-block; padding: 0 3px; border-radius: 2px; background: #2d5558; color: #fff0ce; font-size: 0.85em; vertical-align: middle; }
 .office-floor { position: relative; }
 .office-floor canvas { display: block; image-rendering: pixelated; max-width: none; }
 .office-plate { position: absolute; transform: translate(-50%, -100%); padding: 2px 4px; border: 1px solid #536878; background: #f4eedb; color: #202c34; font-size: 11px; line-height: 1.2; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -14,6 +19,7 @@
 @container (min-width: calc(4ch + 10px)) { .office-landmark .office-landmark__rack { display: block; } }
 @container (min-width: calc(6ch + 10px)) { .office-landmark .office-landmark__pantry { display: block; } }
 .office-sign--room { z-index: 2; border: 0; background: transparent; font-weight: 700; }
+.office-sign--worktree { transform: translateY(-50%); border-color: #70483d; background: #fff0ce; color: #332b35; }
 .office-accessible { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); }
 .office-accessible:focus-within { position: static; width: auto; height: auto; margin: 8px; clip-path: none; overflow: visible; }
 .office-legend { margin-bottom: 8px; }

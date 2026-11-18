@@ -86,6 +86,22 @@ export function tileGrid(kind: TileKind, grain = 0): Grid {
   return done();
 }
 
+/** Repeat a native floor tile outside the scene canvas without painting it each frame. */
+export const floorBackground = (() => {
+  const paths = new Map<string, string>();
+  for (const [y, row] of tileGrid("floor").entries()) {
+    for (let x = 0; x < row.length;) {
+      let end = x + 1;
+      while (row[end] === row[x]) end++;
+      const color = palette[parseInt(row[x], 36)];
+      paths.set(color, (paths.get(color) ?? "") + `M${x} ${y}h${end - x}v1H${x}z`);
+      x = end;
+    }
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${TILE} ${TILE}" shape-rendering="crispEdges">${[...paths].map(([color, path]) => `<path fill="${color}" d="${path}"/>`).join("")}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+})();
+
 export function furnitureGrid(kind: FurnitureKind, frame = 0): Grid {
   const { rect, oval, shadow, done } = grid();
   switch (kind) {

@@ -1,5 +1,6 @@
 import type { Session, Subagent } from "../types";
 import type { Pt } from "./motion";
+import { floorOf } from "./floors";
 
 export type Kind = "web" | "backend" | "data" | "mobile" | "game" | "infra" | "docs" | "other";
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
@@ -7,6 +8,7 @@ export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | 
 export interface Look { body: number; hair: number; shirt: number; accessory: number }
 export interface Avatar {
   junior?: { status: Subagent["status"]; meeting: Pt; door: Pt };
+  teamReport?: { lead: string; meeting: Pt; since: string };
   key: string; sessionId: string; identity: string; seat: number; look: Look;
   place: Place; pose: Pose; targetTile?: { x: number; y: number }; deskTile: { x: number; y: number }; name: string; app: string; project: string;
 }
@@ -14,6 +16,7 @@ export interface Cluster { project: string; origin: { x: number; y: number }; de
 export interface Room {
   project: string; kind: Kind; x: number; y: number; w: number; h: number;
   door: Pt; sign: Pt; desks: Pt[]; rack: Pt; pantry: Pt;
+  worktrees?: { name: string; sign: Pt }[];
 }
 const VALID_KINDS = new Set<Kind>(["web", "backend", "data", "mobile", "game", "infra", "docs", "other"]);
 export function normaliseKind(kind: unknown): Kind {
@@ -27,9 +30,10 @@ export interface Office {
   rack: { x: number; y: number }; pantry: { x: number; y: number }; door: { x: number; y: number }; avatars: Avatar[];
 }
 
-function isOpenBot(s: Session): boolean { return s.source === "openbot" || s.host?.app === "openbot"; }
+function isOpenBot(s: Session): boolean { return floorOf(s) === "openbot"; }
 function projectOf(s: Session): string {
   if (isOpenBot(s)) return "OpenBot agents";
+  if (floorOf(s) === "orca" && s.team?.project) return s.team.project;
   return s.project?.name || s.workspace?.cwd?.split(/[\\/]+/).filter(Boolean).at(-1) || "unknown";
 }
 function appOf(s: Session): string { return s.host?.app || s.source || "unknown"; }
@@ -42,6 +46,7 @@ export function poseFor(s: Session): { place: Place; pose: Pose } {
     case "waiting_input":
       return s.needs_you ? { place: "your_desk", pose: "ask" } : { place: "pantry", pose: "coffee" };
     case "reported":
+      if (s.report_to === "lead" && floorOf(s) === "orca") return { place: "desk", pose: "work" };
       return s.report_pending ? { place: "your_desk", pose: "report" } : { place: "pantry", pose: "coffee" };
     case "error": return { place: "desk", pose: "smoke" };
     case "done": return { place: "pantry", pose: "coffee" };
@@ -91,8 +96,28 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
   const seats = new Map<string, number>();
   const desks: Pt[] = [];
   const people: Avatar[] = [];
+  const worktrees: NonNullable<Room["worktrees"]> = [];
+  const groupOf = (s: Session) => floorOf(s) === "orca" && s.team
+    ? s.team.role === "lead" ? "" : s.team.worktree : undefined;
+  const arranged = [...members].sort((a, b) => {
+    const group = groupOf(a), other = groupOf(b);
+    return group === undefined ? Number(other !== undefined)
+      : other === undefined ? -1 : compare(group, other);
+  });
+  let lastGroup: string | undefined;
   let col = 0, row = 0, shelfHeight = 1, usedColumns = 1;
-  for (const s of members) {
+  for (const s of arranged) {
+    const group = groupOf(s);
+    if (group !== lastGroup) {
+      if (people.length) row += shelfHeight;
+      col = 0;
+      shelfHeight = 1;
+      if (group) {
+        if (people.length) row++;
+        worktrees.push({ name: group, sign: { x: 2, y: 1 + 2 * row } });
+      }
+      lastGroup = group;
+    }
     const juniors = [...(s.subagents ?? [])].sort((a, b) => compare(a.started_at, b.started_at) || compare(a.id, b.id));
     const hasDesk = (a: Subagent) => a.status === "working" ||
       (departed ? !departed.has(juniorKey(s.session_id, a.id)) : now < subagentReportExpiry(a, now));
@@ -135,10 +160,14 @@ function planRoom(project: string, members: Session[], now: number, departed?: R
     shelfHeight = Math.max(shelfHeight, Math.ceil(groupSize / columns));
   }
   const w = Math.max(7, usedColumns * 3 + 2);
+  if (groupOf(arranged[0]) === "" && (arranged.length === 1 || groupOf(arranged[1]) !== "") &&
+      !(arranged[0].subagents?.length)) {
+    desks[0].x = Math.floor(w / 2);
+  }
   const sharedColumns = Math.floor((w - 2) / 2);
   const furnitureY = 3 + 2 * (row + shelfHeight);
   const h = furnitureY + Math.ceil(members.length / sharedColumns) + 2;
-  return { project, members, desks, people, w, h, sharedColumns, furnitureY };
+  return { project, members, desks, people, worktrees, w, h, sharedColumns, furnitureY };
 }
 
 export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns = 3, departed?: ReadonlySet<string>): Office {
@@ -175,13 +204,14 @@ export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns =
     let x = Math.floor((officeWidth - width) / 2);
     const front = y + Math.max(...row.map(plan => plan.h));
     corridors.push({ y: front, left: sidePassage ? 0 : Math.min(centre, x), right: Math.max(centre, x + width - 1) });
-    for (const { project, members, desks, people, w, h, sharedColumns, furnitureY } of row) {
+    for (const { project, members, desks, people, worktrees, w, h, sharedColumns, furnitureY } of row) {
       const at = (p: Pt): Pt => ({ x: x + p.x, y: y + p.y });
       const room: Room = {
         project, kind: normaliseKind(members.find(s => s.project)?.project?.kind), x, y, w, h,
         door: at({ x: Math.floor(w / 2), y: h - 1 }),
         sign: at({ x: Math.floor(w / 2), y: 0 }),
         desks: desks.map(at),
+        ...(worktrees.length ? { worktrees: worktrees.map(tree => ({ ...tree, sign: at(tree.sign) })) } : {}),
         rack: at({ x: 1, y: furnitureY }),
         pantry: at({ x: 1 + sharedColumns, y: furnitureY }),
       };
@@ -221,6 +251,12 @@ export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns =
   let waiting = 0;
   for (const s of ordered) {
     const avatar = bySession.get(s.session_id)!;
+    if (s.status === "reported" && s.report_to === "lead" && floorOf(s) === "orca" && s.team?.role === "junior" && s.team.lead) {
+      const lead = bySession.get(s.team.lead);
+      if (lead && lead !== avatar) avatar.teamReport = {
+        lead: lead.sessionId, meeting: { x: lead.deskTile.x, y: lead.deskTile.y + 1 }, since: s.status_since,
+      };
+    }
     if (avatar.place === "your_desk") {
       const point = slot(lobby.yourDesk, waiting++);
       avatar.targetTile = { x: point.x - 2, y: point.y };

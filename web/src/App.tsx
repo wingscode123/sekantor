@@ -1,7 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGhostNow, useNow, useSessions } from "./useSessions";
 import { isSnoozed } from "./SessionMenu";
 import { OfficeView } from "./office/OfficeView";
+import { defaultFloor, floorAttention, floorOf, floors, rememberFloor } from "./office/floors";
+import { isGhost } from "./office/model";
+import type { Floor, Session } from "./types";
 import "./office/office.css";
 import lockupUrl from "./assets/lockup.svg";
 
@@ -11,6 +14,19 @@ export default function App() {
   const now = useNow(1000, sessions.some(s => s.status !== "ended" && isSnoozed(s, Date.now())));
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const needs = awake.filter(s => s.needs_you).length;
+  const groups = useMemo(() => {
+    const result: Record<Floor, Session[]> = { claude: [], orca: [], openbot: [] };
+    for (const session of sessions) {
+      if (session.status !== "ended" || isGhost(session, layoutNow)) result[floorOf(session)].push(session);
+    }
+    return result;
+  }, [sessions, layoutNow]);
+  const available = floors.filter(floor => groups[floor.id].length).map(floor => ({
+    ...floor, ...floorAttention(groups[floor.id], now),
+  }));
+  const [chosen, setChosen] = useState<Floor>();
+  const active = available.some(floor => floor.id === chosen) ? chosen : defaultFloor(available);
+  useEffect(() => { if (active) setChosen(active); }, [active]);
   useEffect(() => { document.title = needs ? `(${needs}) SeKantor` : "SeKantor"; }, [needs]);
   return <>
     <a className="skip" href="#main">Skip to the office</a>
@@ -23,7 +39,13 @@ export default function App() {
       {connection === "down" && <div className="office-banner" role="alert">The hub is not answering. Reconnecting; showing the last office.{!loaded && <p>Start the hub with <code>sekantor up</code>.</p>}</div>}
       {connection === "unauthorized" && <div className="office-banner" role="alert">Open SeKantor from its link. Sign-in links work once and expire after 10 minutes. Run <code>sekantor open</code> for a fresh one.</div>}
       {!loaded && <p role="status">Waiting for sessions…</p>}
-      <OfficeView sessions={sessions} loaded={loaded} now={now} layoutNow={layoutNow} />
+      {available.length > 0 && <nav className="floor-selector" aria-label="Office floors">
+        {available.map(({ id, label, alerts }) => <button key={id} type="button" className="floor-selector__button"
+          aria-pressed={active === id} onClick={() => { setChosen(id); rememberFloor(id); }}>
+          {label}{alerts > 0 && <span className="floor-selector__badge" aria-label={`${alerts} need your attention`}>{alerts}</span>}
+        </button>)}
+      </nav>}
+      <OfficeView key={active ?? chosen ?? "claude"} sessions={groups[active ?? "claude"]} loaded={loaded} now={now} layoutNow={layoutNow} />
     </main>
   </>;
 }

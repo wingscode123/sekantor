@@ -10,6 +10,27 @@ const session = (overrides: Partial<Session> = {}): Session => ({
   ...overrides,
 });
 
+it("uses Orca projects for rooms and seats lead desks ahead of grouped worktrees", () => {
+  const member = (id: string, worktree: string, role: "lead" | "junior", project = "SeKantor") =>
+    session({ session_id: id, project: { name: worktree, kind: "web", signals: [] },
+      team: { project, worktree, role, lead: role === "junior" ? "lead" : null, model: null } });
+  const office = layoutOffice([
+    { ...member("a", "web", "junior"), status: "reported", report_to: "lead" },
+    member("b", "hub", "junior"), member("c", "web", "junior"), member("lead", "main", "lead"),
+    member("other", "main", "lead", "Other"),
+  ]);
+  expect(office.rooms.map(r => r.project)).toEqual(["Other", "SeKantor"]);
+  const room = office.rooms[1];
+  expect(room.worktrees?.map(tree => tree.name)).toEqual(["hub", "web"]);
+  const avatar = (id: string) => office.avatars.find(a => a.key === id)!;
+  expect(avatar("lead").deskTile.x).toBe(room.sign.x);
+  expect(avatar("lead").deskTile.y).toBeLessThan(avatar("b").deskTile.y);
+  expect(avatar("b").deskTile.y).toBeLessThan(avatar("a").deskTile.y);
+  expect(avatar("a").deskTile.y).toBe(avatar("c").deskTile.y);
+  expect(avatar("a").teamReport).toMatchObject({ lead: "lead", meeting: { x: room.sign.x, y: avatar("lead").deskTile.y + 1 } });
+  expect(avatar("a").targetTile).toEqual(avatar("a").deskTile);
+});
+
 describe("poseFor", () => {
   const statuses: [Status, string, string][] = [
     ["waiting_approval", "your_desk", "ask"], ["waiting_input", "your_desk", "ask"],
