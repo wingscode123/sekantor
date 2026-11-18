@@ -16,6 +16,7 @@ SUMMARY_MAX = 300
 INPUT_MAX = 4000
 
 WAITING_INPUT_NOTIFICATIONS = {"agent_needs_input", "elicitation_dialog", "elicitation_url_dialog"}
+TOOL_FOLLOWUPS = {"PostToolUse", "PostToolUseFailure", "PermissionDenied"}
 
 
 def new_event_id() -> str:
@@ -113,13 +114,15 @@ def translate(payload: dict) -> dict | None:
     subagent: dict | None = None
     tool = payload.get("tool_name")
     agent_id = payload.get("agent_id")
-
-    if name in ("SubagentStart", "SubagentStop") or agent_id:
+    permission_prompt = name == "Notification" and payload.get("notification_type") == "permission_prompt"
+    worker = None
+    if agent_id or name in ("SubagentStart", "SubagentStop"):
         if not isinstance(agent_id, str) or not agent_id:
             return None
-        subagent = {"id": agent_id}
-        if agent_type := payload.get("agent_type"):
-            subagent["type"] = agent_type
+        worker = {"id": agent_id, "type": payload.get("agent_type") or "unknown"}
+
+    if worker is not None and name != "PermissionRequest" and not permission_prompt:
+        subagent = worker
         if name == "SubagentStart":
             etype = "subagent_started"
         elif name == "SubagentStop":
@@ -128,8 +131,10 @@ def translate(payload: dict) -> dict | None:
         elif name == "PreToolUse" and tool:
             etype = "subagent_activity"
             activity = {"tool": str(tool)[:100], "kind": activity_kind(tool)}
+        elif name in TOOL_FOLLOWUPS:
+            status = "running"
         else:
-            return None  # other hooks from a subagent must not change the parent
+            return None
     elif name == "SessionStart":
         etype = "session_started"
         source = payload.get("source")
@@ -149,7 +154,7 @@ def translate(payload: dict) -> dict | None:
         summary = _clip(f"{tool}: {text}" if text else tool, SUMMARY_MAX)
         if tool:
             activity = {"tool": str(tool)[:100], "kind": activity_kind(tool)}
-    elif name == "PermissionRequest" and tool == "AskUserQuestion":
+    elif name == "PermissionRequest" and tool == "AskUserQuestion" and worker is None:
         # Claude asks the person something. Approving the tool does not answer it, so this is a
         # question to answer in the app, not an approval (dogfooding 2026-11-11).
         status = "waiting_input"
@@ -159,13 +164,17 @@ def translate(payload: dict) -> dict | None:
         status = "waiting_approval"
         text = tool_input_text(payload.get("tool_input"))
         request = {"kind": "tool", "tool": tool, "input": text}
+        if worker is not None:
+            request["subagent"] = worker
         summary = _clip(f"Wants to run: {text}" if text else f"Wants to use {tool}", SUMMARY_MAX)
-    elif name in ("PostToolUse", "PostToolUseFailure", "PermissionDenied"):
+    elif name in TOOL_FOLLOWUPS:
         status = "running"
     elif name == "Notification":
         kind = payload.get("notification_type")
-        if kind == "permission_prompt":
+        if permission_prompt:
             status = "waiting_approval"
+            if worker is not None:
+                request = {"kind": "tool", "subagent": worker}
         elif kind in WAITING_INPUT_NOTIFICATIONS:
             status = "waiting_input"
             request = {"kind": "question"}

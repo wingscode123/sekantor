@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from sekantor.pos.claude_code.translate import translate
 from sekantor.schema import Event, Status
 from sekantor.hub.status import SessionState, apply, inbox_order, sweep, NEEDS_YOU
 
@@ -73,6 +74,39 @@ def test_late_subagent_start_and_activity_do_not_reopen_report():
     worker, = s.subagents
     assert worker.status == "reported" and worker.summary == "Found it" and worker.activity is None
     assert worker.type == "Explore" and worker.started_at == T0 + timedelta(seconds=1)
+
+
+def junior_hook(name, at, worker="junior", **payload):
+    event = translate({"hook_event_name": name, "session_id": "s1", "agent_id": worker, **payload})
+    event["ts"] = (T0 + timedelta(seconds=at)).isoformat()
+    return Event.model_validate(event)
+
+
+@pytest.mark.parametrize("followup", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_subagent_permission_request_needs_you_until_matching_followup(followup):
+    ask = junior_hook("PermissionRequest", 2, tool_name="Bash", tool_input={"command": "npm test"})
+    s = run(ev(Status.running), ask)
+    assert s.status is Status.waiting_approval and s.needs_you
+    assert s.request.subagent.id == "junior" and s.request.input == "npm test"
+    assert s.summary == "Wants to run: npm test"
+
+    notified = apply(s, junior_hook("Notification", 3, notification_type="permission_prompt"))
+    assert notified.request == s.request
+    assert apply(notified, junior_hook(followup, 4, worker="other")).status is Status.waiting_approval
+    assert apply(notified, junior_hook(followup, 1)).status is Status.waiting_approval
+    cleared = apply(notified, junior_hook(followup, 5))
+    assert cleared.status is Status.running and not cleared.needs_you and cleared.request is None
+
+
+def test_subagent_permission_notification_alone_needs_you():
+    s = run(ev(Status.running), junior_hook("Notification", 1, notification_type="permission_prompt"))
+    assert s.status is Status.waiting_approval and s.needs_you and s.request.subagent.id == "junior"
+    assert apply(s, junior_hook("PermissionDenied", 2)).status is Status.running
+
+
+def test_subagent_followup_does_not_clear_parents_own_approval():
+    s = run(ev(Status.waiting_approval, request={"kind": "tool", "tool": "Bash"}), junior_hook("PostToolUse", 1))
+    assert s.status is Status.waiting_approval and s.needs_you and s.request.subagent is None
 
 
 def test_running_then_waiting_then_ended():

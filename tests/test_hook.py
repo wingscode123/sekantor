@@ -80,6 +80,11 @@ def test_translate_subagent_start():
     assert ev.subagent.model_dump() == {"id": "junior", "type": "Explore"}
 
 
+def test_translate_subagent_start_without_agent_type():
+    ev = translate({"hook_event_name": "SubagentStart", "session_id": "s", "agent_id": "junior"})
+    assert ev["subagent"] == {"id": "junior", "type": "unknown"}
+
+
 def test_translate_subagent_activity():
     ev = Event.model_validate(translate({"hook_event_name": "PreToolUse", "session_id": "s",
                                          "agent_id": "junior", "tool_name": "Read"}))
@@ -88,9 +93,12 @@ def test_translate_subagent_activity():
     assert ev.activity.model_dump() == {"tool": "Read", "kind": "read"}
 
 
-@pytest.mark.parametrize("name", ["PostToolUse", "PostToolUseFailure", "PermissionRequest", "PermissionDenied"])
-def test_subagent_tool_followups_are_ignored(name):
-    assert translate({"hook_event_name": name, "session_id": "s", "agent_id": "junior", "tool_name": "Read"}) is None
+@pytest.mark.parametrize("name", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_subagent_tool_followup_is_tagged(name):
+    ev = Event.model_validate(translate({"hook_event_name": name, "session_id": "s",
+                                         "agent_id": "junior", "tool_name": "Read"}))
+    assert ev.type == "status_changed" and ev.status.value == "running"
+    assert ev.subagent.id == "junior"
 
 
 @pytest.mark.parametrize("kind, status", [("permission_prompt", "waiting_approval"), ("auth_success", None)])

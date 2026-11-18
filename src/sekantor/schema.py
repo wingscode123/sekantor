@@ -59,10 +59,16 @@ class Host(_Model):
     via: list[str] = Field(default_factory=list)
 
 
+class Subagent(_Model):
+    id: str = Field(min_length=1)
+    type: str | None = None
+
+
 class Request(_Model):
     kind: Literal["tool", "input", "question", "report"] = "tool"
     tool: str | None = None
     input: str | None = Field(default=None, max_length=4000)
+    subagent: Subagent | None = None
     # Deprecated (ADR-0021): it named the request an answer was for. Accepted, ignored.
     id: str | None = Field(default=None, max_length=128)
 
@@ -76,11 +82,6 @@ class Activity(_Model):
 
     tool: str = Field(max_length=100)
     kind: Literal["read", "edit", "run", "web", "other"]
-
-
-class Subagent(_Model):
-    id: str = Field(min_length=1)
-    type: str | None = None
 
 
 class Event(_Model):

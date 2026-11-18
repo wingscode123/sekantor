@@ -115,7 +115,7 @@ def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
         worker = SubagentState(id=event.subagent.id, started_at=event.ts)
         s.subagents.append(worker)
     worker.started_at = min(worker.started_at, event.ts)
-    if event.subagent.type:
+    if event.subagent.type and event.subagent.type != "unknown":
         worker.type = event.subagent.type
     if event.type == "subagent_ended" and (worker.ended_at is None or event.ts >= worker.ended_at):
         worker.status = "reported"
@@ -130,7 +130,14 @@ def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
 
 def apply(state: SessionState | None, event: Event) -> SessionState:
     """Return the session state after ``event``. Never mutates ``state``."""
-    if event.type in SUBAGENT_EVENTS or event.subagent is not None:
+    if event.type in SUBAGENT_EVENTS:
+        return _apply_subagent(state, event)
+    pending_worker = state.request.subagent if state and state.request else None
+    if event.subagent is not None and not (
+        event.type == "status_changed" and event.status is Status.running
+        and state is not None and state.status is Status.waiting_approval
+        and pending_worker is not None and pending_worker.id == event.subagent.id
+    ):
         return _apply_subagent(state, event)
     if state is None:
         status = event.status or Status.running
@@ -192,6 +199,12 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     if (event.status is Status.waiting_approval and event.request is None and s.status is Status.waiting_input
             and s.request is not None and s.request.kind == "question"):
         return s  # the permission notification that follows a question (AskUserQuestion)
+
+    if (event.status is Status.waiting_approval and s.status is Status.waiting_approval
+            and event.request is not None and event.request.tool is None
+            and event.request.subagent is not None and pending_worker is not None
+            and event.request.subagent.id == pending_worker.id and s.request.tool is not None):
+        return s  # a permission notification also arrives for the detailed request
 
     if event.status is not None:
         changed = event.status is not s.status
