@@ -40,7 +40,9 @@ CODE_SUFFIXES = set(
     ".rb .php .c .h .cpp .sh .ps1 .ipynb .html .css .sql .scala .lua .zig .ex .exs".split()
 )
 IGNORED_DIRS = {"node_modules", "vendor", "dist", "build", "__pycache__", "target"}
-_cache: OrderedDict[Path, tuple[float, str, Kind, tuple[str, ...]]] = OrderedDict()
+Checkout = tuple[str, str, bool]  # project, worktree, main
+Detection = tuple[str, Kind, tuple[str, ...], Checkout | None]
+_cache: OrderedDict[Path, tuple[float, Detection]] = OrderedDict()
 _lock = Lock()
 
 
@@ -201,7 +203,7 @@ def _mostly_markdown(entries: list[Path]) -> bool:
     return markdown > files / 2
 
 
-def _inspect(folder: Path) -> tuple[str, Kind, tuple[str, ...]]:
+def _inspect(folder: Path) -> Detection:
     # A worktree or submodule has a .git file, while a regular clone has a directory.
     for parent in (folder, *folder.parents):
         mode = _mode(parent / ".git")
@@ -211,12 +213,22 @@ def _inspect(folder: Path) -> tuple[str, Kind, tuple[str, ...]]:
     else:
         root = folder
 
+    checkout = None
+    if stat.S_ISDIR(mode):
+        checkout = (root.name, root.name, True)
+    elif stat.S_ISREG(mode):
+        marker = _read(root / ".git", max_bytes=4096).strip()
+        if marker.startswith("gitdir: "):
+            gitdir = Path(os.path.normpath(root / marker.removeprefix("gitdir: ").strip()))
+            if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+                checkout = (gitdir.parent.parent.parent.name, root.name, False)
+
     kind, signals = _classify(folder)
     if kind in {"docs", "other"} and root != folder:
         root_kind, root_signals = _classify(root)
         if root_kind != "other":
             kind, signals = root_kind, root_signals
-    return root.name or str(root), kind, signals
+    return root.name or str(root), kind, signals, checkout
 
 
 def _drive_type(root: str) -> int | None:
@@ -227,44 +239,52 @@ def _drive_type(root: str) -> int | None:
     return windll.kernel32.GetDriveTypeW(root)
 
 
-def _detect_uncached(folder: Path) -> tuple[str, Kind, tuple[str, ...]]:
+def _detect_uncached(folder: Path) -> Detection:
     name = folder.name or str(folder)
     if _drive_type(folder.anchor) == DRIVE_REMOTE:
-        return name, "other", ("remote drive",)
+        return name, "other", ("remote drive",), None
     # Avoid following symlinked directories, including intermediate components.
     if all(stat.S_ISDIR(_mode(part)) for part in (*reversed(folder.parents), folder)):
         return _inspect(folder)
-    return name, "other", ()
+    return name, "other", (), None
 
 
-def detect(cwd: str | Path) -> dict:
-    """Return a fresh JSON object using a ten-minute cache per normalized folder."""
+def _detect(cwd: str | Path) -> Detection:
     # Reject UNC/device paths before any filesystem calls.
     if os.fspath(cwd).startswith(("\\\\", "//")):
         remote = PureWindowsPath(cwd)
-        return {"name": remote.name or str(remote), "kind": "other", "signals": []}
+        return remote.name or str(remote), "other", (), None
     original = Path(cwd)
     if original.drive.startswith(("\\\\", "//")) or not original.is_absolute():
-        return {"name": original.name or str(original), "kind": "other", "signals": []}
+        return original.name or str(original), "other", (), None
     folder = Path(os.path.normpath(original))
 
     with _lock:
         cached = _cache.get(folder)
         if cached is not None and time.monotonic() < cached[0]:
             _cache.move_to_end(folder)
-            _, name, kind, signals = cached
-            return {"name": name, "kind": kind, "signals": list(signals)}
+            return cached[1]
 
-    name, kind, signals = _detect_uncached(folder)
+    detection = _detect_uncached(folder)
     with _lock:
         now = time.monotonic()
         cached = _cache.get(folder)
         if cached is None or now >= cached[0]:
-            _cache[folder] = now + CACHE_SECONDS, name, kind, signals
+            _cache[folder] = now + CACHE_SECONDS, detection
         else:
             # A concurrent caller populated this folder while we inspected it.
-            _, name, kind, signals = cached
+            detection = cached[1]
         _cache.move_to_end(folder)
         if len(_cache) > MAX_CACHE_ENTRIES:
             _cache.popitem(last=False)
+    return detection
+
+
+def detect(cwd: str | Path) -> dict:
+    """Return a fresh JSON object using a ten-minute cache per normalized folder."""
+    name, kind, signals, _ = _detect(cwd)
     return {"name": name, "kind": kind, "signals": list(signals)}
+
+
+def checkout(cwd: str | Path) -> Checkout | None:
+    return _detect(cwd)[3]

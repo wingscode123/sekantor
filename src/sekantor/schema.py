@@ -4,6 +4,7 @@ Additions to the PRD example, optional and backward-compatible:
 - ``process.pid`` (ADR-0006) for FR-07 liveness checks.
 - ``activity`` (ADR-0022): the tool in use and its kind.
 - ``subagent`` (ADR-0028): the Claude Code worker that owns a lifecycle or activity event.
+- ``orca`` and Orca hook identity (ADR-0029): team placement and identity for Orca sessions.
 
 Deprecated (ADR-0021: SeKantor watches and does not answer): ``capabilities`` and ``request.id``. They are still
 accepted so an older pos keeps working, and are otherwise ignored.
@@ -15,7 +16,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION = 1
 
@@ -32,7 +33,7 @@ class Status(str, Enum):
 
 EventType = Literal[
     "session_started", "status_changed", "message", "session_ended",
-    "subagent_started", "subagent_activity", "subagent_ended",
+    "subagent_started", "subagent_activity", "subagent_ended", "orca_placement", "activity",
 ]
 SUBAGENT_EVENTS = {"subagent_started", "subagent_activity", "subagent_ended"}
 Capability = Literal["approve", "deny", "reply", "stop", "open"]
@@ -84,6 +85,15 @@ class Activity(_Model):
     kind: Literal["read", "edit", "run", "web", "other"]
 
 
+class OrcaPlacement(_Model):
+    session_id: str = Field(min_length=1)
+    project: str = Field(min_length=1)
+    worktree: str = Field(min_length=1)
+    main: bool
+    creator: str | None = None
+    model: str | None = None
+
+
 class Event(_Model):
     v: Literal[1] = SCHEMA_VERSION
     event_id: str = Field(min_length=1, max_length=128)
@@ -101,6 +111,15 @@ class Event(_Model):
     process: Process | None = None
     activity: Activity | None = None
     subagent: Subagent | None = None
+    orca: OrcaPlacement | None = None
+    orca_session_id: str | None = None
+    orca_terminal_handle: str | None = None
+
+    @model_validator(mode="after")
+    def _placement_has_metadata(self) -> Event:
+        if self.type == "orca_placement" and (self.source != "orca" or self.orca is None):
+            raise ValueError("orca_placement requires source orca and placement metadata")
+        return self
 
     @field_validator("ts")
     @classmethod

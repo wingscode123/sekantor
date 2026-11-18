@@ -10,7 +10,7 @@ from typing import Callable, Iterable, Literal
 
 from pydantic import BaseModel
 
-from sekantor.schema import SUBAGENT_EVENTS, Activity, Agent, Capability, Event, Host, Request, Status, Workspace
+from sekantor.schema import SUBAGENT_EVENTS, Activity, Agent, Capability, Event, Host, OrcaPlacement, Request, Status, Workspace
 
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
 WAITING = {Status.waiting_approval, Status.waiting_input}
@@ -61,6 +61,9 @@ class SessionState(BaseModel):
     activity: dict | None = None  # {"tool", "kind"} of the last tool started while running (ADR-0022)
     subagents: list[SubagentState] = []
     snoozed_until: datetime | None = None  # FR-15: no notifications until then
+    orca: OrcaPlacement | None = None
+    orca_session_id: str | None = None
+    orca_terminal_handle: str | None = None
 
     def prune_subagents(self, now: datetime) -> None:
         cutoff = now - SUBAGENT_REPORT_TTL
@@ -92,6 +95,15 @@ def _activity(event: Event) -> dict | None:
     return event.activity.model_dump() if event.activity else None
 
 
+def _merge_orca(s: SessionState, event: Event) -> None:
+    if event.orca is not None and (s.orca is None or event.ts >= s.last_event_at):
+        s.orca = event.orca
+    if event.orca_session_id and (s.orca_session_id is None or event.ts >= s.last_event_at):
+        s.orca_session_id = event.orca_session_id
+    if event.orca_terminal_handle and (s.orca_terminal_handle is None or event.ts >= s.last_event_at):
+        s.orca_terminal_handle = event.orca_terminal_handle
+
+
 def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
     # A child can arrive before SessionStart. Allow an earlier parent event to replace the default status.
     s = state.model_copy(deep=True) if state else SessionState(
@@ -107,6 +119,7 @@ def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
         host=event.host,
         pid=event.process.pid if event.process else None,
     )
+    _merge_orca(s, event)
     s.last_event_at = max(s.last_event_at, event.ts)
     if event.subagent is None or event.type not in SUBAGENT_EVENTS:
         return s
@@ -166,10 +179,14 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             capabilities=list(event.capabilities),
             pid=event.process.pid if event.process else None,
             activity=_activity(event) if status is Status.running else None,
+            orca=event.orca,
+            orca_session_id=event.orca_session_id,
+            orca_terminal_handle=event.orca_terminal_handle,
         )
 
     s = state.model_copy(deep=True)
     newer = event.ts >= s.status_ts
+    _merge_orca(s, event)
     s.last_event_at = max(s.last_event_at, event.ts)
     if event.type == "session_started":
         s.started_at = min(s.started_at, event.ts)
@@ -214,6 +231,8 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             and event.request.subagent.id == pending_worker.id and s.request.tool is not None):
         return s  # a permission notification also arrives for the detailed request
 
+    if event.type == "activity" and s.status is Status.running and event.activity is not None:
+        s.activity = _activity(event)
     if event.status is not None:
         changed = event.status is not s.status
         if changed or event.status is Status.reported:

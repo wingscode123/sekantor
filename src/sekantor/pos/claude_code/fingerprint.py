@@ -115,10 +115,10 @@ def classify(rules: dict, env: dict[str, str], chain: list[str] | None = None, e
 
 
 def env_names(rules: dict) -> set[str]:
-    """Every env var name the rules look at: what a forwarder must send for the hub to classify."""
+    """Env names for host classification and session identity."""
     groups = [h.get("signals", []) for h in rules.get("hosts", [])]
     groups.append(((rules.get("fallback") or {}).get("terminal") or {}).get("signals", []))
-    return {s["env"] for signals in groups for s in signals if "env" in s}
+    return {s["env"] for signals in groups for s in signals if "env" in s} | set(rules.get("forward_env", []))
 
 
 def collect(agent_pid: int | None, deep: bool, from_agent: bool = False) -> tuple[list[str], str | None, str | None]:

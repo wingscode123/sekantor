@@ -13,11 +13,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sekantor.hub.status import SessionState, apply
-from sekantor.schema import Event, Status
+from sekantor.schema import Event, OrcaPlacement, Status
 
 log = logging.getLogger("sekantor.hub")
 SLOW_S = 1.0  # the hook stops waiting for the hub after 1 s, so anything slower gets a log line
 RETENTION = timedelta(days=7)
+PLACEMENT_TTL = timedelta(minutes=2)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -36,6 +37,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     body TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS orca_placements (
+    session_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    body TEXT NOT NULL
+);
 """
 
 
@@ -61,8 +69,31 @@ class Store:
 
     # --- writes ---------------------------------------------------------------
 
+    def add_placement(self, event: Event, received_at: datetime | None = None) -> bool:
+        placement = event.orca
+        if event.type != "orca_placement" or placement is None:
+            raise ValueError("expected an Orca placement event")
+        with self._lock:
+            result = self._db.execute(
+                "INSERT INTO orca_placements(session_id, event_id, ts, received_at, body) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(session_id) DO UPDATE SET event_id=excluded.event_id, ts=excluded.ts, "
+                "received_at=excluded.received_at, body=excluded.body "
+                "WHERE excluded.ts >= orca_placements.ts AND excluded.event_id != orca_placements.event_id",
+                (placement.session_id, event.event_id, event.ts.isoformat(), (received_at or _now()).isoformat(),
+                 placement.model_dump_json()),
+            )
+            return result.rowcount > 0
+
+    def expire_placements(self, now: datetime | None = None) -> bool:
+        cutoff = ((now or _now()) - PLACEMENT_TTL).isoformat()
+        with self._lock:
+            return self._db.execute("DELETE FROM orca_placements WHERE received_at <= ?", (cutoff,)).rowcount > 0
+
     def add_event(self, event: Event, received_at: datetime | None = None) -> SessionState | None:
         """Store ``event`` and return the updated session, or None if it was a duplicate."""
+        if event.type == "orca_placement":
+            self.add_placement(event, received_at)
+            return None
         received_at = received_at or _now()
         asked = time.monotonic()
         with self._lock:
@@ -122,6 +153,12 @@ class Store:
             return n
 
     # --- reads ----------------------------------------------------------------
+
+    def placements(self, now: datetime | None = None) -> dict[str, OrcaPlacement]:
+        cutoff = ((now or _now()) - PLACEMENT_TTL).isoformat()
+        with self._lock:
+            rows = self._db.execute("SELECT session_id, body FROM orca_placements WHERE received_at > ?", (cutoff,))
+            return {session_id: OrcaPlacement.model_validate_json(body) for session_id, body in rows}
 
     def session(self, session_id: str) -> SessionState | None:
         with self._lock:

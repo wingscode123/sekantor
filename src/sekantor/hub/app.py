@@ -15,7 +15,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from sekantor import config
-from sekantor.hub.api import router, session_json
+from sekantor.hub.api import publish_session, publish_snapshot, router
+from sekantor.hub.teams import floor
 from sekantor.hub.notify import Notifier
 from sekantor.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from sekantor.hub.store import SLOW_S, Store
@@ -88,8 +89,12 @@ async def watch_loop(interval: float = 0.5, threshold: float = SLOW_S) -> None:
 
 async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Settings | None = None) -> None:
     """Sweep in a worker thread, then tell stream clients here, on the event loop."""
-    for s in await asyncio.to_thread(run_sweep, store):
-        broadcaster.publish({"type": "session", "session": await asyncio.to_thread(session_json, s, settings)})
+    expired = await asyncio.to_thread(store.expire_placements)
+    ended = await asyncio.to_thread(run_sweep, store)
+    for s in ended:
+        await publish_session(store, broadcaster, s, settings)
+    if expired or any(floor(s) == "orca" for s in ended):
+        await publish_snapshot(store, broadcaster, settings)
 
 
 def write_hook_env(home: Path) -> None:

@@ -631,12 +631,21 @@ mod tests {
     #[test]
     fn posts_raw_payload_with_whitelisted_env_only() {
         let home = home_with_token("post");
-        fs::write(home.join("hook-env.txt"), "TERM_PROGRAM\nCLAUDE_PID\n").unwrap();
+        fs::write(
+            home.join("hook-env.txt"),
+            "TERM_PROGRAM\nCLAUDE_PID\nORCA_AGENT_SESSION_ID\nORCA_TERMINAL_HANDLE\n",
+        ).unwrap();
         let (port, rx) = fake_hub("HTTP/1.1 202 Accepted", STORED, ms(0));
         let env = env_for(
             &home,
             port,
-            &[("TERM_PROGRAM", "vscode"), ("CLAUDE_PID", "4242"), ("ANTHROPIC_API_KEY", "sk-secret")],
+            &[
+                ("TERM_PROGRAM", "vscode"),
+                ("CLAUDE_PID", "4242"),
+                ("ORCA_AGENT_SESSION_ID", "agent-id"),
+                ("ORCA_TERMINAL_HANDLE", "structworker_id"),
+                ("ANTHROPIC_API_KEY", "sk-secret"),
+            ],
         );
 
         assert_eq!(run(PRE_TOOL_USE, &env, false, Instant::now()), Outcome::Sent(202));
@@ -665,7 +674,10 @@ mod tests {
         let ts = body["ts"].as_str().unwrap();
         assert!(ts.ends_with("+00:00") && ts.len() == 32, "{}", ts);
         assert_eq!(body["payload"], serde_json::from_slice::<Value>(PRE_TOOL_USE).unwrap());
-        assert_eq!(body["env"], json!({"TERM_PROGRAM": "vscode", "CLAUDE_PID": "4242"}));
+        assert_eq!(body["env"], json!({
+            "TERM_PROGRAM": "vscode", "CLAUDE_PID": "4242",
+            "ORCA_AGENT_SESSION_ID": "agent-id", "ORCA_TERMINAL_HANDLE": "structworker_id"
+        }));
         assert_eq!(body.as_object().unwrap().len(), 5);
         assert!(!String::from_utf8_lossy(&req).contains("sk-secret"));
 
