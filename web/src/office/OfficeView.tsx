@@ -39,8 +39,10 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
     if (node && node.height !== office.height * size.tilePixels) node.height = office.height * size.tilePixels;
     canvas.current?.dispatchEvent(new Event("officechange"));
   }, [sceneKey, size.tilePixels, office.width, office.height]);
-  useLayoutEffect(() => {
-    const measure = () => {
+  const latest = useRef({ sessions, layoutNow });
+  latest.current = { sessions, layoutNow };
+  const measure = () => {
+      const { sessions, layoutNow } = latest.current;
       const box = viewport.current;
       if (!box?.clientWidth) return;
       const dpr = window.devicePixelRatio || 1;
@@ -65,13 +67,18 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
       setSize(previous => previous.tilePixels === tilePixels && previous.dpr === dpr && previous.inset === inset && previous.insetY === insetY
         ? previous : { tilePixels, dpr, inset, insetY });
     };
-    measure();
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+  // Rooms added, removed or resized: refit. Status-only updates leave this signature alone.
+  const layoutSignature = JSON.stringify([office.rooms.map(r => [r.project, r.desks.length]), office.lobby.h]);
+  useLayoutEffect(() => { measureRef.current(); }, [layoutSignature]);
+  useLayoutEffect(() => {
+    const run = () => measureRef.current();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(run) : null;
     if (viewport.current) observer?.observe(viewport.current);
-    window.addEventListener("resize", measure);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
-    // Refit whenever the rooms (or their contents) change, not only when the window does.
-  }, [sessions, layoutNow]);
+    window.addEventListener("resize", run);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", run); };
+  }, []);
   useEffect(() => {
     const node = canvas.current!;
     return startRenderer(node, () => current.current, undefined, positions => { hits.current = positions; });

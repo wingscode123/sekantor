@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "../App";
 import { OfficeView } from "./OfficeView";
+import { layoutOffice } from "./model";
 
 import type { Session } from "../types";
 const mocks = vi.hoisted(() => ({ renderer: vi.fn<typeof import("./render").startRenderer>(() => vi.fn()), state: { sessions: [] as Session[], connection: "live", loaded: true } }));
+vi.mock("./model", async importOriginal => { const m = await importOriginal<typeof import("./model")>(); return { ...m, layoutOffice: vi.fn(m.layoutOffice) }; });
 vi.mock("./render", () => ({ startRenderer: mocks.renderer }));
 vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () => Date.parse("2026-11-17T12:00:00Z"), useGhostNow: () => Date.parse("2026-11-17T12:00:00Z") }));
 const session = (id = "one"): Session => ({ session_id: id, source: "claude", source_label: id, status: "running", status_since: "2026-11-17T11:00:00Z", started_at: "2026-11-17T10:00:00Z", last_event_at: "2026-11-17T11:00:00Z", workspace: { cwd: "/repo", branch: "main" }, capabilities: [], needs_you: false, open_label: "Open in Orca" });
@@ -176,6 +178,18 @@ describe("office page", () => {
       expect(new Set(sizes).size).toBeGreaterThan(1);
       view.unmount();
     }
+  });
+  it("refits only when the room layout changes, not on status-only updates", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(700);
+    const spy = vi.mocked(layoutOffice);
+    const view = render(<OfficeView sessions={projects(3)} />);
+    spy.mockClear();
+    view.rerender(<OfficeView sessions={projects(3).map(s => ({ ...s, status: "waiting_input" as const }))} />);
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
+    spy.mockClear();
+    view.rerender(<OfficeView sessions={projects(4)} />);
+    expect(spy.mock.calls.length).toBeGreaterThan(2);
   });
   it("picks the column count that maximises the tile size", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
