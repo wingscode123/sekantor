@@ -110,8 +110,9 @@ def compute(home: Path, since: datetime, until: datetime | None = None) -> Stats
         _split_lost(st, sorted((a for eid, a in attempts.items() if eid not in stored), key=lambda x: x.ts), down_at, down_ids)
 
         rows = con.execute(
-            "SELECT session_id, ts, json_extract(body, '$.status'), json_extract(body, '$.host.app') "
-            "FROM events WHERE ts <= ? ORDER BY session_id, ts", (hi,)
+            "SELECT session_id, ts, json_extract(body, '$.status'), json_extract(body, '$.host.app'), "
+            "json_extract(body, '$.request.kind') "
+            "FROM events WHERE ts <= ? ORDER BY session_id, ts, seq", (hi,)
         ).fetchall()
         # Sessions the hub closed without an event (FR-07 sweep before the fix): their end time.
         ended = {sid: _parse_ts(t) for sid, t in con.execute(
@@ -161,7 +162,7 @@ def _waiting(st: Stats, rows: list[tuple], ended: dict[str, datetime] | None = N
         else:
             st.left_waiting += b - a
 
-    for sid, ts_text, status, host in rows:
+    for sid, ts_text, status, host, request_kind in rows:
         ts = _parse_ts(ts_text)
         if ts is None:
             continue
@@ -169,6 +170,8 @@ def _waiting(st: Stats, rows: list[tuple], ended: dict[str, datetime] | None = N
             seen_in_window.add(sid)
         if host:
             hosts[sid] = host
+        if status == "waiting_input" and request_kind != "question":
+            status = "done"
         if status and (sid not in current or current[sid][0] != status):
             close(sid, ts, answered=status not in ("ended",))
             current[sid] = (status, ts)

@@ -49,7 +49,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   return <>
     <div className="office-viewport" ref={viewport}>
       <div className="office-floor" style={{ width: office.width * TILE * scale, height: office.height * TILE * scale }}>
-        <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} needs you, ${awake.filter(s => s.status === "error").length} errors`} style={{ width: office.width * TILE * scale, height: office.height * TILE * scale }} onClick={e => {
+        <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} need you, ${awake.filter(s => s.report_pending).length} reports, ${awake.filter(s => s.status === "error").length} errors`} style={{ width: office.width * TILE * scale, height: office.height * TILE * scale }} onClick={e => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = (e.clientX - rect.left) / scale, y = (e.clientY - rect.top) / scale;
           const hit = [...hits.current].reverse().find(([, p]) => x >= p.x && x < p.x + TILE && y >= p.y && y < p.y + CHARACTER_HEIGHT);

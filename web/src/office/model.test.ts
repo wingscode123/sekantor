@@ -20,7 +20,7 @@ describe("poseFor", () => {
     const activity = kind ? { kind, tool: "tool" } : null;
     for (const [status, place, pose] of statuses) {
       it(`${status} overrides ${kind}`, () => {
-        expect(poseFor(session({ status, activity }))).toEqual({ place, pose });
+        expect(poseFor(session({ status, activity, needs_you: status === "waiting_input" }))).toEqual({ place, pose });
       });
     }
     it(`running ${kind}`, () => {
@@ -154,4 +154,11 @@ it("keeps a departed project's cluster until its last ghost expires", () => {
   const b = session({ session_id: "b", workspace: { cwd: "/p" } });
   expect(layoutOffice([a, b], now + 19_999).clusters.map(c => c.project)).toEqual(["a", "p"]);
   expect(layoutOffice([a, b], now + 20_000).clusters.map(c => c.project)).toEqual(["p"]);
+});
+
+
+it("places pending reports at your desk and accepted reports in the pantry", () => {
+  expect(poseFor(session({ status: "reported", report_pending: true }))).toEqual({ place: "your_desk", pose: "report" });
+  expect(poseFor(session({ status: "reported", report_pending: false }))).toEqual({ place: "pantry", pose: "coffee" });
+  expect(poseFor(session({ status: "waiting_input", needs_you: false }))).toEqual({ place: "pantry", pose: "coffee" });
 });

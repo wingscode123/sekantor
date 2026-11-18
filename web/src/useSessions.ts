@@ -3,7 +3,7 @@ import { GHOST_MS, isGhost } from "./office/model";
 import type { Connection, Session, StreamMessage } from "./types";
 
 const PRIORITY: Record<Session["status"], number> = {
-  waiting_approval: 0, waiting_input: 1, error: 2, running: 3, done: 4, ended: 5,
+  waiting_approval: 0, waiting_input: 1, error: 2, running: 3, reported: 4, done: 5, ended: 6,
 };
 
 /** FR-10: status priority, then the longest wait first (same rule as the hub). */

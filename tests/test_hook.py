@@ -45,15 +45,15 @@ def payload(rel: str) -> dict:
         ("cli-headless/03_PreToolUse.json", "status_changed", "running"),
         ("cli-headless/10_PermissionRequest.json", "status_changed", "waiting_approval"),
         ("cli-headless/04_PostToolUse.json", "status_changed", "running"),
-        ("cli-headless/05_Stop.json", "status_changed", "waiting_input"),
+        ("cli-headless/05_Stop.json", "status_changed", "reported"),
         ("cli-headless/06_SessionEnd.json", "session_ended", "ended"),
-        ("orca-terminal/08_Notification.json", "status_changed", "waiting_input"),
+        ("orca-terminal/08_Notification.json", "message", None),
         ("claude-desktop/08_SessionStart.json", "session_started", "waiting_input"),
     ],
 )
 def test_translate_real_payloads(rel, type_, status):
     ev = translate(payload(rel)["stdin"])
-    assert ev["type"] == type_ and ev["status"] == status
+    assert ev["type"] == type_ and ev.get("status") == status
     assert ev["session_id"].startswith("claude:")
     Event.model_validate(ev)  # every produced event is valid schema v1
 
@@ -266,3 +266,17 @@ def test_build_event_takes_an_id_and_a_ts():
     ev = hook.build_event({"hook_event_name": "PreToolUse", "session_id": "s", "cwd": str(ROOT), "tool_name": "Bash"},
                           {}, event_id="fixed-id", ts="2026-11-17T00:00:00+00:00")
     assert ev["event_id"] == "fixed-id" and ev["ts"] == "2026-11-17T00:00:00+00:00"
+
+
+def test_stop_with_plain_text_question_is_a_report():
+    ev = translate({"hook_event_name": "Stop", "session_id": "s", "last_assistant_message": "Continue?"})
+    assert (ev["status"], ev["summary"], ev["request"]) == ("reported", "Continue?", {"kind": "report"})
+
+
+@pytest.mark.parametrize("kind", ["agent_needs_input", "elicitation_dialog", "elicitation_url_dialog"])
+def test_translate_actionable_input_notification(kind):
+    ev = translate({"hook_event_name": "Notification", "session_id": "s",
+                    "notification_type": kind, "message": "Input requested"})
+    assert ev["status"] == "waiting_input"
+    assert ev["request"] == {"kind": "question"}
+    assert ev["summary"] == "Input requested"

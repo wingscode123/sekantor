@@ -246,3 +246,32 @@ def test_activity_is_kept_while_running_and_cleared_when_status_changes():
 def test_activity_cleared_when_waiting():
     s = run(ev(Status.running, at=0, activity={"tool": "Edit", "kind": "edit"}), ev(Status.waiting_input, at=1))
     assert s.activity is None
+
+
+def test_report_priority_and_needs_you():
+    running = run(ev(Status.running))
+    done = run(ev(Status.done))
+    report = run(ev(Status.reported, request={"kind": "report"}))
+    assert inbox_order([done, report, running]) == [running, report, done]
+    assert report.request.kind == "report" and not report.needs_you
+    assert not run(ev(Status.waiting_input, request={"kind": "input"})).needs_you
+    assert run(ev(Status.waiting_input, request={"kind": "question"})).needs_you
+
+
+@pytest.mark.parametrize("status", [Status.running, Status.reported, Status.waiting_input, Status.waiting_approval, Status.done, Status.error, Status.ended])
+def test_idle_prompt_reports_only_running_sessions(status):
+    from sekantor.pos.claude_code.translate import translate
+
+    state = run(ev(status, summary="Earlier summary"))
+    if status is Status.reported:
+        state.acknowledged_at = T0
+    idle = translate({"hook_event_name": "Notification", "session_id": "s1",
+                      "notification_type": "idle_prompt", "message": "Idle"})
+    result = apply(state, Event.model_validate({**idle, "ts": T0 + timedelta(seconds=1)}))
+    assert result.summary == "Earlier summary"
+    if status is Status.running:
+        assert result.status is Status.reported
+        assert result.request.kind == "report" and result.report_pending
+    else:
+        assert result.status is status and result.status_since == T0
+        assert result.acknowledged_at == state.acknowledged_at

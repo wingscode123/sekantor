@@ -90,6 +90,7 @@ def test_a_single_question_is_reported(tmp_path):
     pos.tick()
     ev = hub.events[-1]
     assert ev["status"] == "waiting_input" and ev["summary"] == "Which branch? (main, dev)"
+    assert ev["request"]["kind"] == "question"
     pos.tick()
     assert ob.posts == []
 

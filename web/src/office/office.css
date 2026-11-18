@@ -13,6 +13,7 @@
 .avatar-card { position: absolute; z-index: 10; right: 24px; top: 24px; width: min(440px, calc(100% - 48px)); max-height: calc(100% - 48px); overflow: auto; padding: 20px; background: var(--color-paper-2, #fff); border: 1px solid var(--color-rule); border-radius: 8px; box-shadow: 0 8px 40px #0004; }
 .avatar-card__close { float: right; }
 .avatar-card p { overflow-wrap: anywhere; }
+.status--reported { color: #c8adff; }
 .avatar-card .timeline { margin-top: 16px; }
 .office-empty { margin: 8px 0; }
 @media (max-width: 640px) { .bar__inner { flex-wrap: wrap; } .office-counts { font-size: 12px; } }

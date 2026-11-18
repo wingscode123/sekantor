@@ -7,7 +7,7 @@ HOSTS = {
     "apple-terminal": "Terminal.app", "wezterm": "WezTerm", "ghostty": "Ghostty", "kitty": "kitty", "terminal": "Terminal",
 }
 TITLES = {"waiting_approval": "Approval needed", "waiting_input": "Waiting for you", "error": "Agent error",
-          "running": "Running", "done": "Done", "ended": "Ended"}
+          "running": "Running", "reported": "Report ready", "done": "Done", "ended": "Ended"}
 
 
 def source(source_id: str) -> str:

@@ -11,7 +11,7 @@ vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () =>
 const session = (id: string, status: Session["status"] = "waiting_input"): Session => ({ session_id: id, source: "claude", source_label: id, status, status_since: "2026-11-17T11:00:00Z", started_at: "2026-11-17T10:00:00Z", last_event_at: "2026-11-17T11:00:00Z", workspace: { cwd: "/repo" }, capabilities: [], needs_you: status.startsWith("waiting_") });
 afterEach(() => { cleanup(); mocks.state.sessions = []; mocks.state.connection = "live"; mocks.state.loaded = true; mocks.renderer.mockClear(); });
 it("shows only waiting non-snoozed avatars, preserving their full-office looks", () => {
-  mocks.state.sessions = [session("busy", "running"), session("input"), session("approval", "waiting_approval"), { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, session("error", "error"), session("done", "done"), session("ended", "ended")];
+  mocks.state.sessions = [session("busy", "running"), session("input"), session("approval", "waiting_approval"), { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, session("error", "error"), session("done", "done"), { ...session("report", "reported"), report_pending: true }, session("ended", "ended")];
   render(<MiniView />);
   const scene = mocks.renderer.mock.lastCall![1]();
   expect(scene.avatars.map(a => a.sessionId).sort()).toEqual(["approval", "input"]);
@@ -20,7 +20,7 @@ it("shows only waiting non-snoozed avatars, preserving their full-office looks",
   expect(document.querySelector("canvas")?.getAttribute("aria-hidden")).toBe("true");
   expect(scene.door.x).toBe(1);
   expect(scene.door).not.toEqual(scene.yourDesk);
-  expect(screen.getByText("1 busy \u00b7 2 needs you")).toBeTruthy();
+  expect(screen.getByText("1 busy \u00b7 2 need you \u00b7 1 reports")).toBeTruthy();
 });
 it("shows the most recent waiting summary, ignoring newer muted or running summaries", () => {
   mocks.state.sessions = [{ ...session("old"), summary: "Old question" }, { ...session("new"), last_event_at: "2026-11-17T11:30:00Z", summary: "New question" }, { ...session("busy", "running"), last_event_at: "2026-11-17T11:45:00Z", summary: "Busy summary" }, { ...session("muted"), last_event_at: "2026-11-17T11:50:00Z", summary: "Muted question", snoozed_until: "2026-11-18T12:00:00Z" }];

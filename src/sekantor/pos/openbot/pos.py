@@ -98,7 +98,7 @@ def describe(pending: dict) -> dict:
         q = questions[0]
         options = ", ".join(o.get("label", "") for o in q.get("options") or [])
         summary = (q.get("question") or q.get("header") or "A question") + (f" ({options})" if options else "")
-        return {"status": "waiting_input", "summary": summary, "request": {"kind": "input", "id": p["requestId"]}}
+        return {"status": "waiting_input", "summary": summary, "request": {"kind": "question", "id": p["requestId"]}}
     for b in pending.get("browserTakeovers") or []:
         return {"status": "waiting_input", "summary": "Wants you to take over the browser in OpenBot.",
                 "request": {"kind": "question", "id": b["requestId"]}}

@@ -15,7 +15,7 @@ SOURCE = "claude-code"
 SUMMARY_MAX = 300
 INPUT_MAX = 4000
 
-WAITING_INPUT_NOTIFICATIONS = {"idle_prompt", "agent_needs_input", "elicitation_dialog", "elicitation_url_dialog"}
+WAITING_INPUT_NOTIFICATIONS = {"agent_needs_input", "elicitation_dialog", "elicitation_url_dialog"}
 
 
 def new_event_id() -> str:
@@ -150,13 +150,18 @@ def translate(payload: dict) -> dict | None:
             status = "waiting_approval"
         elif kind in WAITING_INPUT_NOTIFICATIONS:
             status = "waiting_input"
+            request = {"kind": "question"}
+            summary = _clip(payload.get("message"), SUMMARY_MAX)
         else:
             etype = "message"
-        summary = _clip(payload.get("message"), SUMMARY_MAX) if etype == "message" else None
+            if kind == "idle_prompt":
+                request = {"kind": "report"}
+            else:
+                summary = _clip(payload.get("message"), SUMMARY_MAX)
     elif name == "Stop":
-        status = "waiting_input"
+        status = "reported"
         summary = _clip(payload.get("last_assistant_message"), SUMMARY_MAX)
-        request = {"kind": "input"}
+        request = {"kind": "report"}
     elif name == "StopFailure":
         status = "error"
         summary = _clip(f"Error: {payload.get('error') or 'unknown'}", SUMMARY_MAX)

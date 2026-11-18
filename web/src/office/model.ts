@@ -24,7 +24,11 @@ export function identityOf(s: Session): string {
 }
 export function poseFor(s: Session): { place: Place; pose: Pose } {
   switch (s.status) {
-    case "waiting_approval": case "waiting_input": return { place: "your_desk", pose: "ask" };
+    case "waiting_approval": return { place: "your_desk", pose: "ask" };
+    case "waiting_input":
+      return s.needs_you ? { place: "your_desk", pose: "ask" } : { place: "pantry", pose: "coffee" };
+    case "reported":
+      return s.report_pending ? { place: "your_desk", pose: "report" } : { place: "pantry", pose: "coffee" };
     case "error": return { place: "desk", pose: "smoke" };
     case "done": return { place: "pantry", pose: "coffee" };
     case "ended": return { place: "door", pose: "leave" };
