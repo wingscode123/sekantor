@@ -130,13 +130,21 @@ def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
 
 def apply(state: SessionState | None, event: Event) -> SessionState:
     """Return the session state after ``event``. Never mutates ``state``."""
-    if event.type in SUBAGENT_EVENTS:
-        return _apply_subagent(state, event)
     pending_worker = state.request.subagent if state and state.request else None
-    if event.subagent is not None and not (
-        event.type == "status_changed" and event.status is Status.running
-        and state is not None and state.status is Status.waiting_approval
+    owns_approval = (
+        state is not None and state.status is Status.waiting_approval and event.subagent is not None
         and pending_worker is not None and pending_worker.id == event.subagent.id
+    )
+    if event.type in SUBAGENT_EVENTS:
+        s = _apply_subagent(state, event)
+        if event.type == "subagent_ended" and owns_approval and event.ts >= s.status_ts:
+            s.status = Status.running
+            s.status_since = s.status_ts = event.ts
+            s.request = None
+            s.capabilities = []
+        return s
+    if event.subagent is not None and not (
+        event.type == "status_changed" and event.status is Status.running and owns_approval
     ):
         return _apply_subagent(state, event)
     if state is None:

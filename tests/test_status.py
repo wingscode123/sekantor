@@ -104,6 +104,22 @@ def test_subagent_permission_notification_alone_needs_you():
     assert apply(s, junior_hook("PermissionDenied", 2)).status is Status.running
 
 
+def test_subagent_stop_releases_only_its_own_pending_approval():
+    ask = junior_hook("PermissionRequest", 2, tool_name="Bash")
+    other_end = junior_hook("SubagentStop", 3, worker="other", last_assistant_message="Other report")
+    pending = run(ev(Status.running), ask, other_end)
+    assert pending.needs_you and pending.request.subagent.id == "junior"
+
+    end = junior_hook("SubagentStop", 4, last_assistant_message="Junior report")
+    released = apply(pending, end)
+    assert released.status is Status.running and released.status_since == released.status_ts == end.ts
+    assert not released.needs_you and released.request is None
+    assert released.summary == pending.summary
+    assert [(a.id, a.status, a.summary) for a in released.subagents] == [
+        ("other", "reported", "Other report"), ("junior", "reported", "Junior report"),
+    ]
+
+
 def test_subagent_followup_does_not_clear_parents_own_approval():
     s = run(ev(Status.waiting_approval, request={"kind": "tool", "tool": "Bash"}), junior_hook("PostToolUse", 1))
     assert s.status is Status.waiting_approval and s.needs_you and s.request.subagent is None
