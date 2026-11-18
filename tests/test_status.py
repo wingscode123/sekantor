@@ -246,3 +246,13 @@ def test_activity_is_kept_while_running_and_cleared_when_status_changes():
 def test_activity_cleared_when_waiting():
     s = run(ev(Status.running, at=0, activity={"tool": "Edit", "kind": "edit"}), ev(Status.waiting_input, at=1))
     assert s.activity is None
+
+
+def test_report_priority_and_needs_you():
+    running = run(ev(Status.running))
+    done = run(ev(Status.done))
+    report = run(ev(Status.reported, request={"kind": "report"}))
+    assert inbox_order([done, report, running]) == [running, report, done]
+    assert report.request.kind == "report" and not report.needs_you
+    assert not run(ev(Status.waiting_input, request={"kind": "input"})).needs_you
+    assert run(ev(Status.waiting_input, request={"kind": "question"})).needs_you

@@ -31,7 +31,7 @@ pos_app = typer.Typer(no_args_is_help=True, help="Run a pos (platform adapter) b
 app.add_typer(pos_app, name="pos")
 
 GROUPS = [("Needs you", {"waiting_approval", "waiting_input", "error"}), ("Running", {"running"}),
-          ("Done", {"done", "ended"})]
+          ("Reports", {"reported"}), ("Done", {"done", "ended"})]
 
 
 def _api(path: str, timeout: float = 2.0, method: str = "GET", body: dict | None = None) -> dict:
@@ -461,8 +461,13 @@ def status(as_json: bool = typer.Option(False, "--json", help="Print raw JSON.")
     if not sessions:
         typer.echo("No sessions yet. Agents appear on their first hook event.")
         return
+    def group_status(s):
+        if s["status"] == "waiting_input" and s.get("needs_you") is False:
+            return "done"
+        return s["status"]
+
     for title, statuses in GROUPS:
-        rows = [s for s in sessions if s["status"] in statuses]
+        rows = [s for s in sessions if group_status(s) in statuses]
         if not rows:
             continue
         typer.secho(f"{title} ({len(rows)})", bold=True)

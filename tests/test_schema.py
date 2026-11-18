@@ -62,9 +62,9 @@ def test_invalid_events_rejected(patch):
         Event.model_validate({**PRD_EXAMPLE, **patch})
 
 
-def test_status_values_match_adr_0002():
+def test_status_values_match_event_schema():
     assert [s.value for s in Status] == [
-        "waiting_approval", "waiting_input", "error", "running", "done", "ended",
+        "waiting_approval", "waiting_input", "error", "running", "reported", "done", "ended",
     ]
 
 

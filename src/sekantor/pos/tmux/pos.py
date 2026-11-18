@@ -125,8 +125,8 @@ class TmuxPos:
                 request = None
                 if status == "waiting_approval":
                     request = {"kind": "tool", "tool": "terminal", "input": prompt, "id": rid}
-                elif status == "waiting_input":
-                    request = {"kind": "input", "id": rid}
+                elif status == "reported":
+                    request = {"kind": "report"}
                 if self.hub.post_event(self._event(sid, w, pane, status=status, summary=summary, request=request)):
                     w.status, w.request_id = status, rid
 def main(interval: float = 2.0) -> None:

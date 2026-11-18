@@ -30,6 +30,7 @@ def session_json(s: SessionState) -> dict[str, Any]:
 
     d = s.model_dump(mode="json", exclude={"status_ts"})
     d["needs_you"] = s.needs_you
+    d["report_pending"] = s.report_pending
     d["source_label"] = labels.source(s.source)
     d["host_label"] = labels.host(s.host.app) if s.host else None
     try:
@@ -188,6 +189,18 @@ FOREVER = timedelta(days=36500)
 
 class SnoozeIn(BaseModel):
     minutes: int | None = Field(default=60, ge=1, le=60 * 24 * 7)  # None: until unmuted
+
+
+@router.post("/sessions/{session_id}/acknowledge")
+async def acknowledge(request: Request, session_id: str):
+    st = request.app.state
+    s = await run_in_threadpool(st.store.acknowledge_report, session_id)
+    if s is None:
+        raise HTTPException(404, detail="no such session")
+    if s.status is not Status.reported:
+        raise HTTPException(409, detail="session has no report")
+    st.broadcaster.publish({"type": "session", "session": session_json(s)})
+    return {"acknowledged_at": s.acknowledged_at}
 
 
 @router.post("/sessions/{session_id}/snooze")

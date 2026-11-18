@@ -99,6 +99,15 @@ class Store:
                 self._put_session(s)
             return s
 
+    def acknowledge_report(self, session_id: str) -> SessionState | None:
+        """Mark the current report read. Return the resulting session if it exists."""
+        with self._lock:
+            s = self._get_session(session_id)
+            if s is not None and s.report_pending:
+                s.acknowledged_at = max(_now(), s.status_since)
+                self._put_session(s)
+            return s
+
     def prune(self, now: datetime | None = None) -> int:
         """Delete events past retention and ended sessions with no events left. Returns events deleted."""
         cutoff = ((now or _now()) - RETENTION).isoformat()

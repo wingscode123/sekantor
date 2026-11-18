@@ -392,3 +392,33 @@ def test_hook_endpoint_duplicate_id_is_not_stored_twice_nor_followed_up(client, 
     time.sleep(0.5)
     assert first.json()["stored"] is True and again.status_code == 202 and again.json() == {"stored": False}
     assert calls.count(True) == 1
+
+
+def test_acknowledge_reports(client):
+    path = "/v1/sessions/claude:a/acknowledge"
+
+    def session():
+        return client.get("/v1/sessions", headers=AUTH).json()["sessions"][0]
+
+    assert client.post(path).status_code == 401
+    assert client.post(path, headers=AUTH).status_code == 404
+    assert client.post("/v1/events", headers=AUTH, json=ev(1, "running")).status_code == 202
+    assert session()["report_pending"] is False
+    assert client.post(path, headers=AUTH).status_code == 409
+    assert client.post("/v1/events", headers=AUTH, json=ev(2, "reported", request={"kind": "report"})).status_code == 202
+    assert session()["report_pending"] is True and session()["needs_you"] is False
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
+    assert client.post(path).status_code == 403
+    assert client.post(path, headers={"Origin": "http://evil.example"}).status_code == 403
+    with client.websocket_connect(BASE.replace("http:", "ws:") + "/v1/stream", headers={"Origin": BASE}) as ws:
+        assert ws.receive_json()["sessions"][0]["report_pending"] is True
+        response = client.post(path, headers={"Origin": BASE})
+        assert response.status_code == 200
+        update = ws.receive_json()
+        assert update["session"]["report_pending"] is False and "event" not in update
+    assert session()["acknowledged_at"] and session()["status"] == "reported"
+    assert client.post(path, headers=AUTH).json() == response.json()
+    assert client.post("/v1/events", headers=AUTH, json=ev(3, None, type="message")).status_code == 202
+    assert session()["report_pending"] is False
+    assert client.post("/v1/events", headers=AUTH, json=ev(4, "reported")).status_code == 202
+    assert session()["report_pending"] is True

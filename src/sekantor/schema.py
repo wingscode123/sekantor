@@ -24,6 +24,7 @@ class Status(str, Enum):
     waiting_input = "waiting_input"
     error = "error"
     running = "running"
+    reported = "reported"
     done = "done"
     ended = "ended"
 
@@ -54,7 +55,7 @@ class Host(_Model):
 
 
 class Request(_Model):
-    kind: Literal["tool", "input", "question"] = "tool"
+    kind: Literal["tool", "input", "question", "report"] = "tool"
     tool: str | None = None
     input: str | None = Field(default=None, max_length=4000)
     # Deprecated (ADR-0021): it named the request an answer was for. Accepted, ignored.

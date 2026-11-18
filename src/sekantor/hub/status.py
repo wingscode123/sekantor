@@ -15,14 +15,15 @@ from sekantor.schema import Agent, Capability, Event, Host, Request, Status, Wor
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
 WAITING = {Status.waiting_approval, Status.waiting_input}
 
-# FR-10: waiting_approval > waiting_input > error > running > done (ended last, as history).
+# FR-10: waiting_approval > waiting_input > error > running > reported > done (ended last, as history).
 PRIORITY = {
     Status.waiting_approval: 0,
     Status.waiting_input: 1,
     Status.error: 2,
     Status.running: 3,
-    Status.done: 4,
-    Status.ended: 5,
+    Status.reported: 4,
+    Status.done: 5,
+    Status.ended: 6,
 }
 
 SILENCE_TIMEOUT = timedelta(minutes=10)
@@ -38,6 +39,7 @@ class SessionState(BaseModel):
     started_at: datetime
     last_event_at: datetime
     ended_at: datetime | None = None
+    acknowledged_at: datetime | None = None
     agent: Agent | None = None
     workspace: Workspace = Workspace()
     host: Host | None = None
@@ -53,7 +55,15 @@ class SessionState(BaseModel):
 
     @property
     def needs_you(self) -> bool:
+        if self.status is Status.waiting_input:
+            return self.request is not None and self.request.kind == "question"
         return self.status in NEEDS_YOU
+
+    @property
+    def report_pending(self) -> bool:
+        return self.status is Status.reported and (
+            self.acknowledged_at is None or self.acknowledged_at < self.status_since
+        )
 
 
 def _merge_workspace(old: Workspace, new: Workspace | None) -> Workspace:
@@ -83,7 +93,7 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             workspace=_merge_workspace(Workspace(), event.workspace),
             host=event.host,
             summary=event.summary,
-            request=event.request if status in WAITING else None,
+            request=event.request if status in WAITING or status is Status.reported else None,
             capabilities=list(event.capabilities),
             pid=event.process.pid if event.process else None,
             activity=_activity(event) if status is Status.running else None,
@@ -122,9 +132,12 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
 
     if event.status is not None:
         changed = event.status is not s.status
-        if changed:
+        if changed or event.status is Status.reported:
             s.status = event.status
             s.status_since = event.ts
+        if s.status is Status.reported:
+            s.acknowledged_at = None
+            s.summary = event.summary
         s.status_ts = event.ts
         if s.status is Status.running:
             s.activity = _activity(event) or s.activity
@@ -142,7 +155,8 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             else:
                 s.request, s.capabilities = event.request, list(event.capabilities)
         else:
-            s.request, s.capabilities = None, list(event.capabilities)
+            s.request = event.request if s.status is Status.reported else None
+            s.capabilities = list(event.capabilities)
     return s
 
 

@@ -55,14 +55,14 @@ describe("office page", () => {
     expect(mocks.renderer).toHaveBeenCalledTimes(1);
   });
   it("counts awake agents with UTF-8 separators and keeps snoozed avatars", () => {
-    mocks.state.sessions = [session(), { ...session("waiting"), status: "waiting_input", needs_you: true }, { ...session("error"), status: "error" }, { ...session("muted"), status: "waiting_input", needs_you: true, snoozed_until: "2026-11-18T12:00:00Z" }];
+    mocks.state.sessions = [session(), { ...session("waiting"), status: "waiting_input", needs_you: true }, { ...session("error"), status: "error" }, { ...session("report"), status: "reported", report_pending: true }, { ...session("accepted"), status: "reported", report_pending: false }, { ...session("muted"), status: "waiting_input", needs_you: true, snoozed_until: "2026-11-18T12:00:00Z" }];
     const view = render(<App />);
-    expect(screen.getByText("1 busy \u00b7 1 needs you \u00b7 1 errors")).toBeTruthy();
+    expect(screen.getByText("1 busy \u00b7 1 need you \u00b7 1 reports \u00b7 1 errors")).toBeTruthy();
     expect(document.title).toBe("(1) SeKantor");
-    expect(screen.getAllByTestId("name-plate")).toHaveLength(4);
+    expect(screen.getAllByTestId("name-plate")).toHaveLength(6);
     mocks.state.sessions = mocks.state.sessions.map(s => s.needs_you ? { ...s, snoozed_until: "2026-11-18T12:00:00Z" } : s);
     view.rerender(<App />);
-    expect(screen.getByText("1 busy \u00b7 0 needs you \u00b7 1 errors")).toBeTruthy();
+    expect(screen.getByText("1 busy \u00b7 0 need you \u00b7 1 reports \u00b7 1 errors")).toBeTruthy();
     expect(document.title).toBe("SeKantor");
   });
   it("shows first-load and empty-office hints at the appropriate time", () => {
@@ -104,7 +104,7 @@ describe("office page", () => {
   it("excludes ended and snoozed agents from canvas counts but keeps snoozed live avatars", () => {
     mocks.state.sessions = [session(), { ...session("ended"), status: "ended" }, { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, { ...session("waiting"), status: "waiting_input", needs_you: true }];
     render(<App />);
-    expect(screen.getByRole("img").getAttribute("aria-label")).toBe("Office with 2 agents: 1 busy, 1 needs you, 0 errors");
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe("Office with 2 agents: 1 busy, 1 needs you, 0 reports, 0 errors");
     expect(screen.getAllByTestId("name-plate")).toHaveLength(3);
     expect(screen.queryByRole("button", { name: /ended, claude/ })).toBeNull();
   });
