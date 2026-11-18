@@ -80,6 +80,8 @@ class Placement:
     cwd: str
     main: bool
     agent: str | None
+    state: str | None
+    activity: str | None
 
     def block(self, session: str, creator: str | None, model: str | None) -> dict:
         worktree = Path(self.cwd.replace("\\", "/")).name
@@ -91,8 +93,16 @@ def normalize_session_id(value: str | None) -> str | None:
     return (value or "").removeprefix("orca_session_id:") or None
 
 
-def worker_status(row: dict, projection: dict) -> str:
+def worker_status(row: dict, projection: dict, placement: Placement | None) -> str:
     stage = projection.get("stage") or {}
+    attention = (projection.get("attention") or {}).get("categories") or []
+    states = {stage.get("activity")}
+    if placement:
+        states.update((placement.state, placement.activity))
+    if "approval" in attention or states & {"blocked", "permission", "waiting_approval", "waiting_for_approval"}:
+        return "waiting_approval"
+    if "input" in attention or states & {"waiting", "waiting_input", "waiting_for_input", "question"}:
+        return "waiting_input"
     outcome = projection.get("outcome")
     worker_state = stage.get("worker") or row.get("workerState")
     if outcome == "failed" or worker_state == "failed":
@@ -105,19 +115,16 @@ def worker_status(row: dict, projection: dict) -> str:
     return "running" if stage.get("activity") == "working" else "done"
 
 
-def recent_completion(value: str | int | None) -> bool:
+def timestamp(value) -> float:
     try:
         if isinstance(value, (int, float)):
-            completed = datetime.fromtimestamp(value / 1000, timezone.utc)
-        elif value:
-            completed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if completed.tzinfo is None:
-                completed = completed.replace(tzinfo=timezone.utc)
-        else:
-            return False
-        return 0 <= (datetime.now(timezone.utc) - completed).total_seconds() <= 600
+            return value / 1000
+        if value:
+            date = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return (date if date.tzinfo else date.replace(tzinfo=timezone.utc)).timestamp()
     except (ValueError, OverflowError, OSError):
-        return False
+        pass
+    return 0.0
 
 
 @dataclass(frozen=True)
@@ -126,6 +133,7 @@ class Dispatch:
     creator: str | None
     previous: str | None
     completed_at: str | None
+    created_at: float
 
 
 CALLER_ENV = {"ORCA_AGENT_SESSION_ID", "ORCA_AGENT_SESSION_SPAWN_TOKEN",
@@ -143,6 +151,7 @@ class OrcaInventory:
         self.placements_sent: dict[str, tuple[dict, float]] = {}
         self.empty_sweeps = 0
         self.workers: dict[str, dict] = {}
+        self.workers_sent: dict[str, float] = {}
         self.dead_since: dict[str, float] = {}
 
     def _read(self, *args: str) -> dict:
@@ -174,7 +183,11 @@ class OrcaInventory:
                     main = row.get("isMainWorktree")
                     if main is None:
                         main = (Path(cwd) / ".git").is_dir()
-                    placements[sid] = Placement(row["repo"], cwd, main, agent.get("agentType"))
+                    placements[sid] = Placement(
+                        row["repo"], cwd, main, agent.get("agentType"),
+                        (agent.get("mainAgent") or {}).get("state") or agent.get("state"),
+                        (agent.get("activity") or {}).get("status"),
+                    )
         return placements, truncated
 
     def _pages(self, args, first, next_cursor):
@@ -252,6 +265,7 @@ class OrcaInventory:
                         normalize_session_id(dispatch.get("assignee_orca_session_id")),
                         normalize_session_id(dispatch.get("creator_orca_session_id")),
                         dispatch.get("follow_up_of_dispatch_id"), dispatch.get("completed_at"),
+                        timestamp(dispatch.get("created_at") or dispatch.get("dispatched_at")),
                     )
                 else:
                     self.dispatches[key] = None
@@ -282,34 +296,71 @@ class OrcaInventory:
             return
 
         self.empty_sweeps = 0
-        rows = self._worker_rows()
-        resolved = self._resolve(rows, placements)
+        try:
+            rows = self._worker_rows()
+            resolved = self._resolve(rows, placements)
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError, AttributeError):
+            # worktree ps still confirmed these placements even if orchestration is unavailable.
+            self._post_placements(placements, {}, truncated)
+            raise
         self.active_dispatches.intersection_update(rows)
+
+        candidates = {}
+        for key, sid in resolved.items():
+            candidates.setdefault(sid, []).append(key)
 
         newest = {}
         metadata = {}
-        for key, sid in resolved.items():
-            newest.setdefault(sid, key)
-            projection = rows[key].get("projection") or {}
-            creator, model = metadata.get(sid, (None, None))
-            metadata[sid] = (creator or self._creator(key), model or (projection.get("provider") or {}).get("model"))
+        for sid, keys in candidates.items():
+            ordered = sorted(keys, key=lambda key: self._dispatch_order(key, rows), reverse=True)
+            newest[sid] = ordered[0]
+            creator = model = None
+            for key in ordered:
+                projection = rows[key].get("projection") or {}
+                creator = creator or self._creator(key)
+                model = model or (projection.get("provider") or {}).get("model")
+            metadata[sid] = (creator, model)
 
+        self._post_placements(placements, metadata, truncated, complete=True)
         now = self.clock()
-        for sid, placement in placements.items():
-            block = placement.block(sid, *metadata.get(sid, (None, None)))
-            previous, sent = self.placements_sent.get(sid, (None, 0))
-            if (block != previous or now - sent >= 60) and self._emit(
-                f"orca-agent:{sid}", type="orca_placement", orca=block,
-            ):
-                self.placements_sent[sid] = (block, now)
-        if not truncated:
-            self.placements_sent = {sid: seen for sid, seen in self.placements_sent.items() if sid in placements}
-
         for sid in self.workers.keys() - newest.keys():
             self._end(sid)
         for sid, key in newest.items():
             self._update_worker(sid, key, rows[key], placements.get(sid), metadata[sid], now)
         self.dead_since = {sid: since for sid, since in self.dead_since.items() if sid in self.workers}
+
+    def _dispatch_order(self, key, rows):
+        current = key
+        created = 0.0
+        depth = 0
+        visited = set()
+        while current and current not in visited:
+            visited.add(current)
+            row = rows.get(current, {})
+            dispatch = self.dispatches.get(current)
+            created = max(created, timestamp(row.get("createdAt") or row.get("created_at")
+                                            or row.get("dispatchedAt") or row.get("dispatched_at")))
+            if not dispatch:
+                break
+            created = max(created, dispatch.created_at)
+            if not dispatch.previous:
+                break
+            depth += 1
+            current = dispatch.previous
+        return created, depth, key
+
+    def _post_placements(self, placements, metadata, truncated, *, complete=False):
+        now = self.clock()
+        for sid, placement in placements.items():
+            previous, sent = self.placements_sent.get(sid, (None, 0))
+            fallback = (previous["creator"], previous["model"]) if previous and not complete else (None, None)
+            block = placement.block(sid, *metadata.get(sid, fallback))
+            if (block != previous or now - sent >= 45) and self._emit(
+                f"orca-agent:{sid}", type="orca_placement", orca=block,
+            ):
+                self.placements_sent[sid] = (block, now)
+        if not truncated:
+            self.placements_sent = {sid: seen for sid, seen in self.placements_sent.items() if sid in placements}
 
     def _update_worker(self, sid, key, row, placement, metadata, now):
         projection = row.get("projection") or {}
@@ -337,25 +388,32 @@ class OrcaInventory:
         else:
             return
 
-        status = worker_status(row, projection)
-        if status == "running":
+        status = worker_status(row, projection, placement)
+        if status in ("running", "waiting_approval", "waiting_input"):
             self.active_dispatches.add(key)
         elif status in ("reported", "error") and key not in self.active_dispatches:
             dispatch = self.dispatches.get(key)
             completed = row.get("completedAt") or (dispatch.completed_at if dispatch else None)
-            if not recent_completion(completed):
+            if not 0 <= time.time() - timestamp(completed) <= 600:
                 status = "done"
         fields["status"] = status
-        if status == "reported":
-            fields["request"] = {"kind": "report"}
-        if fields != previous and self._emit(f"orca:{sid}", type="status_changed", **fields):
+        request_kind = {"reported": "report", "waiting_approval": "approval", "waiting_input": "question"}
+        if status in request_kind:
+            fields["request"] = {"kind": request_kind[status]}
+        if status == "running":
+            fields["activity"] = {"tool": "work", "kind": "other"}
+        live = verdict == "live" or (placement is not None and verdict not in ("dead", "exited"))
+        refresh = live and now - self.workers_sent.get(sid, now) >= 120
+        if (fields != previous or refresh) and self._emit(f"orca:{sid}", type="status_changed", **fields):
             self.workers[sid] = fields
+            self.workers_sent[sid] = now
 
     def _end(self, key: str) -> None:
         if key in self.workers:
             fields = {k: self.workers[key][k] for k in ("agent", "workspace", "orca")}
             if self._emit(f"orca:{key}", type="session_ended", status="ended", **fields):
                 del self.workers[key]
+                self.workers_sent.pop(key, None)
 
     def tick(self) -> None:
         if self.clock() < self.next_sweep:
@@ -365,7 +423,9 @@ class OrcaInventory:
             self.sweep()
         except (httpx.HTTPError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError, AttributeError) as exc:
             log.warning("Orca inventory sweep failed: %s: %s", type(exc).__name__, exc)
-            delay = 60
+            now = self.clock()
+            oldest = min((sent for _, sent in self.placements_sent.values()), default=now)
+            delay = min(60, max(15, oldest + 90 - now))
         finally:
             self.next_sweep = self.clock() + delay
 

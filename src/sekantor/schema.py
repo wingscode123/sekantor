@@ -67,7 +67,7 @@ class Subagent(_Model):
 
 
 class Request(_Model):
-    kind: Literal["tool", "input", "question", "report"] = "tool"
+    kind: Literal["tool", "input", "question", "report", "approval"] = "tool"
     tool: str | None = None
     input: str | None = Field(default=None, max_length=4000)
     subagent: Subagent | None = None

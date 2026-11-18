@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from sekantor.pos.orca.pos import OrcaInventory
+from sekantor.schema import Event
 
 
 class FakeInventoryCli:
@@ -94,7 +95,7 @@ def test_placements_and_non_claude_sessions(inventory):
     clock[0] = 15
     pos.tick()
     assert len(hub.events) == 6
-    clock[0] = 60
+    clock[0] = 45
     pos.tick()
     assert len(hub.events) == 10
     assert sum(call[1] == "dispatch-show" for call in cli.calls) == 3
@@ -177,12 +178,13 @@ def test_ends_workers_after_two_complete_empty_sweeps(inventory):
     assert [call[:2] for call in cli.calls[-2:]] == [["worktree", "ps"]] * 2
 
 
-def test_follow_up_preserves_original_creator_and_uses_newest_dispatch(inventory):
+@pytest.mark.parametrize("follow_first", [True, False])
+def test_follow_up_preserves_original_creator_and_uses_newest_dispatch(inventory, follow_first):
     pos, cli, hub, clock = inventory
     pos.tick()
     follow = cli.data["follow_up_worker"]
     follow["projection"]["stage"]["activity"] = "done"
-    cli.workers.insert(0, follow)
+    cli.workers.insert(0 if follow_first else len(cli.workers), follow)
     clock[0] = 15
     pos.tick()
     assert hub.events[-1]["session_id"] == "orca:example_codex"
@@ -238,3 +240,57 @@ def test_hub_http_error_backs_off_and_preserves_workers(inventory, monkeypatch):
     pos.tick()
     assert set(pos.workers) == {"example_codex", "example_gemini"}
     assert pos.next_sweep == 75
+
+
+def test_live_worker_heartbeat_renews_unchanged_state(inventory):
+    pos, _, hub, clock = inventory
+    pos.tick()
+    for elapsed in range(15, 121, 15):
+        clock[0] = elapsed
+        pos.tick()
+    events = [e for e in hub.events if e["session_id"] == "orca:example_codex"]
+    first, heartbeat = events
+    assert first["event_id"] != heartbeat["event_id"]
+    assert first["status"] == heartbeat["status"] == "running"
+    assert heartbeat["activity"] == {"tool": "work", "kind": "other"}
+
+
+def test_placement_refresh_continues_when_worker_list_times_out(inventory):
+    pos, cli, hub, clock = inventory
+    pos.tick()
+    cli.timeout_command = ("orchestration", "worker-list")
+    clock[0] = 45
+    pos.tick()
+    assert len(hub.events) == 10
+    assert [e["orca"] for e in hub.events[-4:]] == [e["orca"] for e in hub.events[:4]]
+
+
+@pytest.mark.parametrize(
+    ("orca_state", "status", "request_kind"),
+    [("blocked", "waiting_approval", "approval"), ("waiting", "waiting_input", "question")],
+)
+def test_attention_uses_redacted_worktree_state(inventory, orca_state, status, request_kind):
+    pos, cli, hub, _ = inventory
+    agent = cli.data["worktree_ps"]["result"]["worktrees"][1]["agents"][0]
+    agent["state"] = orca_state
+    agent["preview"] = "private"
+    pos.tick()
+    [event] = [e for e in hub.events if e["session_id"] == "orca:example_codex"]
+    assert event["status"] == status
+    assert event["request"] == {"kind": request_kind}
+    assert "private" not in json.dumps(event)
+    Event.model_validate(event)
+
+
+@pytest.mark.parametrize("newer_first", [True, False])
+def test_dispatch_timestamps_win_over_list_order(inventory, newer_first):
+    pos, cli, hub, _ = inventory
+    follow = cli.data["follow_up_worker"]
+    follow["createdAt"] = 2000
+    follow["projection"]["stage"]["activity"] = "done"
+    cli.data["dispatch_show"]["task_follow"]["result"]["dispatch"].pop("follow_up_of_dispatch_id")
+    cli.workers[0]["createdAt"] = 1000
+    cli.workers.insert(0 if newer_first else len(cli.workers), follow)
+    pos.tick()
+    [event] = [e for e in hub.events if e["session_id"] == "orca:example_codex"]
+    assert event["status"] == "done"
