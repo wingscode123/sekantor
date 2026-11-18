@@ -86,7 +86,7 @@ export function layoutOffice(sessions: Session[], now = Date.now(), availableWid
   }
 
   const numCols = availableWidth !== undefined
-    ? Math.max(2, Math.floor((availableWidth + CORRIDOR_WIDTH) / (ROOM_WIDTH + CORRIDOR_WIDTH)))
+    ? Math.max(2, Math.min(membersByProject.size, Math.floor((availableWidth + CORRIDOR_WIDTH) / (ROOM_WIDTH + CORRIDOR_WIDTH))))
     : 2;
   const officeWidth = numCols * ROOM_WIDTH + (numCols - 1) * CORRIDOR_WIDTH;
   const centre = Math.floor(officeWidth / 2);
@@ -115,7 +115,7 @@ export function layoutOffice(sessions: Session[], now = Date.now(), availableWid
     const seats = new Map<string, number>();
     let rackCount = 0, pantryCount = 0;
     for (const [i, s] of members.entries()) {
-      const deskTile = { x: x + 2 + i % 4 * 3, y: y + 2 + Math.floor(i / 4) * 2 };
+      const deskTile = { x: x + 2 + i % 4 * 3, y: y + 3 + Math.floor(i / 4) * 2 };
       room.desks.push(deskTile);
       const identity = identityOf(s);
       const seat = seats.get(identity) ?? 0;

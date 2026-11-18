@@ -17,6 +17,7 @@ const placeSigns: Record<PlaceLabel["kind"], { label: string; description: strin
 export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number }) {
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const [cols, setCols] = useState(2);
+  const maxCols = useMemo(() => Math.max(2, layoutOffice(sessions, layoutNow).rooms.length), [sessions, layoutNow]);
   const office = useMemo(() => layoutOffice(sessions, layoutNow, cols * (ROOM_WIDTH + CORRIDOR_WIDTH) - CORRIDOR_WIDTH), [sessions, layoutNow, cols]);
   const sceneKey = JSON.stringify(office);
   const current = useRef(office);
@@ -43,22 +44,22 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
       if (!box?.clientWidth) return;
       const dpr = window.devicePixelRatio || 1;
       const width = Math.floor(box.clientWidth * dpr);
-      const availableTiles = Math.floor(box.clientWidth / TILE);
-      const fitCols = Math.max(2, Math.floor((availableTiles + CORRIDOR_WIDTH) / (ROOM_WIDTH + CORRIDOR_WIDTH)));
-      setCols(currentCols => {
-        if (fitCols > currentCols) return fitCols;
-        if (fitCols < currentCols) {
-          const minTilesForCurrent = currentCols * ROOM_WIDTH + (currentCols - 1) * CORRIDOR_WIDTH;
-          if (availableTiles < minTilesForCurrent - 2) return fitCols;
-          return currentCols;
-        }
-        return currentCols;
-      });
-
-      const fit = Math.max(1, Math.floor(width / office.width));
-      // Use whole native-pixel multiples for enlargement and whole device pixels per tile for reduction.
-      const tilePixels = fit >= TILE ? TILE * Math.floor(fit / TILE) : fit;
-      const inset = Math.floor((width - office.width * tilePixels) / 2) / dpr;
+      const widthOf = (c: number) => c * ROOM_WIDTH + (c - 1) * CORRIDOR_WIDTH;
+      // Whole device pixels per tile: native-pixel multiples when they fill the row, otherwise the exact fit.
+      const tileFor = (c: number) => {
+        const fit = Math.max(1, Math.floor(width / widthOf(c)));
+        const multiple = fit >= TILE ? TILE * Math.floor(fit / TILE) : fit;
+        return multiple * widthOf(c) >= 0.9 * fit * widthOf(c) ? multiple : fit;
+      };
+      let best = { cols: 2, tilePixels: tileFor(2), good: false };
+      for (let c = 2; c <= maxCols; c++) {
+        const tilePixels = tileFor(c);
+        const good = tilePixels * widthOf(c) >= 0.9 * width && tilePixels / dpr >= 20;
+        if (c === 2 || good) best = { cols: c, tilePixels, good };
+      }
+      const { cols: nextCols, tilePixels } = best;
+      const inset = Math.floor((width - widthOf(nextCols) * tilePixels) / 2) / dpr;
+      setCols(nextCols);
       setSize(previous => previous.tilePixels === tilePixels && previous.dpr === dpr && previous.inset === inset
         ? previous : { tilePixels, dpr, inset });
     };
@@ -67,7 +68,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
     if (viewport.current) observer?.observe(viewport.current);
     window.addEventListener("resize", measure);
     return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
-  }, [office.width]);
+  }, [maxCols]);
   useEffect(() => {
     const node = canvas.current!;
     return startRenderer(node, () => current.current, undefined, positions => { hits.current = positions; });
