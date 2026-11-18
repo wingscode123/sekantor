@@ -1,4 +1,4 @@
-import { route, type Avatar, type Office } from "./model";
+import { isCorridorTile, route, type Avatar, type Office } from "./model";
 import { Departures, followRoute, type Pt } from "./motion";
 import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
@@ -19,26 +19,44 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
   const live = new Set<string>(), targets = new Map<string, Pt>(), sorted: Avatar[] = [];
   const layer = document.createElement("canvas"), layerCtx = layer.getContext("2d");
   const layout: number[] = [], previousLayout: number[] = [];
+  let lastOffice: Office | undefined, architecture = "", previousArchitecture = "";
   function addDesk(point: Pt) {
     for (let i = 10; i < layout.length; i += 2) if (layout[i] === point.x && layout[i + 1] === point.y) return;
     layout.push(point.x, point.y);
   }
   function staticLayer(office: Office) {
+    const lobby = theme.room && theme.lobby && office.lobby.w > 0 ? office.lobby : undefined;
+    const rooms = office.rooms;
+    if (lastOffice !== office) {
+      lastOffice = office;
+      architecture = lobby ? JSON.stringify([lobby, rooms]) : "";
+    }
     layout.length = 0;
     layout.push(office.width, office.height, office.yourDesk.x, office.yourDesk.y,
       office.rack.x, office.rack.y, office.pantry.x, office.pantry.y, office.door.x, office.door.y);
-    for (const cluster of office.clusters) for (const desk of cluster.desks) addDesk(desk);
+    if (lobby) {
+      for (const room of rooms) for (const desk of room.desks) addDesk(desk);
+    } else {
+      for (const cluster of office.clusters) for (const desk of cluster.desks) addDesk(desk);
+    }
     for (const avatar of retained.values()) addDesk(avatar.deskTile);
-    let changed = layout.length !== previousLayout.length;
+    let changed = architecture !== previousArchitecture || layout.length !== previousLayout.length;
     for (let i = 0; !changed && i < layout.length; i++) changed = layout[i] !== previousLayout[i];
     if (!changed || !layerCtx) return;
+    previousArchitecture = architecture;
     previousLayout.length = 0;
     for (const value of layout) previousLayout.push(value);
     layer.width = office.width * TILE; layer.height = office.height * TILE;
     layerCtx.imageSmoothingEnabled = false;
-    for (let y = 0; y < office.height; y++) for (let x = 0; x < office.width; x++)
-      theme.tile(y === 0 ? "wall" : "floor", layerCtx, x * TILE, y * TILE);
-    for (let x = 0; x < office.width; x++) {
+    for (let y = 0; y < office.height; y++) for (let x = 0; x < office.width; x++) {
+      const tile = lobby && isCorridorTile(lobby, x, y) ? "corridor" : !lobby && y === 0 ? "wall" : "floor";
+      theme.tile(tile, layerCtx, x * TILE, y * TILE);
+    }
+    if (lobby) {
+      for (const room of rooms) theme.room!(room.kind, layerCtx, room);
+      theme.lobby!(layerCtx, lobby);
+      for (const { pantry } of rooms) theme.furniture("coffee", layerCtx, pantry.x * TILE, pantry.y * TILE);
+    } else for (let x = 0; x < office.width; x++) {
       const panel = x % 7;
       if (panel === 2 || panel === 3) {
         theme.furniture("window", layerCtx, x * TILE, 0);
@@ -53,6 +71,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       theme.furniture("chair", layerCtx, x, y + TILE / 2);
       theme.furniture("desk", layerCtx, x, y);
     }
+    if (lobby) return;
     theme.furniture("rug", layerCtx, office.door.x * TILE, (office.door.y + 1) * TILE);
     theme.furniture("rug", layerCtx, office.pantry.x * TILE, (office.pantry.y + 1) * TILE);
     theme.furniture("chair", layerCtx, office.yourDesk.x * TILE, office.yourDesk.y * TILE + TILE / 2);
@@ -110,8 +129,12 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     ctx!.setTransform(canvas.width / (office.width * TILE), 0, 0, canvas.height / (office.height * TILE), 0, 0); ctx!.imageSmoothingEnabled = false;
     staticLayer(office);
     ctx!.drawImage(layer, 0, 0);
-    // Only the rack blinks; all other furniture is part of the static layer.
-    theme.furniture("rack", ctx!, office.rack.x * TILE, office.rack.y * TILE, frame);
+    // Working racks blink; themed decor stays in the static layer.
+    if (office.lobby.w > 0 && theme.room && theme.lobby) {
+      for (const { rack } of office.rooms) theme.furniture("rack", ctx!, rack.x * TILE, rack.y * TILE, frame);
+    } else {
+      theme.furniture("rack", ctx!, office.rack.x * TILE, office.rack.y * TILE, frame);
+    }
     sorted.length = 0;
     for (const avatar of retained.values()) sorted.push(avatar);
     sorted.sort((a, b) => positions.get(a.key)!.y - positions.get(b.key)!.y);

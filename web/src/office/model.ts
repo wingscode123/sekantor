@@ -1,6 +1,7 @@
-import type { Kind, Session } from "../types";
+import type { Session } from "../types";
 import type { Pt } from "./motion";
 
+export type Kind = "web" | "backend" | "data" | "mobile" | "game" | "infra" | "docs" | "other";
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
 export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave" | "report";
 export interface Look { body: number; hair: number; shirt: number; accessory: number }
@@ -151,14 +152,21 @@ export function layoutOffice(sessions: Session[], now = Date.now()): Office {
   };
 }
 
+export function roomSignWidth(room: Room): number {
+  return 2 * Math.min(2, room.sign.x - room.x - 1, room.x + room.w - 2 - room.sign.x) + 1;
+}
+
+export function isCorridorTile(lobby: Lobby, x: number, y: number): boolean {
+  return y <= lobby.corridorY && Math.abs(x - lobby.door.x) <= (CORRIDOR_WIDTH - 1) / 2;
+}
+
 export function isWalkable(office: Office, point: Pt): boolean {
   if (point.x < 0 || point.y < 0 || point.x >= office.width || point.y >= office.height) return false;
   const bounds = [...office.rooms, office.lobby].find(({ x, y, w, h }) =>
     point.x >= x && point.x < x + w && point.y >= y && point.y < y + h);
   if (!bounds) {
     if (!office.lobby.w) return true; // The mini office has an open floor.
-    const centre = office.lobby.door.x;
-    return point.y <= office.lobby.corridorY && Math.abs(point.x - centre) <= 1;
+    return isCorridorTile(office.lobby, point.x, point.y);
   }
   if (point.x === bounds.door.x && point.y === bounds.door.y) return true;
   if (bounds === office.lobby && point.x === bounds.door.x && point.y === bounds.y) return true;

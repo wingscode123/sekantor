@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { isSnoozed } from "../SessionMenu";
 import type { Session } from "../types";
-import { layoutOffice, type PlaceLabel } from "./model";
+import { layoutOffice, roomSignWidth, type PlaceLabel } from "./model";
 import { startRenderer, type FramePositions } from "./render";
 import { CHARACTER_HEIGHT, TILE } from "./sprites";
 
@@ -73,7 +73,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
         {office.rooms.map(room => <span className="office-sign office-sign--room" key={room.project}
           title={room.project} style={{
             left: (room.sign.x + 0.5) * tileSize, top: (room.sign.y + 0.5) * tileSize,
-            maxWidth: (room.w - 2) * tileSize,
+            maxWidth: roomSignWidth(room) * tileSize - 4,
           }}>{room.project}</span>)}
         {office.places.map(({ kind, at, room }) => {
           const sign = placeSigns[kind];

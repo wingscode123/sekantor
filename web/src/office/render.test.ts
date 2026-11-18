@@ -69,6 +69,31 @@ it("reuses the static layer across frames and equivalent office objects", () => 
   expect(tile).toHaveBeenCalledTimes(office.width * office.height); stop();
 });
 
+it("paints the corridor and themed rooms on the static layer and invalidates on a kind change", () => {
+  const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const room = vi.fn(), lobby = vi.fn(), tile = vi.fn();
+  let current: Office = {
+    ...office,
+    rooms: [{ project: "studio", kind: "web", x: 2, y: 0, w: 6, h: 5,
+      door: { x: 4, y: 4 }, sign: { x: 4, y: 0 }, desks: [], rack: { x: 5, y: 1 }, pantry: { x: 6, y: 1 } }],
+    lobby: { x: 6, y: 6, w: 8, h: 4, yourDesk: { x: 10, y: 7 }, door: { x: 10, y: 9 }, corridorY: 5 },
+  };
+  const stop = startRenderer(canvas, () => current, { ...theme, room, lobby, tile });
+  expect(room).toHaveBeenCalledWith("web", expect.anything(), current.rooms[0]);
+  expect(lobby).toHaveBeenCalledOnce();
+  const corridor = tile.mock.calls.filter(([kind]) => kind === "corridor");
+  expect(corridor).toHaveLength(3 * (current.lobby.corridorY + 1));
+  expect(corridor).toContainEqual(["corridor", expect.anything(), 10 * TILE, 0]);
+  expect(corridor).toContainEqual(["corridor", expect.anything(), 10 * TILE, 5 * TILE]);
+  current = { ...current, rooms: [{ ...current.rooms[0] }] };
+  canvas.dispatchEvent(new Event("officechange"));
+  expect(room).toHaveBeenCalledOnce();
+  current = { ...current, rooms: [{ ...current.rooms[0], kind: "data" }] };
+  canvas.dispatchEvent(new Event("officechange"));
+  expect(room).toHaveBeenLastCalledWith("data", expect.anything(), current.rooms[0]);
+  stop();
+});
+
 it("publishes key-based native positions in paint order across office replacement", () => {
   const canvas = setup(); vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   const avatar = { key: "front", sessionId: "front", identity: "i", seat: 0, look: { body: 0, hair: 0, shirt: 0, accessory: 0 }, place: "desk" as const, pose: "type" as const, deskTile: { x: 5, y: 1 }, targetTile: { x: 5, y: 4 }, name: "a", app: "a", project: "a" };
