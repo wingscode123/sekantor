@@ -73,10 +73,10 @@ async def watch_loop(interval: float = 0.5, threshold: float = SLOW_S) -> None:
             log.warning("event loop was blocked for %.1fs", late)
 
 
-async def sweep_tick(store: Store, broadcaster: Broadcaster) -> None:
+async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Settings | None = None) -> None:
     """Sweep in a worker thread, then tell stream clients here, on the event loop."""
     for s in await asyncio.to_thread(run_sweep, store):
-        broadcaster.publish({"type": "session", "session": session_json(s)})
+        broadcaster.publish({"type": "session", "session": await asyncio.to_thread(session_json, s, settings)})
 
 
 def write_hook_env(home: Path) -> None:
@@ -113,7 +113,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
                 try:
-                    await sweep_tick(store, broadcaster)
+                    await sweep_tick(store, broadcaster, settings)
                 except Exception:
                     log.warning("sweep failed", exc_info=True)
                 if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
