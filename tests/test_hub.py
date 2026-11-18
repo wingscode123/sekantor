@@ -422,3 +422,17 @@ def test_acknowledge_reports(client):
     assert session()["report_pending"] is False
     assert client.post("/v1/events", headers=AUTH, json=ev(4, "reported")).status_code == 202
     assert session()["report_pending"] is True
+
+
+def test_web_ui_cache_headers(tmp_path, monkeypatch):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>x</title>")
+    (dist / "assets" / "lockup-abc123.svg").write_text("<svg/>")
+    monkeypatch.setattr("sekantor.hub.app.web_dist", lambda: dist)
+    app = create_app(home=tmp_path / "home", port=7878, token=TOKEN)
+    with TestClient(app, base_url=BASE) as c:
+        assert c.get("/", headers=AUTH).headers["cache-control"] == "no-cache"
+        asset = c.get("/assets/lockup-abc123.svg", headers=AUTH)
+        assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert c.get("/assets/lockup-abc123.svg").status_code in (401, 403)

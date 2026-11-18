@@ -39,6 +39,19 @@ def web_dist() -> Path | None:
     return dist if (dist / "index.html").is_file() else None
 
 
+class WebFiles(StaticFiles):
+    """Static web UI: index.html is always revalidated, Vite's hashed /assets/* never change."""
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        path = scope.get("path", "")
+        if path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def pid_alive(pid: int) -> bool:
     try:
         return psutil.pid_exists(pid)
@@ -143,7 +156,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
 
     dist = web_dist()
     if dist:
-        app.mount("/", StaticFiles(directory=dist, html=True), name="web")
+        app.mount("/", WebFiles(directory=dist, html=True), name="web")
     else:
         @app.get("/", include_in_schema=False)
         async def not_built():

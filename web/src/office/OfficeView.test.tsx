@@ -96,7 +96,7 @@ describe("office page", () => {
   });
   it("keeps plates visible at 1200px width with three room rows", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(1000);
     const sessions = Array.from({ length: 25 }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i % 6}` } }));
     render(<OfficeView sessions={sessions} />);
     expect(screen.getAllByTestId("name-plate").every(p => !(p as HTMLButtonElement).hidden)).toBe(true);
@@ -132,10 +132,14 @@ describe("office page", () => {
   });
   it("fills the width with multiple room columns on wide viewports at 100% zoom", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(450);
     render(<OfficeView sessions={[0, 1, 2].map(i => ({ ...session(String(i)), workspace: { cwd: `/project-${i}` } }))} />);
     const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
-    expect(canvas.width).toBe(48 * 32);
-    expect(parseFloat(canvas.style.width)).toBe(48 * 32);
+    // Short and wide: three columns give the larger tile, and the office still fits in both dimensions.
+    expect(canvas.width % 48).toBe(0);
+    expect(canvas.width).toBeLessThanOrEqual(1600);
+    expect(canvas.height).toBeLessThanOrEqual(450);
+    expect(parseFloat(canvas.style.width)).toBe(canvas.width);
   });
   it("fills at least 90% of the width at scaled DPI without horizontal overflow", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
@@ -149,6 +153,38 @@ describe("office page", () => {
       expect(cssWidth).toBeGreaterThanOrEqual(0.9 * 1600);
       view.unmount();
     }
+  });
+  const projects = (n: number) => Array.from({ length: n }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i}` } }));
+  it("contains the whole office in the viewport at every dpr and refits when projects come and go, without a resize", () => {
+    const width = 1600, height = 700;
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(height);
+    for (const dpr of [1, 1.25, 1.5]) {
+      vi.stubGlobal("devicePixelRatio", dpr);
+      const view = render(<OfficeView sessions={projects(2)} />);
+      const sizes: number[] = [];
+      for (const n of [2, 3, 4, 6, 3, 1]) {
+        view.rerender(<OfficeView sessions={projects(n)} />);
+        const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+        expect(parseFloat(canvas.style.width)).toBeLessThanOrEqual(width);
+        expect(parseFloat(canvas.style.height)).toBeLessThanOrEqual(height);
+        expect(canvas.width / dpr).toBeCloseTo(parseFloat(canvas.style.width));
+        expect(canvas.width % 1).toBe(0);
+        expect(canvas.height % 1).toBe(0);
+        sizes.push(canvas.width);
+      }
+      expect(new Set(sizes).size).toBeGreaterThan(1);
+      view.unmount();
+    }
+  });
+  it("picks the column count that maximises the tile size", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+    const view = render(<OfficeView sessions={projects(4)} />);
+    const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+    const four = canvas.width;
+    view.rerender(<OfficeView sessions={projects(2)} />);
+    expect(screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ }).width).not.toBe(four);
   });
   it("does not add empty room columns for a single project", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1600);

@@ -2,7 +2,7 @@
 .office-page { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 12px; }
 .office-counts { font-size: 14px; margin: 0; }
 .office-banner { padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-failing); margin-bottom: 12px; }
-.office-viewport { flex: 1; min-height: 0; overflow: hidden auto; background: #202c34; scrollbar-gutter: stable; }
+.office-viewport { flex: 1; min-height: 0; overflow: hidden; background: #202c34; }
 .office-floor { position: relative; }
 .office-floor canvas { display: block; image-rendering: pixelated; max-width: none; }
 .office-plate { position: absolute; transform: translate(-50%, -100%); padding: 2px 4px; border: 1px solid #536878; background: #f4eedb; color: #202c34; font-size: 11px; line-height: 1.2; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

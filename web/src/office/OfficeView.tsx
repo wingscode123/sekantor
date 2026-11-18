@@ -14,18 +14,19 @@ const placeSigns: Record<PlaceLabel["kind"], { label: string; description: strin
   door: { label: "Exit: session ended", description: "Agents leave through this door when their sessions end." },
 };
 
+const widthOf = (c: number) => c * ROOM_WIDTH + (c - 1) * CORRIDOR_WIDTH;
+
 export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number }) {
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const [cols, setCols] = useState(2);
-  const maxCols = useMemo(() => Math.max(2, layoutOffice(sessions, layoutNow).rooms.length), [sessions, layoutNow]);
-  const office = useMemo(() => layoutOffice(sessions, layoutNow, cols * (ROOM_WIDTH + CORRIDOR_WIDTH) - CORRIDOR_WIDTH), [sessions, layoutNow, cols]);
+  const office = useMemo(() => layoutOffice(sessions, layoutNow, widthOf(cols)), [sessions, layoutNow, cols]);
   const sceneKey = JSON.stringify(office);
   const current = useRef(office);
   const canvas = useRef<HTMLCanvasElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const hits = useRef<FramePositions>(new Map());
   const byId = useMemo(() => new Map(sessions.map(s => [s.session_id, s])), [sessions]);
-  const [size, setSize] = useState({ tilePixels: TILE / 2, dpr: 1, inset: 0 });
+  const [size, setSize] = useState({ tilePixels: TILE / 2, dpr: 1, inset: 0, insetY: 0 });
   const tileSize = size.tilePixels / size.dpr;
   const width = office.width * size.tilePixels / size.dpr;
   const height = office.height * size.tilePixels / size.dpr;
@@ -44,31 +45,33 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
       if (!box?.clientWidth) return;
       const dpr = window.devicePixelRatio || 1;
       const width = Math.floor(box.clientWidth * dpr);
-      const widthOf = (c: number) => c * ROOM_WIDTH + (c - 1) * CORRIDOR_WIDTH;
-      // Whole device pixels per tile: native-pixel multiples when they fill the row, otherwise the exact fit.
-      const tileFor = (c: number) => {
-        const fit = Math.max(1, Math.floor(width / widthOf(c)));
-        const multiple = fit >= TILE ? TILE * Math.floor(fit / TILE) : fit;
-        return multiple * widthOf(c) >= 0.9 * fit * widthOf(c) ? multiple : fit;
-      };
-      let best = { cols: 2, tilePixels: tileFor(2), good: false };
+      // jsdom and detached boxes report no height: then only the width constrains the fit.
+      const height = box.clientHeight ? Math.floor(box.clientHeight * dpr) : Infinity;
+      const maxCols = Math.max(2, layoutOffice(sessions, layoutNow).rooms.length);
+      // Contain: the biggest whole-device-pixel tile for which the whole office fits both ways.
+      let best: { cols: number; tilePixels: number; w: number; h: number } | null = null;
       for (let c = 2; c <= maxCols; c++) {
-        const tilePixels = tileFor(c);
-        const good = tilePixels * widthOf(c) >= 0.9 * width && tilePixels / dpr >= 20;
-        if (c === 2 || good) best = { cols: c, tilePixels, good };
+        const layout = layoutOffice(sessions, layoutNow, widthOf(c));
+        const fit = Math.max(1, Math.min(Math.floor(width / layout.width), Math.floor(height / layout.height)));
+        // Native-pixel multiples when they lose under 10%, otherwise the exact fit.
+        const multiple = fit >= TILE ? TILE * Math.floor(fit / TILE) : fit;
+        const tilePixels = multiple >= 0.9 * fit ? multiple : fit;
+        if (!best || tilePixels > best.tilePixels) best = { cols: c, tilePixels, w: layout.width, h: layout.height };
       }
-      const { cols: nextCols, tilePixels } = best;
-      const inset = Math.floor((width - widthOf(nextCols) * tilePixels) / 2) / dpr;
+      const { cols: nextCols, tilePixels, w, h } = best!;
+      const inset = Math.floor((width - w * tilePixels) / 2) / dpr;
+      const insetY = Number.isFinite(height) ? Math.floor((height - h * tilePixels) / 2) / dpr : 0;
       setCols(nextCols);
-      setSize(previous => previous.tilePixels === tilePixels && previous.dpr === dpr && previous.inset === inset
-        ? previous : { tilePixels, dpr, inset });
+      setSize(previous => previous.tilePixels === tilePixels && previous.dpr === dpr && previous.inset === inset && previous.insetY === insetY
+        ? previous : { tilePixels, dpr, inset, insetY });
     };
     measure();
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
     if (viewport.current) observer?.observe(viewport.current);
     window.addEventListener("resize", measure);
     return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
-  }, [maxCols]);
+    // Refit whenever the rooms (or their contents) change, not only when the window does.
+  }, [sessions, layoutNow]);
   useEffect(() => {
     const node = canvas.current!;
     return startRenderer(node, () => current.current, undefined, positions => { hits.current = positions; });
@@ -77,7 +80,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const avatar = office.avatars.find(a => a.sessionId === selected);
   return <>
     <div className="office-viewport" ref={viewport}>
-      <div className="office-floor" style={{ marginLeft: size.inset, width, height }}>
+      <div className="office-floor" style={{ marginLeft: size.inset, marginTop: size.insetY, width, height }}>
         <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} need you, ${awake.filter(s => s.report_pending).length} reports, ${awake.filter(s => s.status === "error").length} errors`} style={{ width, height }} onClick={e => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = (e.clientX - rect.left) / scale, y = (e.clientY - rect.top) / scale;
