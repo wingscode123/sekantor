@@ -2,12 +2,13 @@ import { roomSignWidth, type Kind, type Lobby, type Look, type Pose, type Room }
 
 export const TILE = 32;
 export const CHARACTER_HEIGHT = TILE * 3 / 2;
+export const JUNIOR_SCALE = 0.75;
 export type TileKind = "floor" | "wall" | "corridor";
 export type FurnitureKind = "desk" | "chair" | "rack" | "coffee" | "plant" | "door" | "your_desk" | "window" | "lamp" | "bookshelf" | "rug" | "sunlight";
 export interface Theme {
   palette: string[];
   tile(kind: TileKind, ctx: CanvasRenderingContext2D, x: number, y: number): void;
-  character(look: Look, pose: Pose, frame: number, ctx: CanvasRenderingContext2D, x: number, y: number): void;
+  character(look: Look, pose: Pose, frame: number, ctx: CanvasRenderingContext2D, x: number, y: number, scale?: number): void;
   furniture(kind: FurnitureKind, ctx: CanvasRenderingContext2D, x: number, y: number, frame?: number): void;
   room?(kind: Kind, ctx: CanvasRenderingContext2D, room: Room): void;
   lobby?(ctx: CanvasRenderingContext2D, lobby: Lobby): void;
@@ -340,7 +341,7 @@ export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
   const [hair, hairLight] = index(look.hair, hairTones);
   const [jacket, jacketShade] = index(look.shirt, jackets);
   const accent = index(look.accessory, [Ink.Gold, Ink.Linen, Ink.Mint, Ink.Lilac]);
-  const [leftLeg, rightLeg, bob] = pose === "run" || pose === "leave" ? gait[f] : [0, 0, 0];
+  const [leftLeg, rightLeg, bob] = pose === "run" || pose === "leave" || pose === "deliver" ? gait[f] : [0, 0, 0];
   shadow(16, 44, 12, 3);
   rect(9, 33, 6, 9 + leftLeg, Ink.Slate);
   rect(17, 33, 6, 9 + rightLeg, Ink.Ink);
@@ -392,6 +393,14 @@ export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
       rect(21, 29 - beat, 3, 1, Ink.Ash);
       rect(11, 31 + beat, 3, 3, skin);
       break;
+    case "receive":
+      rect(19, 26, 9, 11, Ink.Cream);
+      rect(20, 28, 6, 2, Ink.Teal);
+      for (let y = 31; y <= 35; y += 2) rect(20, y, 6, 1, Ink.Ash);
+      rect(17, 33, 4, 3, skin);
+      rect(25, 32, 4, 3, skinShade);
+      break;
+    case "deliver":
     case "report":
       rect(18, 23 - beat, 11, 14, Ink.Ash);
       rect(19, 23 - beat, 10, 13, Ink.Cream);
@@ -435,7 +444,7 @@ export function characterGrid(look: Look, pose: Pose, frame: number): Grid {
 }
 
 const cache = new Map<string, HTMLCanvasElement>();
-function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x: number, y: number) {
+function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1) {
   let sprite = cache.get(key);
   if (!sprite) {
     const rows = build();
@@ -453,7 +462,8 @@ function paint(key: string, build: () => Grid, ctx: CanvasRenderingContext2D, x:
     if (cache.size >= 512) cache.delete(cache.keys().next().value!);
     cache.set(key, sprite);
   }
-  ctx.drawImage(sprite, Math.round(x), Math.round(y));
+  if (scale === 1) ctx.drawImage(sprite, Math.round(x), Math.round(y));
+  else ctx.drawImage(sprite, Math.round(x), Math.round(y), sprite.width * scale, sprite.height * scale);
 }
 
 type WallDecor = Decor | "rack" | "bookshelf" | "window" | "lamp";
@@ -584,8 +594,8 @@ export const defaultTheme: Theme = {
     this.furniture("chair", ctx, yourDesk.x * TILE, yourDesk.y * TILE + TILE / 2);
     this.furniture("your_desk", ctx, yourDesk.x * TILE, yourDesk.y * TILE);
   },
-  character(look, pose, frame, ctx, x, y) {
-    const f = pose === "run" || pose === "leave" || pose === "type" || pose === "smoke" ? frame % 4 : Math.floor(frame / 4) % 2;
-    paint(`${look.body},${look.hair},${look.shirt},${look.accessory}:${pose}:${f}`, () => characterGrid(look, pose, f), ctx, x, y);
+  character(look, pose, frame, ctx, x, y, scale) {
+    const f = pose === "run" || pose === "leave" || pose === "deliver" || pose === "type" || pose === "smoke" ? frame % 4 : Math.floor(frame / 4) % 2;
+    paint(`${look.body},${look.hair},${look.shirt},${look.accessory}:${pose}:${f}`, () => characterGrid(look, pose, f), ctx, x, y, scale);
   },
 };

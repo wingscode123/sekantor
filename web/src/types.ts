@@ -7,6 +7,16 @@ export const STATUS_CLASS: Record<Status, string> = {
   waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", reported: "reported", done: "done", ended: "ended",
 };
 
+export interface Subagent {
+  id: string;
+  type: string;
+  status: "working" | "reported";
+  activity: { tool: string; kind: "read" | "edit" | "run" | "web" | "other" } | null;
+  summary: string | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
 export interface Session {
   project?: { name: string; kind: Kind; signals: string[] } | null;
   session_id: string;
@@ -24,6 +34,7 @@ export interface Session {
   capabilities: string[];
   pid?: number | null;
   activity?: { tool: string; kind: "read" | "edit" | "run" | "web" | "other" } | null;
+  subagents?: Subagent[];
   needs_you: boolean;
   report_pending?: boolean;
   acknowledged_at?: string | null;

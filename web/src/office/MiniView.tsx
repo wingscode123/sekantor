@@ -24,7 +24,7 @@ export function MiniView({ navigate = openFullOffice }: { navigate?: (url: strin
   const latest = [...waiting].sort((a, b) => b.last_event_at.localeCompare(a.last_event_at) || b.status_since.localeCompare(a.status_since)).find(s => s.summary);
   const office = useMemo(() => layoutOffice(sessions, layoutNow), [sessions, layoutNow]);
   // Preserve full-office identities and looks, with space to gather around your desk.
-  const avatars = office.avatars.filter(a => waitingIds.has(a.sessionId));
+  const avatars = office.avatars.filter(a => !a.junior && waitingIds.has(a.sessionId));
   const rows = Math.ceil(avatars.length / 18);
   const height = Math.max(7, rows * 2 + 3);
   const yourDesk = { x: 10, y: height - 2 };

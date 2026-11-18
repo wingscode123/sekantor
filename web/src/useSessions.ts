@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GHOST_MS, isGhost } from "./office/model";
+import { GHOST_MS, isGhost, subagentReportExpiry } from "./office/model";
 import type { Connection, Session, StreamMessage } from "./types";
 
 const PRIORITY: Record<Session["status"], number> = {
@@ -79,6 +79,12 @@ export function useGhostNow(sessions: Session[]): number {
   const now = useMemo(() => Date.now(), [sessions, revision]);
   useEffect(() => {
     const expiries = sessions.filter(s => isGhost(s, now)).map(s => Date.parse(s.ended_at!) + GHOST_MS);
+    for (const s of sessions) {
+      for (const junior of s.subagents ?? []) {
+        const expiry = subagentReportExpiry(junior);
+        if (Number.isFinite(expiry) && expiry > now) expiries.push(expiry);
+      }
+    }
     if (!expiries.length) return;
     const timer = window.setTimeout(() => expire(n => n + 1), Math.max(0, Math.min(...expiries) - Date.now()));
     return () => window.clearTimeout(timer);

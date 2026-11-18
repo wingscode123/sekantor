@@ -1,11 +1,12 @@
-import type { Session } from "../types";
+import type { Session, Subagent } from "../types";
 import type { Pt } from "./motion";
 
 export type Kind = "web" | "backend" | "data" | "mobile" | "game" | "infra" | "docs" | "other";
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
-export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave" | "report";
+export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave" | "report" | "deliver" | "receive";
 export interface Look { body: number; hair: number; shirt: number; accessory: number }
 export interface Avatar {
+  junior?: { status: Subagent["status"]; meeting: Pt; door: Pt };
   key: string; sessionId: string; identity: string; seat: number; look: Look;
   place: Place; pose: Pose; targetTile?: { x: number; y: number }; deskTile: { x: number; y: number }; name: string; app: string; project: string;
 }
@@ -18,7 +19,7 @@ const VALID_KINDS = new Set<Kind>(["web", "backend", "data", "mobile", "game", "
 export function normaliseKind(kind: unknown): Kind {
   return typeof kind === "string" && VALID_KINDS.has(kind as Kind) ? (kind as Kind) : "other";
 }
-export interface Lobby { x: number; y: number; w: number; h: number; yourDesk: Pt; door: Pt; corridorY: number; numCols?: number }
+export interface Lobby { x: number; y: number; w: number; h: number; yourDesk: Pt; door: Pt; corridorY: number; corridors?: { y: number; left: number; right: number }[]; sidePassage?: boolean }
 export interface PlaceLabel { kind: Exclude<Place, "desk">; at: Pt; room?: string }
 export interface Office {
   rooms: Room[]; lobby: Lobby; places: PlaceLabel[];
@@ -46,7 +47,11 @@ export function poseFor(s: Session): { place: Place; pose: Pose } {
     case "done": return { place: "pantry", pose: "coffee" };
     case "ended": return { place: "door", pose: "leave" };
   }
-  switch (s.activity?.kind) {
+  return activityPose(s.activity);
+}
+
+function activityPose(activity: Session["activity"]): { place: Place; pose: Pose } {
+  switch (activity?.kind) {
     case "read": return { place: "desk", pose: "read" };
     case "edit": return { place: "desk", pose: "type" };
     case "run": return { place: "rack", pose: "run" };
@@ -68,13 +73,70 @@ export function isGhost(s: Session, now: number): boolean {
   const ended = Date.parse(s.ended_at || "");
   return s.status === "ended" && ended <= now && now < ended + GHOST_MS;
 }
-export const ROOM_WIDTH = 14;
-export const CORRIDOR_WIDTH = 3;
-const slot = (anchor: Pt, i: number): Pt => ({
-  x: anchor.x + i % 6, y: anchor.y + 1 + Math.floor(i / 6),
+export const SUBAGENT_REPORT_MS = 60_000;
+export function subagentReportExpiry(subagent: Subagent): number {
+  return subagent.status === "reported" ? Date.parse(subagent.ended_at ?? "") + SUBAGENT_REPORT_MS : Infinity;
+}
+
+const ROOM_GAP = 2;
+const LOBBY_WIDTH = 17;
+const DESK_COLS = 4;
+const slot = (anchor: Pt, i: number, columns = 6): Pt => ({
+  x: anchor.x + i % columns, y: anchor.y + 1 + Math.floor(i / columns),
 });
 
-export function layoutOffice(sessions: Session[], now = Date.now(), availableWidth?: number): Office {
+function planRoom(project: string, members: Session[], now: number) {
+  const seats = new Map<string, number>();
+  const desks: Pt[] = [];
+  const people: Avatar[] = [];
+  let col = 0, row = 0, shelfHeight = 1, usedColumns = 1;
+  for (const s of members) {
+    const juniors = (s.subagents ?? []).filter(a => now < subagentReportExpiry(a));
+    const groupSize = 1 + juniors.filter(a => a.status === "working").length;
+    const columns = Math.min(groupSize, DESK_COLS);
+    if (col + columns > DESK_COLS) {
+      row += shelfHeight;
+      col = 0;
+      shelfHeight = 1;
+    }
+    const deskAt = (i: number): Pt => ({
+      x: 2 + 3 * (col + i % columns),
+      y: 3 + 2 * (row + Math.floor(i / columns)),
+    });
+    const deskTile = deskAt(0);
+    const identity = identityOf(s);
+    const seat = seats.get(identity) ?? 0;
+    seats.set(identity, seat + 1);
+    const look = lookFor(identity, seat);
+    const app = s.host_label || appOf(s);
+    desks.push(deskTile);
+    people.push({ key: s.session_id, sessionId: s.session_id, identity, seat, look, ...poseFor(s),
+      deskTile, name: s.agent?.name || s.source_label || appOf(s), app, project });
+    let juniorSeat = 1;
+    for (const junior of juniors) {
+      const reporting = junior.status === "reported";
+      const meeting = { x: deskTile.x, y: deskTile.y + 1 };
+      const juniorDesk = reporting ? { x: deskTile.x + 1, y: deskTile.y } : deskAt(juniorSeat++);
+      if (!reporting) desks.push(juniorDesk);
+      people.push({
+        key: JSON.stringify([s.session_id, junior.id]), sessionId: s.session_id, identity, seat, look,
+        place: "desk", pose: reporting ? "deliver" : activityPose(junior.activity).pose,
+        deskTile: juniorDesk, name: junior.type, app, project,
+        junior: { status: junior.status, meeting, door: meeting },
+      });
+    }
+    col += columns;
+    usedColumns = Math.max(usedColumns, col);
+    shelfHeight = Math.max(shelfHeight, Math.ceil(groupSize / columns));
+  }
+  const w = Math.max(7, usedColumns * 3 + 2);
+  const sharedColumns = Math.floor((w - 2) / 2);
+  const furnitureY = 3 + 2 * (row + shelfHeight);
+  const h = furnitureY + Math.ceil(members.length / sharedColumns) + 2;
+  return { project, members, desks, people, w, h, sharedColumns, furnitureY };
+}
+
+export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns = 3): Office {
   const ordered = sessions.filter(s => s.status !== "ended" || isGhost(s, now))
     .sort((a, b) => compare(a.started_at, b.started_at) || compare(a.session_id, b.session_id));
   const membersByProject = new Map<string, Session[]>();
@@ -85,65 +147,72 @@ export function layoutOffice(sessions: Session[], now = Date.now(), availableWid
     membersByProject.set(project, members);
   }
 
-  const numCols = availableWidth !== undefined
-    ? Math.max(2, Math.min(membersByProject.size, Math.floor((availableWidth + CORRIDOR_WIDTH) / (ROOM_WIDTH + CORRIDOR_WIDTH))))
-    : 2;
-  const officeWidth = numCols * ROOM_WIDTH + (numCols - 1) * CORRIDOR_WIDTH;
-  const centre = Math.floor(officeWidth / 2);
-
   const rooms: Room[] = [], avatars: Avatar[] = [], places: PlaceLabel[] = [];
   const projects = [...membersByProject.keys()].sort(compare);
-  let y = 0, rowHeight = 0;
-  for (const [index, project] of projects.entries()) {
-    const members = membersByProject.get(project)!;
-    const col = index % numCols;
-    const x = col * (ROOM_WIDTH + CORRIDOR_WIDTH);
-    const furnitureY = y + 3 + Math.ceil(members.length / 4) * 2;
-    const h = furnitureY - y + Math.ceil(members.length / 6) + 2;
-    const doorOnRight = col === 0 || (col < numCols - 1 && col % 2 === 0);
-    const doorX = doorOnRight ? x + ROOM_WIDTH - 1 : x;
-    const room: Room = {
-      project, kind: normaliseKind(members.find(s => s.project)?.project?.kind), x, y, w: ROOM_WIDTH, h,
-      door: { x: doorX, y: y + h - 2 },
-      sign: { x: x + Math.floor(ROOM_WIDTH / 2), y },
-      desks: [],
-      rack: { x: x + 1, y: furnitureY },
-      pantry: { x: x + 7, y: furnitureY },
-    };
-    rooms.push(room);
-    places.push({ kind: "rack", at: room.rack, room: project }, { kind: "pantry", at: room.pantry, room: project });
-    const seats = new Map<string, number>();
-    let rackCount = 0, pantryCount = 0;
-    for (const [i, s] of members.entries()) {
-      const deskTile = { x: x + 2 + i % 4 * 3, y: y + 3 + Math.floor(i / 4) * 2 };
-      room.desks.push(deskTile);
-      const identity = identityOf(s);
-      const seat = seats.get(identity) ?? 0;
-      seats.set(identity, seat + 1);
-      const { place, pose } = poseFor(s);
-      const targetTile = place === "rack" ? slot(room.rack, rackCount++)
-        : place === "pantry" ? slot(room.pantry, pantryCount++) : deskTile;
-      avatars.push({ key: s.session_id, sessionId: s.session_id, identity, seat, look: lookFor(identity, seat),
-        place, pose, deskTile, targetTile, name: s.agent?.name || s.source_label || appOf(s), app: s.host_label || appOf(s), project });
+  const plans = projects.map(project => planRoom(project, membersByProject.get(project)!, now));
+  // Distribute rooms so row lengths differ by at most one.
+  const rowCount = plans.length <= 3 ? 1 : Math.max(2, Math.ceil(plans.length / Math.max(2, maxColumns)));
+  const rows = [];
+  for (let start = 0, left = rowCount; left > 0; left--) {
+    const count = Math.ceil((plans.length - start) / left);
+    const row = plans.slice(start, start + count);
+    rows.push({ row, width: row.reduce((sum, room) => sum + room.w, 0) + Math.max(0, count - 1) * ROOM_GAP });
+    start += count;
+  }
+  const sidePassage = rowCount > 1;
+  const minWidth = Math.max(LOBBY_WIDTH, ...rows.map(row => row.width + (sidePassage ? 2 : 0)));
+  const officeWidth = minWidth % 2 ? minWidth : minWidth + 1;
+  const centre = Math.floor(officeWidth / 2);
+  const corridors: NonNullable<Lobby["corridors"]> = [];
+  let y = 0;
+  for (const { row, width } of rows) {
+    if (!row.length) continue;
+    let x = Math.floor((officeWidth - width) / 2);
+    const front = y + Math.max(...row.map(plan => plan.h));
+    corridors.push({ y: front, left: sidePassage ? 0 : Math.min(centre, x), right: Math.max(centre, x + width - 1) });
+    for (const { project, members, desks, people, w, h, sharedColumns, furnitureY } of row) {
+      const at = (p: Pt): Pt => ({ x: x + p.x, y: y + p.y });
+      const room: Room = {
+        project, kind: normaliseKind(members.find(s => s.project)?.project?.kind), x, y, w, h,
+        door: at({ x: Math.floor(w / 2), y: h - 1 }),
+        sign: at({ x: Math.floor(w / 2), y: 0 }),
+        desks: desks.map(at),
+        rack: at({ x: 1, y: furnitureY }),
+        pantry: at({ x: 1 + sharedColumns, y: furnitureY }),
+      };
+      rooms.push(room);
+      // A short room still reaches the corridor that serves its row.
+      for (let step = room.door.y + 1; step < front; step++) {
+        corridors.push({ y: step, left: room.door.x, right: room.door.x });
+      }
+      places.push({ kind: "rack", at: room.rack, room: project }, { kind: "pantry", at: room.pantry, room: project });
+      let rackCount = 0, pantryCount = 0;
+      for (const avatar of people) {
+        avatar.deskTile = at(avatar.deskTile);
+        avatar.targetTile = avatar.place === "rack" ? slot(room.rack, rackCount++, sharedColumns)
+          : avatar.place === "pantry" ? slot(room.pantry, pantryCount++, sharedColumns) : avatar.deskTile;
+        if (avatar.junior) {
+          avatar.junior.meeting = at(avatar.junior.meeting);
+          avatar.junior.door = room.door;
+        }
+        avatars.push(avatar);
+      }
+      x += w + ROOM_GAP;
     }
-    rowHeight = Math.max(h, rowHeight);
-    if (col === numCols - 1) {
-      y += rowHeight + 1;
-      rowHeight = 0;
-    }
+    y = front + 1;
   }
 
-  const lobbyY = y + (rowHeight ? rowHeight + 1 : 1);
-  const lobbyRows = Math.ceil(avatars.length / 6);
+  const lobbyY = Math.max(1, y);
+  const lobbyRows = Math.ceil(ordered.length / 6);
   const lobby: Lobby = {
-    x: centre - 8, y: lobbyY, w: 17, h: 5 + lobbyRows,
+    x: centre - 8, y: lobbyY, w: LOBBY_WIDTH, h: 5 + lobbyRows,
     yourDesk: { x: centre, y: lobbyY + 2 },
     door: { x: centre, y: lobbyY + 4 + lobbyRows },
     corridorY: lobbyY - 1,
-    numCols,
+    corridors, sidePassage,
   };
   places.push({ kind: "your_desk", at: lobby.yourDesk }, { kind: "door", at: lobby.door });
-  const bySession = new Map(avatars.map(a => [a.sessionId, a]));
+  const bySession = new Map(avatars.filter(a => !a.junior).map(a => [a.sessionId, a]));
   let waiting = 0;
   for (const s of ordered) {
     const avatar = bySession.get(s.session_id)!;
@@ -169,20 +238,9 @@ export function roomSignWidth(room: Room): number {
 
 export function isCorridorTile(lobby: Lobby, x: number, y: number): boolean {
   if (y > lobby.corridorY) return false;
-  if (!lobby.numCols || lobby.numCols <= 2) {
-    return Math.abs(x - lobby.door.x) <= (CORRIDOR_WIDTH - 1) / 2;
-  }
-  const numCorridors = lobby.numCols - 1;
-  for (let k = 0; k < numCorridors; k++) {
-    const corrX = (k + 1) * ROOM_WIDTH + k * CORRIDOR_WIDTH;
-    if (x >= corrX && x < corrX + CORRIDOR_WIDTH) return true;
-  }
-  if (y === lobby.corridorY) {
-    const minX = Math.min(ROOM_WIDTH, lobby.door.x - 1);
-    const maxX = Math.max(numCorridors * (ROOM_WIDTH + CORRIDOR_WIDTH) - 1, lobby.door.x + 1);
-    if (x >= minX && x <= maxX) return true;
-  }
-  return false;
+  if (!lobby.corridors) return Math.abs(x - lobby.door.x) <= 1;
+  return (lobby.sidePassage && x === 0) ||
+    lobby.corridors.some(c => y === c.y && x >= c.left && x <= c.right);
 }
 
 export function isWalkable(office: Office, point: Pt): boolean {

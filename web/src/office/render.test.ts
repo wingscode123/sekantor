@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { startRenderer } from "./render";
-import type { Office } from "./model";
-import { CHARACTER_HEIGHT, TILE, type Theme } from "./sprites";
+import { layoutOffice, type Office } from "./model";
+import type { Session, Subagent } from "../types";
+import { CHARACTER_HEIGHT, JUNIOR_SCALE, TILE, type Theme } from "./sprites";
 const office: Office = { width: 20, height: 10, clusters: [], rooms: [], places: [], lobby: { x: 0, y: 0, w: 0, h: 0, door: { x: 1, y: 1 }, yourDesk: { x: 2, y: 2 }, corridorY: 0 }, yourDesk: { x: 2, y: 2 }, rack: { x: 3, y: 3 }, pantry: { x: 4, y: 4 }, door: { x: 1, y: 1 }, avatars: [] };
 const theme: Theme = { palette: [], tile: vi.fn(), furniture: vi.fn(), character: vi.fn() };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -296,3 +297,43 @@ it("does not paint walkable-looking floor outside rooms/corridor/lobby", () => {
 });
 
 
+
+it("animates the junior delivering a paper, pausing while the main receives it, and leaving through the room door", () => {
+  const canvas = setup();
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const started = "2026-11-17T12:00:00Z";
+  const junior: Subagent = { id: "j", type: "Explore", status: "working", activity: { tool: "Read", kind: "read" },
+    started_at: started, ended_at: null, summary: null };
+  const parent: Session = { session_id: "main", source: "claude_code", source_label: "Claude Code",
+    status: "running", status_since: started, started_at: started, last_event_at: started,
+    workspace: {}, capabilities: [], needs_you: false, subagents: [junior] };
+  const now = Date.parse(started);
+  let current = layoutOffice([parent], now);
+  const character = vi.fn<Theme["character"]>();
+  const stop = startRenderer(canvas, () => current, { ...theme, character });
+  vi.advanceTimersByTime(5000);
+  expect(character.mock.calls.some(([, pose, , , , , scale]) => pose === "read" && scale === JUNIOR_SCALE)).toBe(true);
+
+  character.mockClear();
+  current = layoutOffice([{ ...parent, subagents: [{ ...junior, status: "reported", ended_at: started }] }], now);
+  vi.advanceTimersByTime(5000);
+  const calls = character.mock.calls;
+  const walk = calls.findIndex(([, pose]) => pose === "deliver");
+  const receive = calls.findIndex(([, pose, , , , , scale]) => pose === "receive" && scale === undefined);
+  const leave = calls.findIndex(([, pose]) => pose === "leave");
+  expect(walk).toBeGreaterThanOrEqual(0);
+  expect(receive).toBeGreaterThan(walk);
+  expect(leave).toBeGreaterThan(receive);
+  const waiting = calls.slice(walk, leave).filter(([, pose]) => pose === "report");
+  expect(waiting.length).toBeGreaterThanOrEqual(8);
+  const meeting = current.avatars[1].junior!.meeting;
+  expect(waiting.every(([, , , , x, y]) => x === (meeting.x + (1 - JUNIOR_SCALE) / 2) * TILE &&
+    y === (meeting.y + 1) * TILE - CHARACTER_HEIGHT * JUNIOR_SCALE)).toBe(true);
+  const [, , , , lastX, lastY] = calls.filter(([, pose]) => pose === "leave").at(-1)!;
+  const door = current.rooms[0].door;
+  expect(lastX).toBe((door.x + (1 - JUNIOR_SCALE) / 2) * TILE);
+  expect(lastY).toBeLessThan((door.y + 1) * TILE - CHARACTER_HEIGHT * JUNIOR_SCALE);
+  expect(lastY).toBeGreaterThan(door.y * TILE - CHARACTER_HEIGHT * JUNIOR_SCALE);
+  expect(calls.at(-1)?.[6]).toBeUndefined();
+  stop();
+});

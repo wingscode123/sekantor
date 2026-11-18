@@ -4,11 +4,12 @@ import { Timeline } from "../Timeline";
 import { SessionMenu } from "../SessionMenu";
 import { useNow } from "../useSessions";
 import { STATUS_CLASS, type Session } from "../types";
-import type { Avatar } from "./model";
+import { subagentReportExpiry, type Avatar } from "./model";
 
 export const statusText = (s: Session) => ({ waiting_approval: "Waiting for approval", waiting_input: s.needs_you ? "Waiting for you" : "Idle", running: "Running", error: "Error", reported: s.report_pending ? "Report ready" : "Report accepted", done: "Done", ended: "Ended" })[s.status];
 export function AvatarCard({ session: s, avatar, onClose }: { session: Session; avatar: Avatar; onClose: () => void }) {
   const now = useNow(1000);
+  const juniors = (s.subagents ?? []).filter(a => now < subagentReportExpiry(a));
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState(false);
   async function acceptReport() {
@@ -32,6 +33,13 @@ export function AvatarCard({ session: s, avatar, onClose }: { session: Session; 
     {s.activity && <p>Activity: {s.activity.tool} ({s.activity.kind})</p>}
     {s.report_pending && <button type="button" className="ctl" disabled={accepting} onClick={acceptReport}>Accept</button>}
     {s.report_pending && acceptError && <p role="alert">Could not accept the report. Try again.</p>}
+    {juniors.length > 0 && <section aria-label="Subagents">
+      <h3>Subagents</h3>
+      <ul>{juniors.map(junior => <li key={junior.id}>
+        <strong>{junior.type}</strong> {junior.status === "working" ? "Working" : "Reported"}
+        {junior.summary && <p>{junior.summary}</p>}
+      </li>)}</ul>
+    </section>}
     <SessionMenu s={s} now={now} /><Timeline sessionId={s.session_id} />
   </section>;
 }
