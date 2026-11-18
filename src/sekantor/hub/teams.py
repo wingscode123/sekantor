@@ -21,6 +21,7 @@ class Membership:
     team: Team
     names: frozenset[str]
     creator: str | None
+    display_name: str | None
 
 
 class TeamIndex:
@@ -41,7 +42,7 @@ class TeamIndex:
                 continue
             names = frozenset((project, checkout[0])) if checkout else frozenset((project,))
             team = Team(project, worktree, "lead" if main else "junior", model=p.model if p else None)
-            self.members[sid] = Membership(team, names, p.creator if p else None)
+            self.members[sid] = Membership(team, names, p.creator if p else None, p.project if p else None)
             for name in names:
                 self.by_project[name].add(sid)
             if agent_id:
@@ -66,9 +67,15 @@ class TeamIndex:
 
     def resolve(self, sid: str) -> Team | None:
         member = self.members.get(sid)
-        if member is None or member.team.role == "lead":
-            return member.team if member else None
-        active = {p for p in self.peers(member) if self.sessions[p].status is not Status.ended}
+        if member is None:
+            return None
+        peers = self.peers(member)
+        placed = [self.members[p] for p in peers if self.members[p].display_name is not None]
+        canonical = min(placed, key=lambda m: (m.team.role != "lead", m.team.project), default=None)
+        team = replace(member.team, project=canonical.team.project) if canonical else member.team
+        if team.role == "lead":
+            return team
+        active = {p for p in peers if self.sessions[p].status is not Status.ended}
         leads = {p for p in active if self.members[p].team.role == "lead"}
 
         def recent(ids: set[str]) -> str | None:
@@ -81,7 +88,7 @@ class TeamIndex:
             if parent is None:
                 break
             if parent in leads:
-                return replace(member.team, lead=parent)
+                return replace(team, lead=parent)
             seen.add(parent)
             creator = self.members[parent].creator
-        return replace(member.team, lead=recent(leads))
+        return replace(team, lead=recent(leads))

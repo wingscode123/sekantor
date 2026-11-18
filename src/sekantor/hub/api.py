@@ -34,7 +34,9 @@ def session_json(s: SessionState, settings: Settings | None = None) -> dict[str,
     # Action responses may serialize a state loaded directly for a write.
     s = s.model_copy()
     s.prune_subagents(datetime.now(timezone.utc))
-    d = s.model_dump(mode="json", exclude={"status_ts", "orca", "orca_session_id", "orca_terminal_handle"})
+    d = s.model_dump(mode="json", exclude={
+        "status_ts", "orca", "orca_session_id", "orca_terminal_handle", "reported_to_lead_at",
+    })
     floor = s.floor
     if floor == "orca" and not s.team_resolved:
         raise ValueError("Orca session must have its team resolved before serialization")

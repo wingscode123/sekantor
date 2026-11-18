@@ -61,6 +61,7 @@ class SessionState(BaseModel):
     last_event_at: datetime
     ended_at: datetime | None = None
     acknowledged_at: datetime | None = None
+    reported_to_lead_at: datetime | None = None
     agent: Agent | None = None
     workspace: Workspace = Workspace()
     host: Host | None = None
@@ -88,7 +89,7 @@ class SessionState(BaseModel):
 
     @property
     def report_to(self) -> Literal["you", "lead"]:
-        if self.status is Status.reported and self.team and self.team.lead:
+        if self.status is Status.reported and self.reported_to_lead_at is not None:
             return "lead"
         return "you"
 
@@ -262,10 +263,12 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
         s.activity = _activity(event)
     if event.status is not None:
         changed = event.status is not s.status
-        if changed or event.status is Status.reported:
+        new_report = event.status is Status.reported and (changed or event.request != s.request)
+        if changed or new_report:
             s.status = event.status
             s.status_since = event.ts
-        if s.status is Status.reported:
+            s.reported_to_lead_at = None
+        if new_report:
             s.acknowledged_at = None
             s.summary = event.summary
         s.status_ts = event.ts

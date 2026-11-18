@@ -439,7 +439,11 @@ def test_acknowledge_reports(client):
     assert client.post(path, headers=AUTH).json() == response.json()
     assert client.post("/v1/events", headers=AUTH, json=ev(3, None, type="message")).status_code == 202
     assert session()["report_pending"] is False
-    assert client.post("/v1/events", headers=AUTH, json=ev(4, "reported")).status_code == 202
+    since = session()["status_since"]
+    assert client.post("/v1/events", headers=AUTH, json=ev(4, "reported", request={"kind": "report"})).status_code == 202
+    assert session()["status_since"] == since and session()["acknowledged_at"]
+    assert session()["report_pending"] is False
+    assert client.post("/v1/events", headers=AUTH, json=ev(5, "reported")).status_code == 202
     assert session()["report_pending"] is True
 
 

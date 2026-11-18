@@ -19,7 +19,7 @@ from sekantor.schema import Event, OrcaPlacement, Status
 log = logging.getLogger("sekantor.hub")
 SLOW_S = 1.0  # the hook stops waiting for the hub after 1 s, so anything slower gets a log line
 RETENTION = timedelta(days=7)
-PLACEMENT_TTL = timedelta(minutes=2)
+PLACEMENT_TTL = timedelta(minutes=4)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -125,6 +125,8 @@ class Store:
         asked = time.monotonic()
         with self._lock:
             got = time.monotonic()
+            indexed = False
+            previous_indexed = self._orca_sessions.get(event.session_id)
             try:
                 self._db.execute("BEGIN IMMEDIATE")
                 cur = self._db.execute(
@@ -135,11 +137,28 @@ class Store:
                 if cur.rowcount == 0:
                     self._db.execute("ROLLBACK")
                     return None
-                state = apply(self._get_session(event.session_id), event)
+                previous = self._get_session(event.session_id)
+                state = apply(previous, event)
                 state.prune_subagents(received_at)
+                new_report = state.floor == "orca" and state.status is Status.reported and (
+                    previous is None or previous.status is not Status.reported
+                    or (state.status_since, state.request) != (previous.status_since, previous.request)
+                )
+                if new_report:
+                    self._index_session(state)
+                    indexed = True
+                    self._resolve_team(state, received_at)
+                    if state.team and state.team.lead:
+                        state.reported_to_lead_at = state.status_since
                 self._put_session(state)
                 self._db.execute("COMMIT")
             except BaseException:
+                if indexed:
+                    if previous_indexed is None:
+                        self._orca_sessions.pop(event.session_id, None)
+                    else:
+                        self._orca_sessions[event.session_id] = previous_indexed
+                    self._team_index = None
                 self._db.execute("ROLLBACK")
                 raise
             finally:
@@ -147,7 +166,8 @@ class Store:
                 if done - asked > SLOW_S:
                     log.warning("store.add_event %s: waited %.2fs for the store lock, held it %.2fs",
                                 event.event_id, got - asked, done - got)
-            self._index_session(state)
+            if not indexed:
+                self._index_session(state)
             return self._resolve_team(state)
 
     def set_snooze(self, session_id: str, until: datetime | None) -> SessionState | None:

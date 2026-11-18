@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from sekantor import projects
 from sekantor.hub.api import session_json, snapshot
-from sekantor.hub.app import create_app
+from sekantor.hub.app import create_app, run_sweep
 from sekantor.hub.status import apply, inbox_order
 from sekantor.hub.store import Store
 from sekantor.pos.claude_code.fingerprint import env_names
@@ -70,8 +70,10 @@ def test_git_team_and_recent_lead_fallback(tmp_path):
     assert store.acknowledge_report("junior").acknowledged_at is None
     store.add_event(event("old", at=5, source="orca", status="ended"))
     store.add_event(event("recent", at=5, source="orca", status="ended"))
-    assert store.session("junior").report_pending
-    assert store.acknowledge_report("junior").acknowledged_at is not None
+    junior = store.session("junior")
+    assert junior.team.lead is None
+    assert junior.report_to == "lead" and not junior.report_pending
+    assert store.acknowledge_report("junior").acknowledged_at is None
     store.close()
 
 
@@ -81,16 +83,16 @@ def test_placement_overrides_git_and_expires(tmp_path):
     p = placement("hook-agent")
     assert store.add_placement(p, NOW)
     assert not store.add_placement(p, NOW + timedelta(seconds=10))
-    assert "hook-agent" in store.placements(NOW + timedelta(seconds=129))
+    assert "hook-agent" in store.placements(NOW + timedelta(seconds=249))
     older = p.model_copy(update={"ts": NOW - timedelta(seconds=1), "orca": p.orca.model_copy(update={"main": True})})
     assert not store.add_placement(older, NOW + timedelta(seconds=20))
     assert store.sessions() == []
     store.add_event(event("hook", source="orca", orca_session_id="hook-agent", workspace={"cwd": str(tmp_path)}))
     [s] = snapshot(store)["sessions"]
     assert (s["team"]["project"], s["team"]["role"]) == ("Office", "junior")
-    assert "hook-agent" in store.placements(NOW + timedelta(seconds=139))
-    assert store.placements(NOW + timedelta(seconds=140)) == {}
-    assert store.expire_placements(NOW + timedelta(seconds=140))
+    assert "hook-agent" in store.placements(NOW + timedelta(seconds=259))
+    assert store.placements(NOW + timedelta(seconds=260)) == {}
+    assert store.expire_placements(NOW + timedelta(seconds=260))
     assert snapshot(store)["sessions"][0]["team"]["role"] == "lead"
     store.close()
 
@@ -138,6 +140,46 @@ def test_custom_host_rules_keep_orca_identity(tmp_path, monkeypatch):
     expected = {"ORCA_AGENT_SESSION_ID", "ORCA_TERMINAL_HANDLE"}
     assert env_names({"hosts": []}) == expected
     assert expected <= set((tmp_path / "hook-env.txt").read_text().splitlines())
+
+
+def test_placed_junior_and_git_lead_share_the_display_name(tmp_path):
+    root = tmp_path / "Ronda"
+    (root / ".git").mkdir(parents=True)
+    child = tmp_path / "feature"
+    child.mkdir()
+    (child / ".git").write_text("gitdir: ../Ronda/.git/worktrees/feature\n", encoding="utf-8")
+    store = Store(":memory:")
+    store.add_event(event("hook", source="orca", workspace={"cwd": str(root)}))
+    store.add_event(event("orca:codex", source="orca", workspace={"cwd": str(child)},
+                          orca=placement("codex", project="SeKantor").orca, agent={"name": "codex"}))
+    teams = {s["session_id"]: s["team"] for s in snapshot(store)["sessions"]}
+    assert {team["project"] for team in teams.values()} == {"SeKantor"}
+    assert teams["orca:codex"]["lead"] == "hook"
+    store.close()
+
+
+def test_report_routing_is_fixed_per_report_and_survives_sweep(tmp_path):
+    path = tmp_path / "sessions.db"
+    store = Store(path)
+    worker = placement("worker", creator="lead").orca
+    lead = placement("lead", main=True).orca
+    original = store.add_event(event("orca:worker", source="orca", status="reported", orca=worker))
+    assert original.report_pending and original.report_to == "you"
+    store.add_event(event("orca:lead", at=1, source="orca", status="running", orca=lead))
+    assert store.session("orca:worker").report_to == "you"
+    store.add_event(event("orca:worker", at=2, source="orca", status="running", orca=worker))
+    report = store.add_event(event("orca:worker", at=3, source="orca", status="reported", orca=worker))
+    assert report.reported_to_lead_at == report.status_since and report.report_to == "lead"
+    store.add_event(event("orca:worker", at=590, source="orca", status="reported", orca=worker))
+    assert [s.session_id for s in run_sweep(store, NOW + timedelta(seconds=602))] == ["orca:lead"]
+    store.close()
+    store = Store(path)
+    s = store.session("orca:worker")
+    assert s.team.lead is None
+    assert s.report_to == "lead" and not s.report_pending
+    assert s.status_since == report.status_since
+    assert s.last_event_at == NOW + timedelta(seconds=590)
+    store.close()
 
 
 def test_hook_identity_and_live_team_routing(tmp_path):
