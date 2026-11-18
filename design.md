@@ -1,12 +1,12 @@
 # Design: SeKantor
 
 The locked system. Every Hallmark run reads this first and pages share it. Change it on purpose; the file is the rule.
-Brand source: `docs/PRD.md` (Identitas visual). Guidelines for people: `brand/BRAND.md`.
+Brand source and guidelines: `brand/BRAND.md`. For the pixel office, see `docs/superpowers/specs/2026-11-16-sekantor-design.md`.
 
-## System
+## Existing web styles
 - Genre: modern-minimal
-- Shape of the first page: custom (night inbox); the product screen is an app screen
-- Theme: brand (vibe: "night watch, lantern amber, terminal calm")
+- The existing landing page and inbox use the web styles below.
+- SeKantor brand: apricot plaster, walnut and petrol blue, with a pixel office building as the mark.
 - Axes: dark/mono/warm · posture: restrained (amber only where an agent waits, plus the one primary control)
 
 ## Tokens

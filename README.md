@@ -1,4 +1,4 @@
-<p align="center"><img src="brand/social/readme-banner.png" width="1280" alt="SeKantor: Your agents work all night. SeKantor keeps watch."></p>
+<p align="center"><img src="brand/social/readme-banner.png" width="1280" alt="SeKantor. Your AI agents, in one office."></p>
 
 # SeKantor
 
@@ -11,7 +11,7 @@ Everything stays on your machine: the hub binds to `127.0.0.1`, needs a local to
 **Status:** pre-alpha, feature-complete for 1.0 (M0 to M4). Watches Claude Code (terminal, VS Code,
 Claude desktop, Orca), OpenBot (Local scripts API), and codex/opencode/gemini/aider in tmux or Orca
 terminals.
-SeKantor was called Ronda until 2026-11-16 (ADR-0023); upgrading keeps your token, settings and history. After upgrading, run `sekantor open` once: the browser login cookie is new.
+The rename on 2026-11-16 (ADR-0023) preserves your token, settings and history when you upgrade. After upgrading, run `sekantor open` once to set the new browser login cookie.
 
 A pixel office is coming: each agent gets a desk, and you see who is working, who is waiting and who left.
 Today SeKantor detects your agents and shows the inbox.
