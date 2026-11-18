@@ -3,7 +3,8 @@ import { isSnoozed } from "../SessionMenu";
 import type { Session } from "../types";
 import { juniorKey, layoutOffice, roomSignWidth, type PlaceLabel } from "./model";
 import { startRenderer, type FramePositions } from "./render";
-import { CHARACTER_HEIGHT, TILE } from "./sprites";
+import { CHARACTER_HEIGHT, floorBackground, FLOOR_PERIOD, TILE } from "./sprites";
+import { modelBadge } from "./floors";
 
 import { AvatarCard, statusText } from "./AvatarCard";
 
@@ -64,7 +65,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
       }
       const { cols: nextCols, tilePixels, w, h } = best!;
       const inset = Math.floor((width - w * tilePixels) / 2) / dpr;
-      const insetY = Number.isFinite(height) ? Math.floor((height - h * tilePixels) / 2) / dpr : 0;
+      const insetY = Number.isFinite(height) ? Math.max(0, height - h * tilePixels) / dpr : 0;
       setCols(nextCols);
       setSize(previous => previous.tilePixels === tilePixels && previous.dpr === dpr && previous.inset === inset && previous.insetY === insetY
         ? previous : { tilePixels, dpr, inset, insetY });
@@ -104,7 +105,10 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const mainAvatars = office.avatars.filter(a => !a.junior);
   const avatar = mainAvatars.find(a => a.sessionId === selected);
   return <>
-    <div className="office-viewport" ref={viewport}>
+    <div className="office-viewport" ref={viewport} style={{
+      backgroundImage: floorBackground, backgroundSize: `${tileSize * FLOOR_PERIOD}px ${tileSize * FLOOR_PERIOD}px`,
+      backgroundPosition: `${size.inset}px ${size.insetY}px`, backgroundRepeat: "repeat",
+    }}>
       <div className="office-floor" style={{ marginLeft: size.inset, marginTop: size.insetY, width, height }}>
         <canvas ref={canvas} role="img" aria-label={`Office with ${awake.length} agents: ${awake.filter(s => s.status === "running").length} busy, ${awake.filter(s => s.needs_you).length} need you, ${awake.filter(s => s.report_pending).length} reports, ${awake.filter(s => s.status === "error").length} errors`} style={{ width, height }} onClick={e => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -119,6 +123,11 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
             left: (room.sign.x + 0.5) * tileSize, top: (room.sign.y + 0.5) * tileSize,
             maxWidth: roomSignWidth(room) * tileSize - 4,
           }}>{room.project}</span>)}
+        {office.rooms.flatMap(room => room.worktrees?.map(({ name, sign }) =>
+          <span className="office-sign office-sign--worktree" key={JSON.stringify([room.project, name])} title={name}
+            style={{ left: (sign.x - 0.5) * tileSize, top: (sign.y + 0.5) * tileSize, maxWidth: (room.w - 3) * tileSize }}>
+            {name}
+          </span>) ?? [])}
         {office.places.map(({ kind, at, room }) => {
           const key = JSON.stringify([room, kind]);
           const furnitureRoom = office.rooms.find(r => r.project === room);
@@ -135,7 +144,9 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
             maxWidth: (kind === "your_desk" ? 14 : 10) * tileSize,
           }}>{placeSigns[kind].label}</span>;
         })}
-        {mainAvatars.filter(a => a.pose !== "leave").map(a =>
+        {mainAvatars.filter(a => a.pose !== "leave").map(a => {
+          const badge = modelBadge(byId.get(a.sessionId)!);
+          return (
           <button type="button" className="office-plate" data-testid="name-plate" key={a.key} tabIndex={-1}
             ref={node => {
               if (node) plates.current.set(a.key, node);
@@ -148,8 +159,10 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
               maxWidth: 3 * tileSize,
             }}
             onClick={() => setSelected(a.sessionId)}>
-            {a.name}<small>{a.app} · {a.project}{byId.get(a.sessionId)?.workspace.branch ? ` / ${byId.get(a.sessionId)!.workspace.branch}` : ""}</small>
-          </button>)}
+            {a.name}{badge && <> <span className="office-model-badge">{badge}</span></>}
+            <small>{a.app} · {a.project}{byId.get(a.sessionId)?.workspace.branch ? ` / ${byId.get(a.sessionId)!.workspace.branch}` : ""}</small>
+          </button>);
+        })}
       </div>
     </div>
     {loaded && !office.avatars.length && <p className="office-empty">Your office is quiet. Agents appear when their sessions connect. If an agent is running, install its hooks with <code>sekantor install claude --project</code>.</p>}

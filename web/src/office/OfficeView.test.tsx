@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import App from "../App";
 import { OfficeView } from "./OfficeView";
 import { layoutOffice } from "./model";
+import { floorAttention, floorOf, modelBadge } from "./floors";
 
 import type { Session } from "../types";
 const mocks = vi.hoisted(() => ({ renderer: vi.fn<typeof import("./render").startRenderer>(() => vi.fn()), state: { sessions: [] as Session[], connection: "live", loaded: true } }));
@@ -11,8 +12,123 @@ vi.mock("./model", async importOriginal => { const m = await importOriginal<type
 vi.mock("./render", () => ({ startRenderer: mocks.renderer }));
 vi.mock("../useSessions", () => ({ useSessions: () => mocks.state, useNow: () => Date.parse("2026-11-17T12:00:00Z"), useGhostNow: () => Date.parse("2026-11-17T12:00:00Z") }));
 const session = (id = "one"): Session => ({ session_id: id, source: "claude", source_label: id, status: "running", status_since: "2026-11-17T11:00:00Z", started_at: "2026-11-17T10:00:00Z", last_event_at: "2026-11-17T11:00:00Z", workspace: { cwd: "/repo", branch: "main" }, capabilities: [], needs_you: false, open_label: "Open in Orca" });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mocks.state.connection = "live"; mocks.state.sessions = []; mocks.state.loaded = true; mocks.renderer.mockClear(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); mocks.state.connection = "live"; mocks.state.sessions = []; mocks.state.loaded = true; mocks.renderer.mockClear(); });
 describe("office page", () => {
+  it("defaults to the first floor with attention, filters sessions, and remembers an explicit choice", () => {
+    const openbot = { ...session("openbot"), source: "openbot", needs_you: true };
+    const orca = { ...session("worker"), host: { app: "orca", confidence: 1, via: [] }, needs_you: true };
+    localStorage.setItem("sekantor.floor", "openbot");
+    mocks.state.sessions = [session("claude"), openbot, orca];
+    const view = render(<App />);
+    expect(screen.getByRole("button", { name: /2 Orca.*attention/, pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /3 OpenBot.*attention/, pressed: false })).toBeTruthy();
+    expect(screen.getByTestId("name-plate").textContent).toContain("worker");
+    fireEvent.click(screen.getByRole("button", { name: "1 Claude" }));
+    expect(screen.getByTestId("name-plate").textContent).toContain("claude");
+    view.unmount();
+    mocks.state.sessions = [session("claude"), { ...orca, needs_you: false, report_pending: true }, { ...openbot, needs_you: false }];
+    render(<App />);
+    expect(screen.getByRole("button", { name: "1 Claude", pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /2 Orca.*attention/, pressed: false })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "3 OpenBot" }));
+    expect(screen.getByText("OpenBot agents", { exact: true })).toBeTruthy();
+  });
+
+  it("fills the viewport with repeated procedural tiles and puts the lobby at the front centre", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1440);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+    const { container } = render(<OfficeView sessions={[session()]} />);
+    const viewport = container.querySelector<HTMLElement>(".office-viewport")!;
+    const floor = container.querySelector<HTMLElement>(".office-floor")!;
+    expect(viewport.style.backgroundImage).toContain("data:image/svg+xml");
+    expect(viewport.style.backgroundRepeat).toBe("repeat");
+    expect(parseFloat(floor.style.width)).toBeLessThan(1440);
+    expect(1440 - parseFloat(floor.style.marginLeft) * 2 - parseFloat(floor.style.width)).toBeLessThanOrEqual(1);
+    expect(parseFloat(floor.style.marginTop) + parseFloat(floor.style.height)).toBe(500);
+  });
+
+  it.each([1.25, 1.5])("aligns repeating floor tiles to device pixels at DPR %s", dpr => {
+    vi.stubGlobal("devicePixelRatio", dpr);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1441);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(703);
+    const { container } = render(<OfficeView sessions={[session()]} />);
+    const viewport = container.querySelector<HTMLElement>(".office-viewport")!;
+    const floor = container.querySelector<HTMLElement>(".office-floor")!;
+    const pixels = (value: string) => parseFloat(value) * dpr;
+    const [left, top] = viewport.style.backgroundPosition.split(" ").map(pixels);
+    const period = pixels(viewport.style.backgroundSize);
+    for (const value of [left, top, period / 4]) expect(value).toBeCloseTo(Math.round(value), 10);
+    expect(left).toBeCloseTo(pixels(floor.style.marginLeft), 10);
+    expect(top).toBeCloseTo(pixels(floor.style.marginTop), 10);
+    expect(left).toBeGreaterThan(0);
+    expect(top).toBeGreaterThan(0);
+    expect(left + pixels(floor.style.width)).toBeLessThan(Math.floor(1441 * dpr));
+  });
+
+  it("supports old hub payloads and storage failures while keeping the chosen floor sticky", () => {
+    for (const method of ["getItem", "setItem"] as const) {
+      vi.spyOn(Storage.prototype, method).mockImplementation(() => { throw new Error("Storage denied"); });
+    }
+    const claude = session("claude");
+    const orca = { ...session("orca"), source: "orca" };
+    expect([floorOf(claude), floorOf(orca), floorOf({ ...claude, source: "openbot" })]).toEqual(["claude", "orca", "openbot"]);
+    mocks.state.sessions = [claude, orca];
+    const view = render(<App />);
+    expect(screen.getByRole("button", { name: "1 Claude", pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "2 Orca" }));
+    mocks.state.sessions = [{ ...claude, needs_you: true }, orca];
+    view.rerender(<App />);
+    expect(screen.getByRole("button", { name: "2 Orca", pressed: true })).toBeTruthy();
+  });
+
+  it("omits snoozed, ended and lead-routed reports from floor badges", () => {
+    const now = Date.parse("2026-11-17T12:00:00Z");
+    const sessions: Session[] = [
+      { ...session("snoozed"), needs_you: true, snoozed_until: "2026-11-18" },
+      { ...session("ended"), status: "ended", needs_you: true },
+      { ...session("lead-report"), status: "reported", report_to: "lead", report_pending: true },
+      { ...session("user-report"), status: "reported", report_to: "you", report_pending: true },
+    ];
+    expect(floorAttention(sessions, now)).toEqual({ alerts: 1, needsYou: false });
+  });
+
+  it("shows model badges on every floor and recognizes Claude name variants", () => {
+    for (const floor of ["claude", "orca", "openbot"] as const) {
+      expect(modelBadge({ ...session(), floor, agent: { name: "codex" } })).toBe("Codex");
+      expect(modelBadge({ ...session(), floor, agent: { name: "antigravity" } })).toBe("Gemini");
+      for (const name of ["Claude", "claude-code", "Claude Code"]) {
+        expect(modelBadge({ ...session(), floor, agent: { name } })).toBeUndefined();
+      }
+    }
+  });
+
+  it("reserves clear space above each worktree group for its sign", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(340);
+    const worker = (id: string, role: "lead" | "junior"): Session => ({
+      ...session(id), floor: "orca",
+      team: { project: "Studio", worktree: id, role, lead: null, model: null },
+    });
+    render(<OfficeView sessions={[worker("main", "lead"), worker("feature-a", "junior"), worker("feature-b", "junior")]} />);
+    const [lead, first, second] = screen.getAllByTestId("name-plate").map(plate => parseFloat(plate.style.top));
+    const [a, b] = ["feature-a", "feature-b"].map(name => parseFloat(screen.getByTitle(name).style.top));
+    const room = parseFloat(screen.getByText("Studio", { exact: true }).style.top);
+    // Signs are vertically centred and plates end at their anchor.
+    expect(a - 9).toBeGreaterThan(Math.max(room + 9, lead));
+    expect(a + 9).toBeLessThan(first - 30);
+    expect(b - 9).toBeGreaterThan(first);
+    expect(b + 9).toBeLessThan(second - 30);
+  });
+
+  it("shows an Orca worker's model badge on its plate and card", () => {
+    const worker: Session = { ...session(), source: "orca", agent: { name: "codex" },
+      team: { project: "SeKantor", worktree: "web-checkout", role: "junior", lead: null, model: "gpt-6.2-sol" } };
+    render(<OfficeView sessions={[worker]} />);
+    const plate = screen.getByTestId("name-plate");
+    expect(plate.textContent).toContain("GPT");
+    expect(screen.getByText("web-checkout")).toBeTruthy();
+    fireEvent.click(plate);
+    expect(screen.getByRole("heading", { name: "codex GPT" })).toBeTruthy();
+  });
   it("renders one plate per session", () => {
     render(<OfficeView sessions={[session(), session("two")]} />);
     expect(screen.getAllByTestId("name-plate")).toHaveLength(2);

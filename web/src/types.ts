@@ -1,6 +1,7 @@
 import type { Kind } from "./office/model";
 
 export type Status = "waiting_approval" | "waiting_input" | "error" | "running" | "reported" | "done" | "ended";
+export type Floor = "claude" | "orca" | "openbot";
 
 /** The `status--*` modifier in site/app.css for each status. */
 export const STATUS_CLASS: Record<Status, string> = {
@@ -18,6 +19,9 @@ export interface Subagent {
 }
 
 export interface Session {
+  floor?: Floor;
+  team?: { project: string; worktree: string; role: "lead" | "junior"; lead: string | null; model: string | null } | null;
+  report_to?: "you" | "lead";
   project?: { name: string; kind: Kind; signals: string[] } | null;
   session_id: string;
   source: string;

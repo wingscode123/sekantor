@@ -1,9 +1,21 @@
-import { isCorridorTile, isWalkable, route, type Avatar, type Office } from "./model";
+import { isCorridorTile, isWalkable, route, SUBAGENT_REPORT_MS, type Avatar, type Office } from "./model";
 import { Departures, followRoute, type Pt } from "./motion";
 import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
 /** Native-pixel avatar top-left positions (32x48 sprites), keyed by avatar.key in paint order. */
 export type FramePositions = ReadonlyMap<string, Readonly<Pt>>;
+
+const walkedReports = new Map<string, number>();
+
+function claimTeamReport(sessionId: string, since: string): boolean {
+  const now = Date.now(), started = Date.parse(since), expiry = started + SUBAGENT_REPORT_MS;
+  if (!(started <= now && now < expiry)) return false;
+  const id = JSON.stringify([sessionId, since]);
+  if (walkedReports.has(id)) return false;
+  for (const [key, until] of walkedReports) if (until <= now) walkedReports.delete(key);
+  walkedReports.set(id, expiry);
+  return true;
+}
 
 /** Dispatch `officechange` on the canvas after replacing an empty office, or restart this renderer. */
 export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office, theme: Theme = defaultTheme, onFrame?: (positions: FramePositions) => void, onJuniorDeparture?: (keys: string[]) => void): () => void {
@@ -15,7 +27,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
   const paths = new Map<string, { target: Pt; waypoints: Pt[] }>();
   let geometry: string | undefined;
   let previousOffice: Office | undefined;
-  const handoffs = new Map<string, { remaining: number; leaving: boolean }>();
+  const handoffs = new Map<string, { remaining: number; delivered: boolean; since?: string }>();
   const receiving = new Set<string>();
   const retained = new Map<string, Avatar>(), departures = new Departures(), finished = new Set<string>();
   const live = new Set<string>(), targets = new Map<string, Pt>(), sorted: Avatar[] = [];
@@ -115,7 +127,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       if (avatar.pose !== "leave" && avatar.junior?.status !== "reported") {
         finished.delete(avatar.key);
         departures.cancel(avatar.key);
-        handoffs.delete(avatar.key);
+        if (!avatar.teamReport) handoffs.delete(avatar.key);
       }
       if (!finished.has(avatar.key)) retained.set(avatar.key, avatar);
     }
@@ -151,21 +163,27 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
     receiving.clear();
     for (const [key, avatar] of retained) {
       const junior = avatar.junior;
+      const report = avatar.teamReport;
       const isLive = live.has(key);
       let handoff = handoffs.get(key);
-      if (!handoff && junior?.status === "reported" && isLive) {
-        handoff = { remaining: 750, leaving: false };
+      if (isLive && !handoff && junior?.status === "reported") {
+        handoff = { remaining: 750, delivered: false };
         handoffs.set(key, handoff);
       }
-      const leaving = !isLive || avatar.pose === "leave" || handoff?.leaving;
+      if (isLive && report && handoff?.since !== report.since) {
+        handoff = { remaining: 750, delivered: !claimTeamReport(avatar.sessionId, report.since), since: report.since };
+        handoffs.set(key, handoff);
+      }
+      const leaving = !isLive || avatar.pose === "leave" || (junior && handoff?.delivered);
       if (leaving) departures.mark(key);
       const exit = junior && (isLive ? junior.door : office.rooms.find(r => r.project === avatar.project)?.door);
+      const meeting = handoff && !handoff.delivered ? (report?.meeting ?? junior?.meeting) : undefined;
       const target = leaving ? exit || office.door
-        : handoff && junior ? junior.meeting : avatar.targetTile ? avatar.targetTile : avatar.place === "desk" ? avatar.deskTile
+        : meeting ?? (avatar.targetTile ? avatar.targetTile : avatar.place === "desk" ? avatar.deskTile
         : avatar.place === "your_desk" ? office.yourDesk : avatar.place === "rack" ? office.rack
-        : avatar.place === "pantry" ? office.pantry : office.door;
+        : avatar.place === "pantry" ? office.pantry : office.door);
       targets.set(key, target);
-      let position = positions.get(key) ?? (junior ? avatar.deskTile : office.door);
+      let position = positions.get(key) ?? (junior || report ? avatar.deskTile : office.door);
       let path = paths.get(key);
       if (!path || path.target.x !== target.x || path.target.y !== target.y) {
         const waypoints = route(office, position, target);
@@ -177,10 +195,11 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       const wasAtMeeting = handoff && !leaving && position.x === target.x && position.y === target.y;
       position = followRoute(position, path.waypoints, dt);
       positions.set(key, position);
-      if (handoff && !leaving && position.x === target.x && position.y === target.y) {
-        receiving.add(avatar.sessionId);
+      if (handoff && meeting && !leaving && position.x === target.x && position.y === target.y) {
+        const recipient = report ? report.lead : avatar.sessionId;
+        if (recipient) receiving.add(recipient);
         if (wasAtMeeting) handoff.remaining -= dt;
-        handoff.leaving = handoff.remaining <= 0;
+        handoff.delivered = handoff.remaining <= 0;
       }
     }
     for (const [key, position] of positions) if (departures.leaving(key)) {
@@ -214,9 +233,11 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       const x = p.x * TILE;
       const y = (p.y + 1) * TILE - CHARACTER_HEIGHT;
       framePositions?.set(avatar.key, { x, y });
+      const handoff = handoffs.get(avatar.key);
       const pose = avatar.junior
         ? departures.leaving(avatar.key) ? "leave"
           : avatar.pose === "deliver" && !moving ? "report" : avatar.pose
+        : avatar.teamReport && handoff && !handoff.delivered && !departures.leaving(avatar.key) ? moving ? "deliver" : "report"
         : receiving.has(avatar.sessionId) ? "receive" : moving ? "run" : avatar.pose;
       if (avatar.junior) theme.character(avatar.look, pose, frame, ctx!, x, y, true);
       else theme.character(avatar.look, pose, frame, ctx!, x, y);

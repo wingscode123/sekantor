@@ -13,6 +13,48 @@ function setup() {
   const canvas = document.createElement("canvas"); canvas.width = office.width * TILE; canvas.height = office.height * TILE;
   return canvas;
 }
+it("carries an Orca junior report to the lead desk and returns to its own desk once", () => {
+  const canvas = setup();
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const lead: Session = { session_id: "lead", source: "orca", source_label: "Orca", status: "running",
+    status_since: "2026-11-18", started_at: "2026-11-18", last_event_at: "2026-11-18",
+    workspace: {}, capabilities: [], needs_you: false,
+    team: { project: "Orca project", worktree: "main", role: "lead", lead: null, model: null } };
+  const junior: Session = { ...lead, session_id: "junior", status: "reported", report_to: "lead",
+    status_since: new Date().toISOString(),
+    team: { ...lead.team!, worktree: "feature", role: "junior", lead: "lead" } };
+  const layout = layoutOffice([lead, junior]);
+  const worker = layout.avatars.find(a => a.key === "junior")!;
+  const character = vi.fn<Theme["character"]>();
+  const onFrame = vi.fn();
+  const stop = startRenderer(canvas, () => layout, { ...theme, character }, onFrame);
+  vi.advanceTimersByTime(8000);
+  const poses = character.mock.calls.filter(([look]) => look === worker.look);
+  const meeting = worker.teamReport!.meeting;
+  expect(poses.some(([, pose]) => pose === "deliver")).toBe(true);
+  expect(poses.some(([, pose, , , x, y]) => pose === "report" &&
+    x === meeting.x * TILE && y === (meeting.y + 1) * TILE - CHARACTER_HEIGHT)).toBe(true);
+  expect(poses.some(([, , , , , y]) => y >= layout.lobby.y * TILE)).toBe(false);
+  expect(onFrame.mock.lastCall![0].get("junior")).toEqual({
+    x: worker.deskTile.x * TILE, y: (worker.deskTile.y + 1) * TILE - CHARACTER_HEIGHT,
+  });
+  character.mockClear();
+  vi.advanceTimersByTime(3000);
+  expect(character.mock.calls.filter(([look]) => look === worker.look).every(([, pose]) => pose === "work")).toBe(true);
+  stop();
+  for (const report of [junior, { ...junior, session_id: "old", status_since: new Date(Date.now() - 61_000).toISOString() }]) {
+    character.mockClear();
+    const reopened = layoutOffice([lead, report]);
+    const desk = reopened.avatars.find(a => a.key === report.session_id)!.deskTile;
+    const close = startRenderer(canvas, () => reopened, { ...theme, character }, onFrame);
+    vi.advanceTimersByTime(4000);
+    expect(character.mock.calls.some(([, pose]) => pose === "deliver" || pose === "report")).toBe(false);
+    expect(onFrame.mock.lastCall![0].get(report.session_id)).toEqual({
+      x: desk.x * TILE, y: (desk.y + 1) * TILE - CHARACTER_HEIGHT,
+    });
+    close();
+  }
+});
 it("never schedules while hidden, and cancels and resumes on visibility", () => {
   const canvas = setup(); let hidden = true;
   vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
