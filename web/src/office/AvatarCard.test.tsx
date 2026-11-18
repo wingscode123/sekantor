@@ -26,6 +26,7 @@ it("accepts a pending report through the hub", async () => {
     const s: Session = { session_id: "s", source: "claude", source_label: "Claude", status: "reported", status_since: "2026-11-17T11:59:30Z", started_at: "2026-11-17T11:00:00Z", last_event_at: "2026-11-17T11:59:30Z", workspace: {}, capabilities: [], needs_you: false, report_pending: true };
     const avatar = layoutOffice([s]).avatars[0];
     const view = render(<AvatarCard session={s} avatar={avatar} onClose={() => {}} />);
+    expect(screen.getByText(/Report ready/).classList.contains("status--reported")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/sessions/s/acknowledge", expect.objectContaining({ method: "POST" })));
     view.rerender(<AvatarCard session={{ ...s, report_pending: false }} avatar={avatar} onClose={() => {}} />);

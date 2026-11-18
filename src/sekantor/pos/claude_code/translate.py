@@ -154,7 +154,9 @@ def translate(payload: dict) -> dict | None:
             summary = _clip(payload.get("message"), SUMMARY_MAX)
         else:
             etype = "message"
-            if kind != "idle_prompt":
+            if kind == "idle_prompt":
+                request = {"kind": "report"}
+            else:
                 summary = _clip(payload.get("message"), SUMMARY_MAX)
     elif name == "Stop":
         status = "reported"

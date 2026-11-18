@@ -42,10 +42,10 @@ export function MiniView({ navigate = openFullOffice }: { navigate?: (url: strin
   useEffect(() => startRenderer(canvas.current!, () => current.current, miniTheme), []);
   const summary = latest?.summary || (waiting.length ? "An agent needs you." : loaded ? "Nobody is waiting for you." : "Connecting to the office…");
   const connectionText = connection === "down" ? "Hub disconnected" : connection === "unauthorized" ? "Not signed in" : "";
-  const label = `${busy} busy, ${waiting.length} needs you, ${reports} reports. ${waiting.map(s => s.agent?.name || s.source_label).join(", ")}. ${summary}${connectionText ? ` ${connectionText}.` : ""} Open full office`;
+  const label = `${busy} busy, ${waiting.length} need you, ${reports} reports. ${waiting.map(s => s.agent?.name || s.source_label).join(", ")}. ${summary}${connectionText ? ` ${connectionText}.` : ""} Open full office`;
   return <button type="button" className="mini-office" aria-label={label} onClick={() => navigate("/")}>
     <span className="mini-office__scene"><canvas ref={canvas} width={320} height={height * 16} aria-hidden="true" /></span>
-    <span className="mini-office__counts">{busy} busy · {waiting.length} needs you · {reports} reports{connectionText && ` · ${connectionText}`}</span>
+    <span className="mini-office__counts">{busy} busy · {waiting.length} need you · {reports} reports{connectionText && ` · ${connectionText}`}</span>
     <span className="mini-office__summary">{summary}</span>
   </button>;
 }

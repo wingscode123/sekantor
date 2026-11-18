@@ -407,3 +407,16 @@ def test_up_keeps_the_hub_in_ram_only_when_keep_in_ram(tmp_path, monkeypatch, ke
     monkeypatch.setattr(resident, "keep_resident", lambda *a, **k: seen.append(1))
     cli._keep_in_ram()
     assert len(seen) == calls
+
+
+def test_status_groups_pending_and_accepted_reports(monkeypatch):
+    report = {"status": "reported", "status_since": "2026-11-18T00:00:00Z", "source": "claude-code"}
+    monkeypatch.setattr("sekantor.cli._hub", lambda _: {"sessions": [
+        {**report, "report_pending": False, "summary": "Accepted turn"},
+        {**report, "report_pending": True, "summary": "Pending turn"},
+    ]})
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0, result.output
+    assert result.output.index("Reports pending (1)") < result.output.index("Pending turn")
+    assert result.output.index("Pending turn") < result.output.index("Reports accepted (1)")
+    assert result.output.index("Reports accepted (1)") < result.output.index("Accepted turn")

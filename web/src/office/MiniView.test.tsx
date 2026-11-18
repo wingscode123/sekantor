@@ -20,7 +20,7 @@ it("shows only waiting non-snoozed avatars, preserving their full-office looks",
   expect(document.querySelector("canvas")?.getAttribute("aria-hidden")).toBe("true");
   expect(scene.door.x).toBe(1);
   expect(scene.door).not.toEqual(scene.yourDesk);
-  expect(screen.getByText("1 busy \u00b7 2 needs you \u00b7 1 reports")).toBeTruthy();
+  expect(screen.getByText("1 busy \u00b7 2 need you \u00b7 1 reports")).toBeTruthy();
 });
 it("shows the most recent waiting summary, ignoring newer muted or running summaries", () => {
   mocks.state.sessions = [{ ...session("old"), summary: "Old question" }, { ...session("new"), last_event_at: "2026-11-17T11:30:00Z", summary: "New question" }, { ...session("busy", "running"), last_event_at: "2026-11-17T11:45:00Z", summary: "Busy summary" }, { ...session("muted"), last_event_at: "2026-11-17T11:50:00Z", summary: "Muted question", snoozed_until: "2026-11-18T12:00:00Z" }];

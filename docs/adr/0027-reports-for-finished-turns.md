@@ -9,7 +9,7 @@ The office treated finished Claude Code turns as requests for input. That put ag
 
 ## Decision
 
-Event schema v1 adds status `reported` and request kind `report`. The inbox orders reports after `running` and before `done`. Claude Code Stop reports its last assistant message, including when the text reads like a question. An idle_prompt notification leaves the current status and summary intact. Explicit input notifications and OpenBot prompts carry request kind `question`. tmux reports when it detects an idle agent. OpenBot continues to use `done` for idle agents.
+Event schema v1 adds status `reported` and request kind `report`. The inbox orders reports after `running` and before `done`. Claude Code Stop reports its last assistant message, including when the text reads like a question. An idle_prompt notification carries a report request on a statusless message. It turns a still-running session into a report and keeps its previous summary. Other session statuses and summaries stay as they were. Explicit input notifications and OpenBot prompts carry request kind `question`. tmux reports when it detects an idle agent. OpenBot continues to use `done` for idle agents.
 
 Only approval, explicit input, and error require attention. Reports produce no desktop notification. The hub exposes `report_pending` while a report is unread. The authenticated `POST /v1/sessions/{id}/acknowledge` records `acknowledged_at` and broadcasts the session update. Accept marks the report read locally. An accepted agent goes to the pantry and a later report requires a new acknowledgement.
 

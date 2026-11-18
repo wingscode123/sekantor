@@ -2,7 +2,7 @@ export type Status = "waiting_approval" | "waiting_input" | "error" | "running" 
 
 /** The `status--*` modifier in site/app.css for each status. */
 export const STATUS_CLASS: Record<Status, string> = {
-  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", reported: "done", done: "done", ended: "ended",
+  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", reported: "reported", done: "done", ended: "ended",
 };
 
 export interface Session {

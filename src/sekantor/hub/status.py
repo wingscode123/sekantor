@@ -115,6 +115,13 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
     if not newer:
         return s  # stale for status purposes: keep it in the timeline only
 
+    if (event.source == "claude-code" and event.type == "message" and event.status is None
+            and event.request is not None and event.request.kind == "report"):
+        # Claude's idle prompt is a fallback when the Stop event was missed.
+        if s.status is not Status.running:
+            return s
+        event = event.model_copy(update={"status": Status.reported, "summary": s.summary})
+
     if event.summary:
         s.summary = event.summary
 

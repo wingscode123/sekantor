@@ -31,7 +31,8 @@ pos_app = typer.Typer(no_args_is_help=True, help="Run a pos (platform adapter) b
 app.add_typer(pos_app, name="pos")
 
 GROUPS = [("Needs you", {"waiting_approval", "waiting_input", "error"}), ("Running", {"running"}),
-          ("Reports", {"reported"}), ("Done", {"done", "ended"})]
+          ("Reports pending", {"report_pending"}), ("Reports accepted", {"report_accepted"}),
+          ("Done", {"done", "ended"})]
 
 
 def _api(path: str, timeout: float = 2.0, method: str = "GET", body: dict | None = None) -> dict:
@@ -462,6 +463,8 @@ def status(as_json: bool = typer.Option(False, "--json", help="Print raw JSON.")
         typer.echo("No sessions yet. Agents appear on their first hook event.")
         return
     def group_status(s):
+        if s["status"] == "reported":
+            return "report_pending" if s.get("report_pending") else "report_accepted"
         if s["status"] == "waiting_input" and s.get("needs_you") is False:
             return "done"
         return s["status"]
@@ -522,6 +525,7 @@ def stats(
         extra = f"   ({n} answered, median {_span(med)})" if n else ""
         typer.echo(f"  waited for {label:<12}{_span(st.waiting[status])}{extra}")
     typer.echo(f"  left waiting           {_span(st.left_waiting)}   (ended or still open with no answer)")
+    typer.echo("  Since this version, finished turns are reports and are excluded from wait totals.")
     if st.longest_wait_session:
         typer.echo(f"  longest answered wait  {_span(st.longest_wait)} ({st.longest_wait_session})")
     if show_lost and st.lost:
