@@ -10,15 +10,17 @@ import time
 import tomllib
 from collections import OrderedDict
 from itertools import islice
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from threading import Lock
 from typing import Literal, get_args
 
 Kind = Literal["web", "backend", "data", "mobile", "game", "infra", "docs", "other"]
 KINDS = frozenset(get_args(Kind))
 CACHE_SECONDS = 600
+DRIVE_REMOTE = 4
 MAX_CACHE_ENTRIES = 1024
 MAX_BYTES = 64 * 1024
+MAX_PACKAGE_BYTES = 512 * 1024
 MAX_ENTRIES = 256
 PRIORITY = ("mobile", "game", "web", "backend", "data", "infra")
 JS = {
@@ -62,13 +64,13 @@ def _is_file(folder: Path, marker: str) -> bool:
     return stat.S_ISREG(_mode(path / filename))
 
 
-def _read(path: Path) -> str:
+def _read(path: Path, max_bytes: int = MAX_BYTES) -> str:
     if not stat.S_ISREG(_mode(path)):
         return ""
     try:
         with path.open("rb") as file:
-            data = file.read(MAX_BYTES + 1)
-        return data.decode("utf-8-sig") if len(data) <= MAX_BYTES else ""
+            data = file.read(max_bytes + 1)
+        return data.decode("utf-8-sig") if len(data) <= max_bytes else ""
     except (OSError, UnicodeError):
         return ""
 
@@ -77,9 +79,9 @@ def _table(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _manifest(folder: Path, name: str, parse) -> dict:
+def _manifest(folder: Path, name: str, parse, max_bytes: int = MAX_BYTES) -> dict:
     try:
-        raw = _read(folder / name)
+        raw = _read(folder / name, max_bytes=max_bytes)
         return _table(parse(raw)) if raw else {}
     except (ValueError, RecursionError):
         return {}
@@ -121,7 +123,7 @@ def _classify(folder: Path) -> tuple[Kind, tuple[str, ...]]:
             for dep in sorted(names & deps):
                 add(kind, f"{filename}: {dep}")
 
-    package = _manifest(folder, "package.json", json.loads)
+    package = _manifest(folder, "package.json", json.loads, max_bytes=MAX_PACKAGE_BYTES)
     js = _dependencies(package, ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"))
     match("package.json", js, JS)
     keywords = package.get("keywords")
@@ -217,27 +219,50 @@ def _inspect(folder: Path) -> tuple[str, Kind, tuple[str, ...]]:
     return root.name or str(root), kind, signals
 
 
+def _drive_type(root: str) -> int | None:
+    if os.name != "nt":
+        return None
+    from ctypes import windll
+
+    return windll.kernel32.GetDriveTypeW(root)
+
+
+def _detect_uncached(folder: Path) -> tuple[str, Kind, tuple[str, ...]]:
+    name = folder.name or str(folder)
+    if _drive_type(folder.anchor) == DRIVE_REMOTE:
+        return name, "other", ("remote drive",)
+    # Avoid following symlinked directories, including intermediate components.
+    if all(stat.S_ISDIR(_mode(part)) for part in (*reversed(folder.parents), folder)):
+        return _inspect(folder)
+    return name, "other", ()
+
+
 def detect(cwd: str | Path) -> dict:
     """Return a fresh JSON object using a ten-minute cache per normalized folder."""
-    original = Path(cwd)
-    if not original.is_absolute():
-        return {"name": original.name or str(original), "kind": "other", "signals": []}
-    folder = Path(os.path.abspath(original))
     # Reject UNC/device paths before any filesystem calls.
-    if folder.drive.startswith(("\\\\", "//")):
-        return {"name": folder.name or str(folder), "kind": "other", "signals": []}
+    if os.fspath(cwd).startswith(("\\\\", "//")):
+        remote = PureWindowsPath(cwd)
+        return {"name": remote.name or str(remote), "kind": "other", "signals": []}
+    original = Path(cwd)
+    if original.drive.startswith(("\\\\", "//")) or not original.is_absolute():
+        return {"name": original.name or str(original), "kind": "other", "signals": []}
+    folder = Path(os.path.normpath(original))
 
+    with _lock:
+        cached = _cache.get(folder)
+        if cached is not None and time.monotonic() < cached[0]:
+            _cache.move_to_end(folder)
+            _, name, kind, signals = cached
+            return {"name": name, "kind": kind, "signals": list(signals)}
+
+    name, kind, signals = _detect_uncached(folder)
     with _lock:
         now = time.monotonic()
         cached = _cache.get(folder)
         if cached is None or now >= cached[0]:
-            # Avoid following symlinked directories, including intermediate components.
-            if all(stat.S_ISDIR(_mode(part)) for part in (*reversed(folder.parents), folder)):
-                name, kind, signals = _inspect(folder)
-            else:
-                name, kind, signals = folder.name or str(folder), "other", ()
-            _cache[folder] = time.monotonic() + CACHE_SECONDS, name, kind, signals
+            _cache[folder] = now + CACHE_SECONDS, name, kind, signals
         else:
+            # A concurrent caller populated this folder while we inspected it.
             _, name, kind, signals = cached
         _cache.move_to_end(folder)
         if len(_cache) > MAX_CACHE_ENTRIES:

@@ -59,9 +59,17 @@ def test_git_root_name_and_manifest_fallback(tmp_path, worktree):
 
 def test_reads_are_capped(tmp_path):
     (tmp_path / "package.json").write_text(
-        '{"dependencies":{"react":"*"}}' + " " * projects.MAX_BYTES, encoding="utf-8"
+        '{"dependencies":{"react":"*"}}' + " " * projects.MAX_PACKAGE_BYTES, encoding="utf-8"
     )
     assert projects.detect(tmp_path)["kind"] == "other"
+
+
+def test_large_package_json_allowed_up_to_512kb(tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"dependencies":{"react":"*"}, "description":"' + ("x" * 70_000) + '"}',
+        encoding="utf-8",
+    )
+    assert projects.detect(tmp_path)["kind"] == "web"
 
 
 def test_detection_is_cached_per_folder(tmp_path, monkeypatch):
@@ -104,3 +112,96 @@ def test_session_project_override_and_openbot(tmp_path):
     state.host = None
     state.source = "openbot"
     assert session_json(state, settings)["project"] == openbot
+
+@pytest.mark.parametrize("path", [r"\\server\share\project", "//server/share/project"])
+def test_unc_rejected_before_drive_or_filesystem_checks(path, monkeypatch):
+    def unexpected(*args):
+        pytest.fail("UNC paths must be rejected before local inspection")
+
+    monkeypatch.setattr(projects, "_drive_type", unexpected)
+    monkeypatch.setattr(projects, "_mode", unexpected)
+    assert projects.detect(path) == {"name": "project", "kind": "other", "signals": []}
+
+
+def test_remote_drive_rejected_before_filesystem_checks(tmp_path, monkeypatch):
+    def drive_type(root):
+        assert root == tmp_path.anchor
+        return projects.DRIVE_REMOTE
+
+    def unexpected(*args):
+        pytest.fail("remote drives must be rejected before filesystem inspection")
+
+    monkeypatch.setattr(projects, "_drive_type", drive_type)
+    monkeypatch.setattr(projects, "_mode", unexpected)
+    assert projects.detect(tmp_path) == {
+        "name": tmp_path.name, "kind": "other", "signals": ["remote drive"],
+    }
+
+
+def test_symlinked_workspace_rejected(tmp_path):
+    target = tmp_path / "target"
+    (target / "child").mkdir(parents=True)
+    (target / "child" / "requirements.txt").write_text("pygame\n", encoding="utf-8")
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        try:
+            import _winapi
+
+            _winapi.CreateJunction(str(target), str(link))
+        except (AttributeError, OSError) as exc:
+            pytest.skip(f"cannot create a directory symlink or junction: {exc}")
+    assert projects.detect(link / "child") == {"name": "child", "kind": "other", "signals": []}
+
+
+def test_non_utf8_manifest(tmp_path):
+    (tmp_path / "package.json").write_bytes(b'{"dependencies":{"react":"*"}, "description":"\xff"}')
+    assert projects.detect(tmp_path) == {"name": tmp_path.name, "kind": "other", "signals": []}
+
+
+def test_unreadable_folder(tmp_path, monkeypatch):
+    scan = projects.os.scandir
+
+    def scan_or_deny(path):
+        if path == tmp_path:
+            raise PermissionError(path)
+        return scan(path)
+
+    monkeypatch.setattr(projects.os, "scandir", scan_or_deny)
+    assert projects.detect(tmp_path) == {"name": tmp_path.name, "kind": "other", "signals": []}
+
+
+def test_missing_folder(tmp_path):
+    assert projects.detect(tmp_path / "missing") == {"name": "missing", "kind": "other", "signals": []}
+
+
+def test_slow_folder_does_not_block_other_detection(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    slow = tmp_path / "slow"
+    fast = tmp_path / "fast"
+    slow.mkdir()
+    fast.mkdir()
+    (fast / "requirements.txt").write_text("pandas\n", encoding="utf-8")
+    started = Event()
+    release = Event()
+    inspect = projects._inspect
+
+    def inspect_or_wait(folder):
+        if folder == slow:
+            started.set()
+            assert release.wait(15)
+        return inspect(folder)
+
+    monkeypatch.setattr(projects, "_inspect", inspect_or_wait)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        slow_result = executor.submit(projects.detect, slow)
+        try:
+            assert started.wait(10)
+            fast_result = executor.submit(projects.detect, fast)
+            assert fast_result.result(timeout=10)["kind"] == "data"
+        finally:
+            release.set()
+        assert slow_result.result(timeout=10)["kind"] == "other"
