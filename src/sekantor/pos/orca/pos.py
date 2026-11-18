@@ -19,7 +19,7 @@ import httpx
 from sekantor.pos.claude_code.translate import new_event_id
 from sekantor.pos.hub import connect, poll
 from sekantor.pos.tmux.detect import AGENTS, Pane
-from sekantor.pos.tmux.pos import TmuxPos
+from sekantor.pos.tmux.pos import TmuxPos, run_hidden
 
 log = logging.getLogger("sekantor.pos.orca")
 HOST = {"app": "orca", "confidence": 1.0, "via": ["orca_cli"]}
@@ -39,7 +39,7 @@ def orca_cli() -> str | None:
 class OrcaTerminals:
     """Tmux-shaped transport over the Orca CLI."""
 
-    def __init__(self, cli: str, runner=subprocess.run, timeout: float = 60):
+    def __init__(self, cli: str, runner=run_hidden, timeout: float = 60):
         self.cli = cli
         self.runner = runner
         self.timeout = timeout
@@ -143,7 +143,7 @@ CALLER_ENV = {"ORCA_AGENT_SESSION_ID", "ORCA_AGENT_SESSION_SPAWN_TOKEN",
 class OrcaInventory:
     """Poll structured agents independently of the PTY watcher."""
 
-    def __init__(self, cli: str, hub, runner=subprocess.run, clock=time.monotonic):
+    def __init__(self, cli: str, hub, runner=run_hidden, clock=time.monotonic):
         self.cli, self.hub, self.runner, self.clock = cli, hub, runner, clock
         self.next_sweep = 0.0
         self.dispatches: dict[str, Dispatch | None] = {}
