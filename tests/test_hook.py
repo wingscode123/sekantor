@@ -64,8 +64,41 @@ def test_permission_request_carries_the_command():
     assert ev["summary"] == "Wants to run: echo ronda-spike > spike-tmp.txt"
 
 
-def test_subagent_stop_is_ignored():
-    assert translate(payload("orca-terminal/07_SubagentStop.json")["stdin"]) is None
+def test_translate_subagent_stop():
+    raw = payload("claude-desktop/06_SubagentStop.json")["stdin"]
+    ev = Event.model_validate(translate(raw))
+    assert ev.type == "subagent_ended" and ev.status is None
+    assert ev.session_id == f"claude:{raw['session_id']}"
+    assert ev.subagent.id == raw["agent_id"]
+    assert ev.summary == raw["last_assistant_message"]
+
+
+def test_translate_subagent_start():
+    ev = Event.model_validate(translate({"hook_event_name": "SubagentStart", "session_id": "s",
+                                         "agent_id": "junior", "agent_type": "Explore"}))
+    assert ev.type == "subagent_started" and ev.status is None
+    assert ev.subagent.model_dump() == {"id": "junior", "type": "Explore"}
+
+
+def test_translate_subagent_start_without_agent_type():
+    ev = translate({"hook_event_name": "SubagentStart", "session_id": "s", "agent_id": "junior"})
+    assert ev["subagent"] == {"id": "junior", "type": "unknown"}
+
+
+def test_translate_subagent_activity():
+    ev = Event.model_validate(translate({"hook_event_name": "PreToolUse", "session_id": "s",
+                                         "agent_id": "junior", "tool_name": "Read"}))
+    assert ev.type == "subagent_activity" and ev.status is None and ev.summary is None
+    assert ev.subagent.id == "junior"
+    assert ev.activity.model_dump() == {"tool": "Read", "kind": "read"}
+
+
+@pytest.mark.parametrize("name", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_subagent_tool_followup_is_tagged(name):
+    ev = Event.model_validate(translate({"hook_event_name": name, "session_id": "s",
+                                         "agent_id": "junior", "tool_name": "Read"}))
+    assert ev.type == "status_changed" and ev.status.value == "running"
+    assert ev.subagent.id == "junior"
 
 
 @pytest.mark.parametrize("kind, status", [("permission_prompt", "waiting_approval"), ("auth_success", None)])

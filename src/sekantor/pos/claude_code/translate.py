@@ -1,6 +1,6 @@
 """Claude Code hook payload -> SeKantor event v1 (as a plain dict; stdlib only, the hook imports this).
 
-Mapping per ADR-0002. Returns None for hooks that must not change anything (e.g. SubagentStop).
+Mapping per ADR-0002 and ADR-0028. Returns None for hooks with no state update.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ SUMMARY_MAX = 300
 INPUT_MAX = 4000
 
 WAITING_INPUT_NOTIFICATIONS = {"agent_needs_input", "elicitation_dialog", "elicitation_url_dialog"}
+TOOL_FOLLOWUPS = {"PostToolUse", "PostToolUseFailure", "PermissionDenied"}
 
 
 def new_event_id() -> str:
@@ -110,9 +111,31 @@ def translate(payload: dict) -> dict | None:
     summary: str | None = None
     request: dict | None = None
     activity: dict | None = None
+    subagent: dict | None = None
     tool = payload.get("tool_name")
+    agent_id = payload.get("agent_id")
+    permission_prompt = name == "Notification" and payload.get("notification_type") == "permission_prompt"
+    worker = None
+    if agent_id or name in ("SubagentStart", "SubagentStop"):
+        if not isinstance(agent_id, str) or not agent_id:
+            return None
+        worker = {"id": agent_id, "type": payload.get("agent_type") or "unknown"}
 
-    if name == "SessionStart":
+    if worker is not None and name != "PermissionRequest" and not permission_prompt:
+        subagent = worker
+        if name == "SubagentStart":
+            etype = "subagent_started"
+        elif name == "SubagentStop":
+            etype = "subagent_ended"
+            summary = _clip(payload.get("last_assistant_message"), SUMMARY_MAX)
+        elif name == "PreToolUse" and tool:
+            etype = "subagent_activity"
+            activity = {"tool": str(tool)[:100], "kind": activity_kind(tool)}
+        elif name in TOOL_FOLLOWUPS:
+            status = "running"
+        else:
+            return None
+    elif name == "SessionStart":
         etype = "session_started"
         source = payload.get("source")
         status = None if source == "compact" else "waiting_input"
@@ -131,7 +154,7 @@ def translate(payload: dict) -> dict | None:
         summary = _clip(f"{tool}: {text}" if text else tool, SUMMARY_MAX)
         if tool:
             activity = {"tool": str(tool)[:100], "kind": activity_kind(tool)}
-    elif name == "PermissionRequest" and tool == "AskUserQuestion":
+    elif name == "PermissionRequest" and tool == "AskUserQuestion" and worker is None:
         # Claude asks the person something. Approving the tool does not answer it, so this is a
         # question to answer in the app, not an approval (dogfooding 2026-11-11).
         status = "waiting_input"
@@ -141,13 +164,17 @@ def translate(payload: dict) -> dict | None:
         status = "waiting_approval"
         text = tool_input_text(payload.get("tool_input"))
         request = {"kind": "tool", "tool": tool, "input": text}
+        if worker is not None:
+            request["subagent"] = worker
         summary = _clip(f"Wants to run: {text}" if text else f"Wants to use {tool}", SUMMARY_MAX)
-    elif name in ("PostToolUse", "PostToolUseFailure", "PermissionDenied"):
+    elif name in TOOL_FOLLOWUPS:
         status = "running"
     elif name == "Notification":
         kind = payload.get("notification_type")
-        if kind == "permission_prompt":
+        if permission_prompt:
             status = "waiting_approval"
+            if worker is not None:
+                request = {"kind": "tool", "subagent": worker}
         elif kind in WAITING_INPUT_NOTIFICATIONS:
             status = "waiting_input"
             request = {"kind": "question"}
@@ -170,7 +197,7 @@ def translate(payload: dict) -> dict | None:
         status = "ended"
         summary = _clip(f"Ended ({payload.get('reason')})" if payload.get("reason") else "Ended", SUMMARY_MAX)
     else:
-        return None  # SubagentStart/Stop and anything else never changes the session
+        return None
 
     cwd = payload.get("cwd")
     event = {
@@ -186,5 +213,6 @@ def translate(payload: dict) -> dict | None:
         "summary": summary,
         "request": request,
         "activity": activity,
+        "subagent": subagent,
     }
     return {k: v for k, v in event.items() if v is not None}

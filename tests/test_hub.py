@@ -111,6 +111,25 @@ def test_duplicates_and_validation(client):
     assert client.post("/v1/events", headers=AUTH, json=[ev(i, "running") for i in range(101)]).status_code == 413
 
 
+def test_session_api_exposes_subagent_report(client):
+    now = datetime.now(timezone.utc)
+    events = [
+        ev(1, "running", summary="Parent is working"),
+        ev(2, None, type="subagent_started", subagent={"id": "junior", "type": "Explore"}),
+        ev(3, None, type="subagent_ended", subagent={"id": "junior"}, summary="Found it"),
+    ]
+    for i, event in enumerate(events):
+        event["ts"] = (now + timedelta(seconds=i)).isoformat().replace("+00:00", "Z")
+    r = client.post("/v1/events", headers=AUTH, json=events)
+    assert r.json()["accepted"] == 3
+    session, = client.get("/v1/sessions", headers=AUTH).json()["sessions"]
+    assert (session["status"], session["summary"]) == ("running", "Parent is working")
+    assert session["subagents"] == [{
+        "id": "junior", "type": "Explore", "status": "reported", "summary": "Found it", "activity": None,
+        "started_at": events[1]["ts"], "ended_at": events[2]["ts"],
+    }]
+
+
 def test_timeline(client):
     client.post("/v1/events", headers=AUTH, json=[ev(i, "running") for i in range(1, 4)])
     evs = client.get("/v1/sessions/claude:a/events?limit=2", headers=AUTH).json()["events"]

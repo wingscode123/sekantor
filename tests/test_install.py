@@ -90,6 +90,18 @@ def test_old_m1_install_is_flagged(tmp_path):
     assert not inst.inspect(p).current_shape()
 
 
+@pytest.mark.parametrize("event", ["SubagentStart", "SubagentStop"])
+def test_install_missing_a_subagent_hook_is_flagged(tmp_path, event):
+    p = settings(tmp_path, {})
+    inst.install(p, EXE)
+    data = json.loads(p.read_text())
+    assert data["hooks"][event][0]["hooks"][0] == inst.handler_for("PreToolUse", EXE)
+    # Other tools' handlers for this event do not count toward our install.
+    data["hooks"][event] = [{"hooks": [ORCA]}]
+    p.write_text(json.dumps(data))
+    assert not inst.inspect(p).current_shape()
+
+
 def test_every_handler_is_async_and_never_waits(tmp_path):
     for ev in inst.EVENTS:
         h = inst.handler_for(ev, tmp_path / "hook.exe")

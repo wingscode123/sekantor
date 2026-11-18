@@ -1,8 +1,9 @@
 """Event schema v1: the one shape every pos sends to the hub (PRD "Event schema, status & API").
 
-Additions to the PRD example, both optional and backward-compatible:
+Additions to the PRD example, optional and backward-compatible:
 - ``process.pid`` (ADR-0006) for FR-07 liveness checks.
 - ``activity`` (ADR-0022): the tool in use and its kind.
+- ``subagent`` (ADR-0028): the Claude Code worker that owns a lifecycle or activity event.
 
 Deprecated (ADR-0021: SeKantor watches and does not answer): ``capabilities`` and ``request.id``. They are still
 accepted so an older pos keeps working, and are otherwise ignored.
@@ -29,7 +30,11 @@ class Status(str, Enum):
     ended = "ended"
 
 
-EventType = Literal["session_started", "status_changed", "message", "session_ended"]
+EventType = Literal[
+    "session_started", "status_changed", "message", "session_ended",
+    "subagent_started", "subagent_activity", "subagent_ended",
+]
+SUBAGENT_EVENTS = {"subagent_started", "subagent_activity", "subagent_ended"}
 Capability = Literal["approve", "deny", "reply", "stop", "open"]
 
 
@@ -54,10 +59,16 @@ class Host(_Model):
     via: list[str] = Field(default_factory=list)
 
 
+class Subagent(_Model):
+    id: str = Field(min_length=1)
+    type: str | None = None
+
+
 class Request(_Model):
     kind: Literal["tool", "input", "question", "report"] = "tool"
     tool: str | None = None
     input: str | None = Field(default=None, max_length=4000)
+    subagent: Subagent | None = None
     # Deprecated (ADR-0021): it named the request an answer was for. Accepted, ignored.
     id: str | None = Field(default=None, max_length=128)
 
@@ -89,6 +100,7 @@ class Event(_Model):
     capabilities: list[Capability] = Field(default_factory=list)  # deprecated, see the module docstring
     process: Process | None = None
     activity: Activity | None = None
+    subagent: Subagent | None = None
 
     @field_validator("ts")
     @classmethod

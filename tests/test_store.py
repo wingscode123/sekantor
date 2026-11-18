@@ -20,6 +20,24 @@ def test_add_event_updates_session(tmp_path):
     assert st.session("claude:a").summary == "ok?"
 
 
+def test_subagent_report_expires_on_read_and_next_event(monkeypatch):
+    st = Store(":memory:")
+    ended = ev(2, None, type="subagent_ended", subagent={"id": "junior"})
+    st.add_event(ended, received_at=ended.ts)
+    st.add_event(ev(3, None, type="subagent_started", subagent={"id": "working"}), received_at=ended.ts)
+
+    monkeypatch.setattr("sekantor.hub.store._now", lambda: ended.ts + timedelta(seconds=59))
+    assert [a.id for a in st.session(ended.session_id).subagents] == ["working", "junior"]
+
+    deadline = ended.ts + timedelta(seconds=60)
+    monkeypatch.setattr("sekantor.hub.store._now", lambda: deadline)
+    assert [a.id for a in st.session(ended.session_id).subagents] == ["working"]
+    assert [a.id for a in st.sessions()[0].subagents] == ["working"]
+    s = st.add_event(ev(4, Status.running, at=62), received_at=deadline)
+    assert [a.id for a in s.subagents] == ["working"]
+    st.close()
+
+
 def test_duplicate_event_is_ignored(tmp_path):
     st = Store(tmp_path / "r.db")
     assert st.add_event(ev(1, Status.running)) is not None
