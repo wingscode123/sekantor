@@ -14,7 +14,7 @@ export default function App() {
   return <>
     <a className="skip" href="#main">Skip to the office</a>
     <header className="bar"><div className="shell bar__inner">
-      <a className="bar__home" href="/" aria-label="SeKantor, home"><img src="/lockup.svg" width="97" height="24" alt="" /></a>
+      <a className="bar__home" href="/" aria-label="SeKantor, home"><img src="/lockup.svg" width="118" height="32" alt="" /></a>
       <p className="office-counts">{awake.filter(s => s.status === "running").length} busy · {needs} need you · {awake.filter(s => s.report_pending).length} reports · {awake.filter(s => s.status === "error").length} errors</p>
       <p className={`bar__hub ${connection === "down" || connection === "unauthorized" ? "bar__hub--down" : ""}`} role="status">{connection === "live" ? "Connected" : connection === "connecting" ? "Connecting to the hub" : connection === "down" ? "Hub not reachable, retrying" : "Not signed in"}</p>
     </div></header>

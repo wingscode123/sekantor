@@ -5,7 +5,10 @@ export const STATUS_CLASS: Record<Status, string> = {
   waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", reported: "reported", done: "done", ended: "ended",
 };
 
+export type Kind = "web" | "backend" | "data" | "mobile" | "game" | "infra" | "docs" | "other";
+
 export interface Session {
+  project?: { name: string; kind: Kind; signals: string[] } | null;
   session_id: string;
   source: string;
   status: Status;

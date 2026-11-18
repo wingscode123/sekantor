@@ -1,4 +1,5 @@
-import type { Session } from "../types";
+import type { Kind, Session } from "../types";
+import type { Pt } from "./motion";
 
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
 export type Pose = "type" | "read" | "run" | "web" | "work" | "ask" | "smoke" | "coffee" | "leave" | "report";
@@ -8,7 +9,14 @@ export interface Avatar {
   place: Place; pose: Pose; targetTile?: { x: number; y: number }; deskTile: { x: number; y: number }; name: string; app: string; project: string;
 }
 export interface Cluster { project: string; origin: { x: number; y: number }; desks: { x: number; y: number }[] }
+export interface Room {
+  project: string; kind: Kind; x: number; y: number; w: number; h: number;
+  door: Pt; sign: Pt; desks: Pt[]; rack: Pt; pantry: Pt;
+}
+export interface Lobby { x: number; y: number; w: number; h: number; yourDesk: Pt; door: Pt; corridorY: number }
+export interface PlaceLabel { kind: Exclude<Place, "desk">; at: Pt; room?: string }
 export interface Office {
+  rooms: Room[]; lobby: Lobby; places: PlaceLabel[];
   width: number; height: number; clusters: Cluster[]; yourDesk: { x: number; y: number };
   rack: { x: number; y: number }; pantry: { x: number; y: number }; door: { x: number; y: number }; avatars: Avatar[];
 }
@@ -16,7 +24,7 @@ export interface Office {
 function isOpenBot(s: Session): boolean { return s.source === "openbot" || s.host?.app === "openbot"; }
 function projectOf(s: Session): string {
   if (isOpenBot(s)) return "OpenBot agents";
-  return s.workspace?.cwd?.split(/[\\/]+/).filter(Boolean).at(-1) || "unknown";
+  return s.project?.name || s.workspace?.cwd?.split(/[\\/]+/).filter(Boolean).at(-1) || "unknown";
 }
 function appOf(s: Session): string { return s.host?.app || s.source || "unknown"; }
 export function identityOf(s: Session): string {
@@ -55,54 +63,133 @@ export function isGhost(s: Session, now: number): boolean {
   const ended = Date.parse(s.ended_at || "");
   return s.status === "ended" && ended <= now && now < ended + GHOST_MS;
 }
+const ROOM_WIDTH = 14;
+const CORRIDOR_WIDTH = 3;
+const OFFICE_WIDTH = ROOM_WIDTH * 2 + CORRIDOR_WIDTH;
+const CENTRE = Math.floor(OFFICE_WIDTH / 2);
+const slot = (anchor: Pt, i: number): Pt => ({
+  x: anchor.x + i % 6, y: anchor.y + 1 + Math.floor(i / 6),
+});
+
 export function layoutOffice(sessions: Session[], now = Date.now()): Office {
-  const clusters: Cluster[] = [];
-  const avatars: Avatar[] = [];
-  const seats = new Map<string, number>();
-  const assigned = new Map<string, number>();
-  // Recent leavers reserve their desk and cluster until the departure grace expires.
-  const ordered = sessions.filter(s => s.status !== "ended" || isGhost(s, now)).sort((a, b) => compare(a.started_at, b.started_at) || compare(a.session_id, b.session_id));
+  const ordered = sessions.filter(s => s.status !== "ended" || isGhost(s, now))
+    .sort((a, b) => compare(a.started_at, b.started_at) || compare(a.session_id, b.session_id));
+  const membersByProject = new Map<string, Session[]>();
   for (const s of ordered) {
-    const identity = identityOf(s);
-    const seat = seats.get(identity) || 0;
-    assigned.set(s.session_id, seat);
-    seats.set(identity, seat + 1);
+    const project = projectOf(s);
+    const members = membersByProject.get(project) ?? [];
+    members.push(s);
+    membersByProject.set(project, members);
   }
-  const projects = [...new Set(ordered.map(projectOf))].sort(compare);
-  for (const project of projects) {
-    const members = ordered.filter(s => projectOf(s) === project);
-    for (let start = 0; start < members.length; start += 8) {
-      const index = clusters.length;
-      const origin = { x: 2 + (index % 2) * 14, y: 4 + Math.floor(index / 2) * 8 };
-      const cluster: Cluster = { project, origin, desks: [] };
-      for (const [i, s] of members.slice(start, start + 8).entries()) {
-        const deskTile = { x: origin.x + (i % 4) * 3, y: origin.y + Math.floor(i / 4) * 3 };
-        cluster.desks.push(deskTile);
-        const identity = identityOf(s);
-        const seat = assigned.get(s.session_id) ?? 0;
-        avatars.push({ key: s.session_id, sessionId: s.session_id, identity, seat,
-          look: lookFor(identity, seat), ...poseFor(s), deskTile,
-          name: s.agent?.name || s.source_label || appOf(s), app: s.host_label || appOf(s), project });
-      }
-      clusters.push(cluster);
+
+  const rooms: Room[] = [], avatars: Avatar[] = [], places: PlaceLabel[] = [];
+  const projects = [...membersByProject.keys()].sort(compare);
+  let y = 0, rowHeight = 0;
+  for (const [index, project] of projects.entries()) {
+    const members = membersByProject.get(project)!;
+    const left = index % 2 === 0;
+    const x = left ? 0 : ROOM_WIDTH + CORRIDOR_WIDTH;
+    const furnitureY = y + 3 + Math.ceil(members.length / 4) * 2;
+    const h = furnitureY - y + Math.ceil(members.length / 6) + 2;
+    const room: Room = {
+      project, kind: members.find(s => s.project)?.project?.kind ?? "other", x, y, w: ROOM_WIDTH, h,
+      door: { x: left ? x + ROOM_WIDTH - 1 : x, y: y + h - 2 },
+      sign: { x: x + Math.floor(ROOM_WIDTH / 2), y },
+      desks: [],
+      rack: { x: x + 1, y: furnitureY },
+      pantry: { x: x + 7, y: furnitureY },
+    };
+    rooms.push(room);
+    places.push({ kind: "rack", at: room.rack, room: project }, { kind: "pantry", at: room.pantry, room: project });
+    const seats = new Map<string, number>();
+    let rackCount = 0, pantryCount = 0;
+    for (const [i, s] of members.entries()) {
+      const deskTile = { x: x + 2 + i % 4 * 3, y: y + 2 + Math.floor(i / 4) * 2 };
+      room.desks.push(deskTile);
+      const identity = identityOf(s);
+      const seat = seats.get(identity) ?? 0;
+      seats.set(identity, seat + 1);
+      const { place, pose } = poseFor(s);
+      const targetTile = place === "rack" ? slot(room.rack, rackCount++)
+        : place === "pantry" ? slot(room.pantry, pantryCount++) : deskTile;
+      avatars.push({ key: s.session_id, sessionId: s.session_id, identity, seat, look: lookFor(identity, seat),
+        place, pose, deskTile, targetTile, name: s.agent?.name || s.source_label || appOf(s), app: s.host_label || appOf(s), project });
+    }
+    rowHeight = Math.max(h, rowHeight);
+    if (!left) {
+      y += rowHeight + 1;
+      rowHeight = 0;
     }
   }
-  const height = 8 + Math.ceil(clusters.length / 2) * 8;
-  const office: Office = { width: 30, height, clusters, avatars, door: { x: 1, y: 1 },
-    rack: { x: 2, y: height - 3 }, pantry: { x: 22, y: height - 3 }, yourDesk: { x: 12, y: height - 3 } };
+
+  const lobbyY = y + (rowHeight ? rowHeight + 1 : 1);
+  const lobbyRows = Math.ceil(avatars.length / 6);
+  const lobby: Lobby = {
+    x: CENTRE - 8, y: lobbyY, w: 17, h: 5 + lobbyRows,
+    yourDesk: { x: CENTRE, y: lobbyY + 2 },
+    door: { x: CENTRE, y: lobbyY + 4 + lobbyRows },
+    corridorY: lobbyY - 1,
+  };
+  places.push({ kind: "your_desk", at: lobby.yourDesk }, { kind: "door", at: lobby.door });
   const bySession = new Map(avatars.map(a => [a.sessionId, a]));
-  const slots = new Map<Place, number>();
-  // Slot order follows start time/id, independent of project grouping or input order.
+  let waiting = 0;
   for (const s of ordered) {
-    const a = bySession.get(s.session_id)!;
-    if (a.place === "desk") { a.targetTile = a.deskTile; continue; }
-    if (a.place === "door") { a.targetTile = office.door; continue; }
-    const anchor = a.place === "your_desk" ? office.yourDesk : a.place === "rack" ? office.rack : office.pantry;
-    const k = slots.get(a.place) || 0;
-    slots.set(a.place, k + 1);
-    // Separate six-column blocks below the clusters, one row below furniture.
-    a.targetTile = { x: anchor.x + k % 6, y: anchor.y + 1 + Math.floor(k / 6) };
-    office.height = Math.max(office.height, a.targetTile.y + 2);
+    const avatar = bySession.get(s.session_id)!;
+    if (avatar.place === "your_desk") {
+      const point = slot(lobby.yourDesk, waiting++);
+      avatar.targetTile = { x: point.x - 2, y: point.y };
+    }
+    if (avatar.place === "door") avatar.targetTile = lobby.door;
   }
-  return office;
+
+  return {
+    width: OFFICE_WIDTH, height: lobby.y + lobby.h, rooms, lobby, places, avatars,
+    clusters: rooms.map(room => ({ project: room.project, origin: room.desks[0], desks: room.desks })),
+    yourDesk: lobby.yourDesk, door: lobby.door,
+    rack: rooms[0]?.rack ?? { x: lobby.x + 1, y: lobby.y + 2 },
+    pantry: rooms[0]?.pantry ?? { x: lobby.x + lobby.w - 2, y: lobby.y + 2 },
+  };
+}
+
+export function isWalkable(office: Office, point: Pt): boolean {
+  if (point.x < 0 || point.y < 0 || point.x >= office.width || point.y >= office.height) return false;
+  const bounds = [...office.rooms, office.lobby].find(({ x, y, w, h }) =>
+    point.x >= x && point.x < x + w && point.y >= y && point.y < y + h);
+  if (!bounds) {
+    if (!office.lobby.w) return true; // The mini office has an open floor.
+    const centre = office.lobby.door.x;
+    return point.y <= office.lobby.corridorY && Math.abs(point.x - centre) <= 1;
+  }
+  if (point.x === bounds.door.x && point.y === bounds.door.y) return true;
+  if (bounds === office.lobby && point.x === bounds.door.x && point.y === bounds.y) return true;
+  return point.x > bounds.x && point.x < bounds.x + bounds.w - 1
+    && point.y > bounds.y && point.y < bounds.y + bounds.h - 1;
+}
+
+/** Return axis-aligned waypoints, excluding the starting tile. */
+export function route(office: Office, from: Pt, to: Pt): Pt[] {
+  const start = { x: Math.round(from.x), y: Math.round(from.y) };
+  if (!isWalkable(office, start) || !isWalkable(office, to)) return [];
+  const key = ({ x, y }: Pt) => y * office.width + x;
+  const parents = new Map<number, Pt | null>([[key(start), null]]);
+  const queue = [start];
+  for (let i = 0; i < queue.length; i++) {
+    const point = queue[i];
+    if (point.x === to.x && point.y === to.y) {
+      const path: Pt[] = [];
+      for (let p = point; p !== start; p = parents.get(key(p))!) path.push(p);
+      if (from.x !== start.x || from.y !== start.y) path.push(start);
+      return path.reverse();
+    }
+    for (const next of [
+      { x: point.x + 1, y: point.y }, { x: point.x - 1, y: point.y },
+      { x: point.x, y: point.y + 1 }, { x: point.x, y: point.y - 1 },
+    ]) {
+      const id = key(next);
+      if (parents.has(id) || !isWalkable(office, next)) continue;
+      parents.set(id, point);
+      queue.push(next);
+    }
+  }
+  return [];
 }

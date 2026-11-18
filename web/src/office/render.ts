@@ -1,5 +1,5 @@
-import type { Avatar, Office } from "./model";
-import { Departures, step, type Pt } from "./motion";
+import { route, type Avatar, type Office } from "./model";
+import { Departures, followRoute, type Pt } from "./motion";
 import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
 /** Native-pixel avatar top-left positions (32x48 sprites), keyed by avatar.key in paint order. */
@@ -11,7 +11,10 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
   if (!ctx) return () => {};
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false, frame = 0, last = performance.now();
-  let positions = new Map<string, Pt>();
+  const positions = new Map<string, Pt>();
+  const paths = new Map<string, { target: Pt; waypoints: Pt[] }>();
+  let geometry: string | undefined;
+  let previousOffice: Office | undefined;
   const retained = new Map<string, Avatar>(), departures = new Departures(), finished = new Set<string>();
   const live = new Set<string>(), targets = new Map<string, Pt>(), sorted: Avatar[] = [];
   const layer = document.createElement("canvas"), layerCtx = layer.getContext("2d");
@@ -71,6 +74,15 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
       if (avatar.pose !== "leave") { finished.delete(avatar.key); departures.cancel(avatar.key); }
       if (!finished.has(avatar.key)) retained.set(avatar.key, avatar);
     }
+    if (office !== previousOffice) {
+      const nextGeometry = JSON.stringify([office.width, office.height, office.lobby,
+        office.rooms.map(({ x, y, w, h, door }) => [x, y, w, h, door])]);
+      if (nextGeometry !== geometry) {
+        paths.clear();
+        geometry = nextGeometry;
+      }
+      previousOffice = office;
+    }
     targets.clear();
     for (const [key, avatar] of retained) {
       const leaving = !live.has(key) || avatar.pose === "leave";
@@ -79,19 +91,23 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
         : avatar.place === "your_desk" ? office.yourDesk : avatar.place === "rack" ? office.rack
         : avatar.place === "pantry" ? office.pantry : office.door;
       targets.set(key, target);
-      if (!positions.has(key)) positions.set(key, { ...office.door });
+      let position = positions.get(key) ?? office.door;
+      let path = paths.get(key);
+      if (!path || path.target.x !== target.x || path.target.y !== target.y) {
+        const waypoints = route(office, position, target);
+        // A reflow can leave a previous position outside the new walkable layout.
+        if (!waypoints.length) position = target;
+        path = { target, waypoints };
+        paths.set(key, path);
+      }
+      positions.set(key, followRoute(position, path.waypoints, dt));
     }
-    positions = step(positions, targets, dt);
     for (const [key, position] of positions) if (departures.leaving(key)) {
       departures.arrive(key, position, office.door);
-      if (!departures.leaving(key)) { retained.delete(key); positions.delete(key); finished.add(key); }
+      if (!departures.leaving(key)) { retained.delete(key); positions.delete(key); paths.delete(key); finished.add(key); }
     }
-    // Keep a native-resolution backing store even in a smaller CSS viewport.
-    if (canvas.width < office.width * TILE) canvas.width = office.width * TILE;
-    if (canvas.height < office.height * TILE) canvas.height = office.height * TILE;
-    const scale = Math.max(1, Math.floor(Math.min(canvas.width / (office.width * TILE), canvas.height / (office.height * TILE))));
     ctx!.setTransform(1, 0, 0, 1, 0, 0); ctx!.clearRect(0, 0, canvas.width, canvas.height);
-    ctx!.setTransform(scale, 0, 0, scale, 0, 0); ctx!.imageSmoothingEnabled = false;
+    ctx!.setTransform(canvas.width / (office.width * TILE), 0, 0, canvas.height / (office.height * TILE), 0, 0); ctx!.imageSmoothingEnabled = false;
     staticLayer(office);
     ctx!.drawImage(layer, 0, 0);
     // Only the rack blinks; all other furniture is part of the static layer.

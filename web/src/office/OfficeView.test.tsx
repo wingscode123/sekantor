@@ -94,12 +94,26 @@ describe("office page", () => {
     view.rerender(<OfficeView sessions={[session()]} />);
     expect(wake).toHaveBeenCalledOnce();
   });
-  it("keeps plates visible at 1200px width with three cluster rows", () => {
+  it("keeps plates visible at 1200px width with three room rows", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
     const sessions = Array.from({ length: 25 }, (_, i) => ({ ...session(String(i)), workspace: { cwd: `/project-${i % 6}` } }));
     render(<OfficeView sessions={sessions} />);
     expect(screen.getAllByTestId("name-plate").every(p => !(p as HTMLButtonElement).hidden)).toBe(true);
+  });
+  it("fits the canvas to whole device pixels per tile and labels the room and its landmarks", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    vi.stubGlobal("devicePixelRatio", 1.25);
+    render(<OfficeView sessions={[session()]} />);
+    const canvas = screen.getByRole<HTMLCanvasElement>("img", { name: /Office with/ });
+    const cssWidth = parseFloat(canvas.style.width);
+    expect(cssWidth).toBeLessThanOrEqual(600);
+    expect(canvas.width).toBe(31 * 24);
+    expect(cssWidth * 1.25).toBeCloseTo(canvas.width);
+    expect(screen.getByText("repo", { exact: true }).getAttribute("title")).toBe("repo");
+    for (const label of ["Your desk: permissions, questions, reports", "Server rack: running commands", "Pantry: idle", "Exit: session ended"]) {
+      expect(screen.getByText(label).getAttribute("title")!.length).toBeGreaterThan(label.length);
+    }
   });
   it("excludes ended and snoozed agents from canvas counts but keeps snoozed live avatars", () => {
     mocks.state.sessions = [session(), { ...session("ended"), status: "ended" }, { ...session("muted"), snoozed_until: "2026-11-18T12:00:00Z" }, { ...session("waiting"), status: "waiting_input", needs_you: true }];

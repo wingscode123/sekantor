@@ -3,7 +3,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import App from "./App";
 import { MiniView } from "./office/MiniView";
-import { TILE } from "./office/sprites";
 import { useGhostNow, useNow, useSessions } from "./useSessions";
 import type { Session } from "./types";
 class Socket {
@@ -68,15 +67,19 @@ it.each(["office", "mini"])("uses one expiry timeout and no interval for %s ghos
   });
   const canvas = document.querySelector("canvas")!;
   if (mode === "office") {
-    expect(canvas.height).toBe(16 * TILE);
+    expect(screen.getByText("unknown", { exact: true })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /ghost, claude/ })).toBeNull();
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("0 agents");
   }
   expect(vi.getTimerCount()).toBe(1);
   act(() => { vi.advanceTimersByTime(19_999); });
   expect(vi.getTimerCount()).toBe(1);
+  const ghostHeight = canvas.height;
   act(() => { vi.advanceTimersByTime(1); });
-  if (mode === "office") expect(canvas.height).toBe(8 * TILE);
+  if (mode === "office") {
+    expect(screen.queryByText("unknown", { exact: true })).toBeNull();
+    expect(canvas.height).toBeLessThan(ghostHeight);
+  }
   expect(vi.getTimerCount()).toBe(0);
   expect(interval).not.toHaveBeenCalled();
 });

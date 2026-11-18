@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { startRenderer } from "./render";
 import type { Office } from "./model";
 import { CHARACTER_HEIGHT, TILE, type Theme } from "./sprites";
-const office: Office = { width: 20, height: 10, clusters: [], yourDesk: { x: 2, y: 2 }, rack: { x: 3, y: 3 }, pantry: { x: 4, y: 4 }, door: { x: 1, y: 1 }, avatars: [] };
+const office: Office = { width: 20, height: 10, clusters: [], rooms: [], places: [], lobby: { x: 0, y: 0, w: 0, h: 0, door: { x: 1, y: 1 }, yourDesk: { x: 2, y: 2 }, corridorY: 0 }, yourDesk: { x: 2, y: 2 }, rack: { x: 3, y: 3 }, pantry: { x: 4, y: 4 }, door: { x: 1, y: 1 }, avatars: [] };
 const theme: Theme = { palette: [], tile: vi.fn(), furniture: vi.fn(), character: vi.fn() };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 function setup() {
