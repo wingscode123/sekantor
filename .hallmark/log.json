@@ -1,5 +1,33 @@
 [
  {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "page",
+  "shape": "Feature Stack (the office, then its places)",
+  "theme": "brand",
+  "axes": "light/mono/warm",
+  "hero": "Stage, head over the full office",
+  "nav": "edge-aligned, pixel lockup and three links",
+  "footer": "mast, dark lockup large over links",
+  "imagery": "product 6 (rendered by web/src/office/render.ts)",
+  "photos": [],
+  "entry": "none",
+  "fingerprint": "stage-hero/grid/split-list/showcase-band/table/ink-ledger/table-code",
+  "sections": [
+   "hero office",
+   "places grid",
+   "desk split",
+   "mini showcase band",
+   "apps table",
+   "local ink band",
+   "install status"
+  ],
+  "signature": "the real office drawn by the app renderer",
+  "waived": [],
+  "prompt": "SeKantor landing page: AI coding agents as avatars in a local pixel-art office",
+  "date": "2026-11-18"
+ },
+ {
   "shape": "custom (night inbox)",
   "theme": "brand",
   "axes": "dark/mono/warm",

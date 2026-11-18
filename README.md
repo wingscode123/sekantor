@@ -48,7 +48,7 @@ A Windows installer (unsigned, per-user) is built on CircleCI: see [Desktop inst
 - [Releasing](docs/release.md)
 - [Improvement log](docs/improvement-log.md): the pstack audit, cleanup, CI move and dogfooding (November 2026)
 - [Brand](brand/BRAND.md) and [design system](design.md)
-- [Landing page](site/index.html) and [inbox design direction](site/inbox.html)
+- [Landing page](site/index.html)
 
 ## License
 
