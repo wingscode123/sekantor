@@ -4,6 +4,7 @@ import { isSnoozed } from "./SessionMenu";
 import { OfficeView } from "./office/OfficeView";
 import { defaultFloor, floorAttention, floorOf, floors, rememberFloor } from "./office/floors";
 import { isGhost } from "./office/model";
+import { Standup } from "./Standup";
 import type { Floor, Session } from "./types";
 import "./office/office.css";
 import lockupUrl from "./assets/lockup.svg";
@@ -27,12 +28,16 @@ export default function App() {
   const [chosen, setChosen] = useState<Floor>();
   const active = available.some(floor => floor.id === chosen) ? chosen : defaultFloor(available);
   if (active && active !== chosen) setChosen(active);
+  const [standup, setStandup] = useState(false);
+  const [focus, setFocus] = useState<{ id: string }>();
+  const inOffice = useMemo(() => new Map(floors.flatMap(f => groups[f.id].map(s => [s.session_id, f.id] as const))), [groups]);
   useEffect(() => { document.title = needs ? `(${needs}) SeKantor` : "SeKantor"; }, [needs]);
   return <>
     <a className="skip" href="#main">Skip to the office</a>
     <header className="bar"><div className="shell bar__inner">
       <a className="bar__home" href="/" aria-label="SeKantor, home"><img src={lockupUrl} width="118" height="32" alt="" /></a>
       <p className="office-counts">{awake.filter(s => s.status === "running").length} busy · {needs} need you · {awake.filter(s => s.report_pending).length} reports · {awake.filter(s => s.status === "error").length} errors</p>
+      <button type="button" className="bar__standup" aria-expanded={standup} onClick={() => setStandup(open => !open)}>Rapat</button>
       <p className={`bar__hub ${connection === "down" || connection === "unauthorized" ? "bar__hub--down" : ""}`} role="status">{connection === "live" ? "Connected" : connection === "connecting" ? "Connecting to the hub" : connection === "down" ? "Hub not reachable, retrying" : "Not signed in"}</p>
     </div></header>
     <main id="main" className="office-page">
@@ -45,7 +50,9 @@ export default function App() {
           {label}{alerts > 0 && <span className="floor-selector__badge" aria-label={`${alerts} need your attention`}>{alerts}</span>}
         </button>)}
       </nav>}
-      <OfficeView key={active ?? chosen ?? "claude"} sessions={groups[active ?? "claude"]} loaded={loaded} now={now} layoutNow={layoutNow} />
+      <OfficeView key={active ?? chosen ?? "claude"} sessions={groups[active ?? "claude"]} loaded={loaded} now={now} layoutNow={layoutNow} focus={focus} />
+      {standup && <Standup openable={id => inOffice.has(id)} onClose={() => setStandup(false)}
+        onOpen={id => { const floor = inOffice.get(id); if (!floor) return; setChosen(floor); rememberFloor(floor); setFocus({ id }); setStandup(false); }} />}
     </main>
   </>;
 }

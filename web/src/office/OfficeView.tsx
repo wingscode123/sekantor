@@ -15,7 +15,7 @@ const placeSigns: Record<PlaceLabel["kind"], { label: string; description: strin
   door: { label: "Exit: session ended", description: "Agents leave through this door when their sessions end." },
 };
 
-export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number }) {
+export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now, focus }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number; focus?: { id: string } }) {
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const [cols, setCols] = useState(2);
   const [departed, setDeparted] = useState<ReadonlySet<string>>(() => new Set());
@@ -34,7 +34,8 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const scale = tileSize / TILE;
   const plateScale = useRef(scale);
   plateScale.current = scale;
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(focus?.id ?? null);
+  useEffect(() => { if (focus) setSelected(focus.id); }, [focus]);
   useLayoutEffect(() => {
     current.current = office;
     const node = canvas.current;
