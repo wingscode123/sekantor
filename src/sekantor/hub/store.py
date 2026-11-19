@@ -62,6 +62,7 @@ class Store:
         self._db.execute("PRAGMA busy_timeout=2000")
         self._db.executescript(_SCHEMA)
         self._db.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema', '1')")
+        self._migrate_digest_columns()
         self._lock = threading.Lock()
         self._orca_sessions = {}
         for (body,) in self._db.execute(
@@ -73,6 +74,23 @@ class Store:
                 self._orca_sessions[s.session_id] = s
         self._team_index: TeamIndex | None = None
         self._team_index_until: datetime | None = None
+
+    def _migrate_digest_columns(self) -> None:
+        """Three event fields as plain columns under a covering index, so the daily digest reads a day of
+        events from the index alone (no JSON parsing). Older databases get the columns and a one-time backfill."""
+        have = {row[1] for row in self._db.execute("PRAGMA table_info(events)")}
+        for column in ("status", "req_kind", "act_kind"):
+            if column not in have:
+                self._db.execute(f"ALTER TABLE events ADD COLUMN {column} TEXT")
+        done = self._db.execute("SELECT 1 FROM meta WHERE key = 'digest_columns'").fetchone()
+        if not done:
+            self._db.execute(
+                "UPDATE events SET status = json_extract(body, '$.status'), "
+                "req_kind = json_extract(body, '$.request.kind'), act_kind = json_extract(body, '$.activity.kind')"
+            )
+            self._db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('digest_columns', '1')")
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS events_digest ON events(ts, session_id, status, req_kind, act_kind)")
 
     def close(self) -> None:
         with self._lock:
@@ -130,9 +148,11 @@ class Store:
             try:
                 self._db.execute("BEGIN IMMEDIATE")
                 cur = self._db.execute(
-                    "INSERT OR IGNORE INTO events(event_id, session_id, ts, received_at, body) VALUES (?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO events(event_id, session_id, ts, received_at, body, status, req_kind, act_kind) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
                     (event.event_id, event.session_id, event.ts.isoformat(), received_at.isoformat(),
-                     event.model_dump_json(exclude_none=True)),
+                     event.model_dump_json(exclude_none=True), event.status.value if event.status else None,
+                     event.request.kind if event.request else None, event.activity.kind if event.activity else None),
                 )
                 if cur.rowcount == 0:
                     self._db.execute("ROLLBACK")
@@ -234,6 +254,11 @@ class Store:
         for state in states:
             state.prune_subagents(now)
         return states
+
+    def query(self, sql: str, params: tuple = ()) -> list[tuple]:
+        """Run a read-only SELECT under the store lock (the digest's windowed read)."""
+        with self._lock:
+            return self._db.execute(sql, params).fetchall()
 
     def events(self, session_id: str, limit: int = 50) -> list[Event]:
         """The latest ``limit`` events of a session, oldest first."""

@@ -5,6 +5,7 @@ import { queueSummary, useAttentionSignals, waitLevel } from "./attention";
 import { OfficeView } from "./office/OfficeView";
 import { defaultFloor, floorAttention, floorOf, floors, rememberFloor } from "./office/floors";
 import { isGhost } from "./office/model";
+import { Standup } from "./Standup";
 import type { Floor, Session } from "./types";
 import "./office/office.css";
 import "./attention.css";
@@ -39,13 +40,16 @@ export default function App() {
     setChosen(floor); rememberFloor(floor);
     setOpen(previous => ({ id: radar.longest.session_id, n: (previous?.n ?? 0) + 1, floor }));
   };
+  const [standup, setStandup] = useState(false);
+  const inOffice = useMemo(() => new Map(floors.flatMap(f => groups[f.id].map(s => [s.session_id, f.id] as const))), [groups]);
   return <>
     <a className="skip" href="#main">Skip to the office</a>
     <header className="bar"><div className="shell bar__inner">
       <a className="bar__home" href="/" aria-label="SeKantor, home"><img src={lockupUrl} width="118" height="32" alt="" /></a>
       <p className="office-counts">{awake.filter(s => s.status === "running").length} busy · {needs} need you · {awake.filter(s => s.report_pending).length} reports · {awake.filter(s => s.status === "error").length} errors</p>
       {radar && <button type="button" className={`queue-pill queue-pill--${waitLevel(radar.longestMs)}`} onClick={openLongest}>{radar.text}</button>}
-      <p className={`bar__hub${connection === "down" || connection === "unauthorized" ? "bar__hub--down" : ""}`} role="status">{connection === "live" ? "Connected" : connection === "connecting" ? "Connecting to the hub" : connection === "down" ? "Hub not reachable, retrying" : "Not signed in"}</p>
+      <button type="button" className="bar__standup" aria-expanded={standup} onClick={() => setStandup(open => !open)}>Rapat</button>
+      <p className={`bar__hub ${connection === "down" || connection === "unauthorized" ? "bar__hub--down" : ""}`} role="status">{connection === "live" ? "Connected" : connection === "connecting" ? "Connecting to the hub" : connection === "down" ? "Hub not reachable, retrying" : "Not signed in"}</p>
     </div></header>
     <main id="main" className="office-page">
       {connection === "down" && <div className="office-banner" role="alert">The hub is not answering. Reconnecting; showing the last office.{!loaded && <p>Start the hub with <code>sekantor up</code>.</p>}</div>}
@@ -58,6 +62,8 @@ export default function App() {
         </button>)}
       </nav>}
       <OfficeView key={active ?? chosen ?? "claude"} open={open?.floor === (active ?? "claude") ? open : null} sessions={groups[active ?? "claude"]} loaded={loaded} now={now} layoutNow={layoutNow} />
+      {standup && <Standup openable={id => inOffice.has(id)} onClose={() => setStandup(false)}
+        onOpen={id => { const floor = inOffice.get(id); if (!floor) return; setChosen(floor); rememberFloor(floor); setOpen(previous => ({ id, n: (previous?.n ?? 0) + 1, floor })); setStandup(false); }} />}
     </main>
   </>;
 }
