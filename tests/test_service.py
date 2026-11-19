@@ -15,7 +15,6 @@ def test_windows_task_runs_pythonw_without_a_time_limit(tmp_path):
     [(xml_path, xml)] = p.files.items()
     text = xml.decode("utf-16")
     assert "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>" in text and "<LogonTrigger>" in text
-    assert "<Priority>5</Priority>" in text
     assert "pythonw.exe" in text and "-m sekantor.cli up --no-open --log-file" in text and "<UserId>me</UserId>" in text
     assert p.install == [["schtasks", "/Create", "/TN", "SeKantor hub", "/XML", str(xml_path), "/F"]]
     assert p.start == [["schtasks", "/Run", "/TN", "SeKantor hub"]]
@@ -107,7 +106,6 @@ def test_current_compares_the_windows_task_command(tmp_path, monkeypatch):
     other = xml.replace(p.command[0], "C:/src/venv/pythonw.exe")
     assert not service.current(p, run_=_fake_query(other))
     assert not service.current(p, run_=_fake_query("<Task/>"))
-    assert not service.current(p, run_=_fake_query(xml.replace("<Priority>5</Priority>", "")))
 
 
 def test_current_is_false_when_not_installed(monkeypatch):

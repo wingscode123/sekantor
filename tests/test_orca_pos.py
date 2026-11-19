@@ -78,3 +78,21 @@ def test_a_slow_orca_cli_does_not_end_sessions():
     pos.tmux.runner = cli
     pos.tick()
     assert [e["type"] for e in hub.events] == ["session_started"]
+
+
+def test_orca_cli_searches_path_once_a_minute(monkeypatch, tmp_path):
+    from sekantor.pos.orca import pos
+
+    exe = tmp_path / "orca.exe"
+    exe.write_text("")
+    calls = []
+    clock = [1000.0]
+    monkeypatch.delenv("ORCA_CLI_COMMAND", raising=False)
+    monkeypatch.setattr(pos, "_found", None)
+    monkeypatch.setattr(pos.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(pos.shutil, "which", lambda name: calls.append(name) or str(exe))
+    assert pos.orca_cli() == pos.orca_cli() == str(exe)
+    assert len(calls) == 1
+    clock[0] += 61
+    pos.orca_cli()
+    assert len(calls) == 2

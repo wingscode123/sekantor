@@ -25,10 +25,22 @@ log = logging.getLogger("sekantor.pos.orca")
 HOST = {"app": "orca", "confidence": 1.0, "via": ["orca_cli"]}
 
 
+_found: tuple[float, str | None] | None = None  # (when, result) of the last PATH search
+
+
 def orca_cli() -> str | None:
     env = os.environ.get("ORCA_CLI_COMMAND")
     if env and Path(env).exists():
         return env
+    # The hub asks once per Orca session per request; a PATH search is ~270 stat calls on Windows.
+    global _found
+    now = time.monotonic()
+    if _found is None or now - _found[0] > 60 or (_found[1] and not Path(_found[1]).exists()):
+        _found = (now, _search_orca_cli())
+    return _found[1]
+
+
+def _search_orca_cli() -> str | None:
     found = shutil.which("orca")
     if found:
         return found
