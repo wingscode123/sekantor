@@ -225,6 +225,19 @@ async def get_sessions(request: Request, status: Status | None = None):
     return {"sessions": await run_in_threadpool(_sessions_json, store, request.app.state.settings, status)}
 
 
+@router.get("/digest")
+async def get_digest(request: Request, since: str = "today"):
+    """The standup: totals and one row per session active since ``since`` (today, 8h, or an ISO time)."""
+    from sekantor.hub import digest
+
+    try:
+        start = digest.parse_range(since)
+    except ValueError as e:
+        raise HTTPException(422, detail=str(e)) from None
+    st = request.app.state
+    return await run_in_threadpool(digest.compute, st.store, start, datetime.now(timezone.utc), st.settings)
+
+
 @router.get("/sessions/{session_id}/events")
 async def get_session_events(request: Request, session_id: str, limit: int = Query(50, ge=1, le=200)):
     store = request.app.state.store
