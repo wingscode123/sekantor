@@ -5,6 +5,7 @@ import { juniorKey, layoutOffice, roomSignWidth, type PlaceLabel } from "./model
 import { startRenderer, type FramePositions } from "./render";
 import { CHARACTER_HEIGHT, floorBackground, FLOOR_PERIOD, TILE } from "./sprites";
 import { modelBadge } from "./floors";
+import { formatWait, waitLevel } from "../attention";
 
 import { AvatarCard, statusText } from "./AvatarCard";
 
@@ -15,7 +16,8 @@ const placeSigns: Record<PlaceLabel["kind"], { label: string; description: strin
   door: { label: "Exit: session ended", description: "Agents leave through this door when their sessions end." },
 };
 
-export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number }) {
+/** `open.id` opens that session's card; a new `open.n` opens it again. */
+export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNow = now, open }: { sessions: Session[]; loaded?: boolean; now?: number; layoutNow?: number; open?: { id: string; n: number } | null }) {
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const [cols, setCols] = useState(2);
   const [departed, setDeparted] = useState<ReadonlySet<string>>(() => new Set());
@@ -34,7 +36,8 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
   const scale = tileSize / TILE;
   const plateScale = useRef(scale);
   plateScale.current = scale;
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(open?.id ?? null);
+  useEffect(() => { if (open) setSelected(open.id); }, [open?.id, open?.n]);
   useLayoutEffect(() => {
     current.current = office;
     const node = canvas.current;
@@ -160,6 +163,7 @@ export function OfficeView({ sessions, loaded = true, now = Date.now(), layoutNo
             }}
             onClick={() => setSelected(a.sessionId)}>
             {a.name}{badge && <> <span className="office-model-badge">{badge}</span></>}
+            {a.waitingSince && <> <span className={`office-plate__wait office-plate__wait--${waitLevel(now - Date.parse(a.waitingSince))}`}>{formatWait(now - Date.parse(a.waitingSince))}</span></>}
             <small>{a.app} · {a.project}{byId.get(a.sessionId)?.workspace.branch ? ` / ${byId.get(a.sessionId)!.workspace.branch}` : ""}</small>
           </button>);
         })}

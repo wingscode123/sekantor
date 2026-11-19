@@ -42,6 +42,8 @@ class Stats:
     left_waiting: timedelta = timedelta()
     longest_wait: timedelta = timedelta()
     longest_wait_session: str | None = None
+    # Every wait that overlaps the window, clipped to it: (session, status, start, end, answered). The digest reads these.
+    waits: list[tuple[str, str, datetime, datetime, bool]] = field(default_factory=list)
 
     def median(self, status: str) -> timedelta | None:
         xs = sorted(self.answers.get(status) or [])
@@ -154,6 +156,7 @@ def _waiting(st: Stats, rows: list[tuple], ended: dict[str, datetime] | None = N
         a, b = max(start, st.since), min(end, st.until)
         if b <= a:
             return
+        st.waits.append((sid, status, a, b, answered))
         if answered:
             st.waiting[status] += b - a
             st.answers[status].append(b - a)

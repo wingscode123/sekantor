@@ -22,6 +22,22 @@ it("shows only waiting non-snoozed avatars, preserving their full-office looks",
   expect(scene.door).not.toEqual(scene.yourDesk);
   expect(screen.getByText("1 busy \u00b7 2 need you \u00b7 1 reports")).toBeTruthy();
 });
+it("shows how many wait for you and the longest wait, longest first in the queue", () => {
+  mocks.state.sessions = [
+    { ...session("short"), status_since: "2026-11-17T11:50:00Z" },
+    { ...session("long", "waiting_approval"), status_since: "2026-11-17T10:55:00Z" },
+    session("busy", "running"),
+  ];
+  render(<MiniView />);
+  expect(screen.getByText("2 waiting · longest 1h 5m")).toBeTruthy();
+  expect(screen.getByRole("button").getAttribute("aria-label")).toContain("2 waiting · longest 1h 5m");
+  const scene = mocks.renderer.mock.lastCall![1]();
+  expect(scene.avatars.map(a => a.sessionId)).toEqual(["long", "short"]);
+  cleanup();
+  mocks.state.sessions = [session("busy", "running")];
+  render(<MiniView />);
+  expect(screen.queryByText(/waiting · longest/)).toBeNull();
+});
 it("shows the most recent waiting summary, ignoring newer muted or running summaries", () => {
   mocks.state.sessions = [{ ...session("old"), summary: "Old question" }, { ...session("new"), last_event_at: "2026-11-17T11:30:00Z", summary: "New question" }, { ...session("busy", "running"), last_event_at: "2026-11-17T11:45:00Z", summary: "Busy summary" }, { ...session("muted"), last_event_at: "2026-11-17T11:50:00Z", summary: "Muted question", snoozed_until: "2026-11-18T12:00:00Z" }];
   render(<MiniView />);

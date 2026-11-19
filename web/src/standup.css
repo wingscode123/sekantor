@@ -1,0 +1,23 @@
+.standup { position: absolute; z-index: 9; left: 12px; right: 12px; top: 12px; max-height: calc(100% - 24px); overflow: auto; padding: 16px 20px; background: #fff0ce; color: #332b35; border: 1px solid #70483d; border-radius: 6px; box-shadow: 0 8px 40px #0004; }
+.standup__head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.standup__head h2 { margin: 0; font-size: 20px; }
+.standup__range { display: flex; gap: 6px; }
+.standup__close { margin-inline-start: auto; padding: 4px 10px; border: 1px solid #70483d; border-radius: 3px; background: transparent; color: inherit; cursor: pointer; }
+.standup__totals { margin: 12px 0; font-size: 14px; }
+.standup__now { padding: 0 6px; border-radius: 3px; background: #f7ce82; }
+.standup__group h3 { margin: 16px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #2d5558; }
+.standup__group--waiting h3 { color: #332b35; }
+.standup__group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.standup__row { display: grid; gap: 2px; width: 100%; padding: 8px 10px; text-align: start; font: inherit; color: inherit; background: #f4eedb; border: 1px solid #70483d; border-radius: 4px; }
+button.standup__row { cursor: pointer; }
+button.standup__row:hover, button.standup__row:focus-visible { background: #fff; outline: 2px solid #2d5558; }
+.standup__group--waiting .standup__row { border-left: 6px solid #f7ce82; }
+.standup__row--gone { opacity: 0.75; }
+.standup__who { font-weight: 700; }
+.standup__who small { font-weight: 400; }
+.standup__status { font-size: 12px; text-transform: capitalize; color: #2d5558; }
+.standup__line { font-size: 13px; }
+.standup__summary { font-size: 13px; opacity: 0.85; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bar__standup { padding: 4px 10px; border: 1px solid #70483d; border-radius: 3px; background: #fff0ce; color: #332b35; cursor: pointer; }
+.bar__standup[aria-expanded="true"] { background: #2d5558; color: #fff0ce; }
+@media (max-width: 640px) { .standup { left: 0; right: 0; top: 0; max-height: 100%; border-radius: 0; padding: 12px; } }
