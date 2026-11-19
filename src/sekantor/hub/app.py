@@ -86,7 +86,8 @@ async def watch_loop(interval: float = 0.5, threshold: float = SLOW_S) -> None:
             log.warning("event loop was blocked for %.1fs", late)
 
 
-async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Settings | None = None) -> None:
+async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Settings | None = None,
+                     notifier: Notifier | None = None) -> None:
     """Sweep in a worker thread, then tell stream clients here, on the event loop."""
     expired = await asyncio.to_thread(store.expire_placements)
     ended = await asyncio.to_thread(run_sweep, store)
@@ -94,6 +95,8 @@ async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Se
         await publish_session(broadcaster, s, settings)
     if expired or any(s.floor == "orca" for s in ended):
         await publish_snapshot(store, broadcaster, settings)
+    if notifier is not None and settings is not None and settings.remind_after_minutes:
+        await asyncio.to_thread(lambda: notifier.remind(store.sessions(), datetime.now(timezone.utc), settings.remind_after_minutes))
 
 
 def write_hook_env(home: Path) -> None:
@@ -130,7 +133,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
                 try:
-                    await sweep_tick(store, broadcaster, settings)
+                    await sweep_tick(store, broadcaster, settings, notifier)
                 except Exception:
                     log.warning("sweep failed", exc_info=True)
                 if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
