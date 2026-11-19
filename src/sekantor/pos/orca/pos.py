@@ -25,10 +25,22 @@ log = logging.getLogger("sekantor.pos.orca")
 HOST = {"app": "orca", "confidence": 1.0, "via": ["orca_cli"]}
 
 
+_found: tuple[float, str | None] | None = None  # (when, result) of the last PATH search
+
+
 def orca_cli() -> str | None:
     env = os.environ.get("ORCA_CLI_COMMAND")
     if env and Path(env).exists():
         return env
+    # The hub asks once per Orca session per request; a PATH search is ~270 stat calls on Windows.
+    global _found
+    now = time.monotonic()
+    if _found is None or now - _found[0] > 60 or (_found[1] and not Path(_found[1]).exists()):
+        _found = (now, _search_orca_cli())
+    return _found[1]
+
+
+def _search_orca_cli() -> str | None:
     found = shutil.which("orca")
     if found:
         return found
@@ -153,6 +165,7 @@ class OrcaInventory:
         self.workers: dict[str, dict] = {}
         self.workers_sent: dict[str, float] = {}
         self.dead_since: dict[str, float] = {}
+        self.failing: str | None = None
 
     def _read(self, *args: str) -> dict:
         result = self.runner([self.cli, *args, "--json"], capture_output=True,
@@ -421,8 +434,14 @@ class OrcaInventory:
         delay = 15
         try:
             self.sweep()
+            if self.failing:
+                log.info("Orca inventory sweep works again")
+            self.failing = None
         except (httpx.HTTPError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError, AttributeError) as exc:
-            log.warning("Orca inventory sweep failed: %s: %s", type(exc).__name__, exc)
+            why = f"{type(exc).__name__}: {exc}"
+            if why != self.failing:  # e.g. Orca is closed: say so once, not every minute
+                log.warning("Orca inventory sweep failed: %s; retrying quietly", why)
+            self.failing = why
             now = self.clock()
             oldest = min((sent for _, sent in self.placements_sent.values()), default=now)
             delay = min(60, max(15, oldest + 90 - now))
