@@ -58,6 +58,7 @@ def _windows_xml(cmd: list[str], user: str) -> bytes:
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>5</Priority>
     <RestartOnFailure><Interval>PT1M</Interval><Count>10</Count></RestartOnFailure>
     <Enabled>true</Enabled>
   </Settings>
@@ -165,7 +166,7 @@ def current(p: Plan, run_=subprocess.run) -> bool:
             out = run_([*p.status, "/XML"], capture_output=True, text=True).stdout
             m = re.search(r"<Command>(.*?)</Command>", out, re.S)
             a = re.search(r"<Arguments>(.*?)</Arguments>", out, re.S)
-            if not m:
+            if not m or "<Priority>5</Priority>" not in out:  # the default, 7, starves the hub of RAM and I/O
                 return False
             have = [unescape(m.group(1)).strip()]
             if a:

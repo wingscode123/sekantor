@@ -1,4 +1,4 @@
-"""Synthetic Orca JSON fixtures use the recorded shapes in docs/spike/orca-workers.md."""
+﻿"""Synthetic Orca JSON fixtures use the recorded shapes in docs/spike/orca-workers.md."""
 
 import json
 import subprocess
@@ -294,3 +294,17 @@ def test_dispatch_timestamps_win_over_list_order(inventory, newer_first):
     pos.tick()
     [event] = [e for e in hub.events if e["session_id"] == "orca:example_codex"]
     assert event["status"] == "done"
+
+
+def test_failing_sweep_logs_once_until_it_works_again(inventory, caplog):
+    caplog.set_level("INFO", logger="sekantor.pos.orca")
+    pos, cli, hub, clock = inventory
+    cli.timeout_command = ("worktree", "ps")  # e.g. Orca is not open yet
+    for t in (0, 60, 120):
+        clock[0] = t
+        pos.tick()
+    assert sum("sweep failed" in r.message for r in caplog.records) == 1
+    cli.timeout_command = None
+    clock[0] = 240
+    pos.tick()
+    assert any("works again" in r.message for r in caplog.records)
