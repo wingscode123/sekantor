@@ -203,6 +203,29 @@ describe("office page", () => {
     expect(screen.getByText("1 busy \u00b7 0 need you \u00b7 1 reports \u00b7 1 errors")).toBeTruthy();
     expect(document.title).toBe("SeKantor");
   });
+  it("shows the queue pill and opens the card of the longest waiter, also on another floor", () => {
+    const waiting = (id: string, since: string, over: Partial<Session> = {}): Session => ({ ...session(id), status: "waiting_approval", needs_you: true, status_since: since, ...over });
+    mocks.state.sessions = [session("busy"), waiting("short", "2026-11-17T11:53:00Z"),
+      waiting("long", "2026-11-17T11:30:00Z", { source: "openbot", agent: { name: "Longbot" } }),
+      waiting("lead", "2026-11-17T10:00:00Z", { needs_you: false, status: "reported", report_to: "lead" })];
+    localStorage.setItem("sekantor.floor", "claude");
+    render(<App />);
+    const pill = screen.getByRole("button", { name: /2 waiting · longest 30m/ });
+    expect(pill.className).toContain("queue-pill--urgent");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(pill);
+    expect(screen.getByRole("dialog", { name: "Longbot details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /OpenBot/, pressed: true })).toBeTruthy();
+  });
+  it("shows no pill when nobody waits for you, and a wait text on the waiting name plate", () => {
+    mocks.state.sessions = [session("busy")];
+    const view = render(<App />);
+    expect(screen.queryByRole("button", { name: /waiting · longest/ })).toBeNull();
+    mocks.state.sessions = [{ ...session("asker"), status: "waiting_input", needs_you: true, status_since: "2026-11-17T11:55:00Z" }];
+    view.rerender(<App />);
+    expect(screen.getByTestId("name-plate").textContent).toContain("5m");
+    expect(screen.getByRole("button", { name: /1 waiting · longest 5m/ })).toBeTruthy();
+  });
   it("shows first-load and empty-office hints at the appropriate time", () => {
     mocks.state.loaded = false;
     const view = render(<App />);

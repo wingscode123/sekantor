@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
@@ -537,6 +537,39 @@ def stats(
             typer.echo(f"    {x.ts}  {x.session_id}  {x.label}  {x.event_id}")
     if lost:
         raise typer.Exit(1)
+
+
+@app.command()
+def digest(
+    since: str = typer.Option("today", help="Window start: today, 8h, 90m, 2d or a time like 2026-11-19T08:00."),
+    as_json: bool = typer.Option(False, "--json", help="Print raw JSON."),
+):
+    """The daily standup: what the agents did, who waited for you, and who is waiting now."""
+    from sekantor.hub.digest import parse_range
+
+    try:
+        start = parse_range(since)
+    except ValueError as e:
+        typer.secho(str(e), fg="red")
+        raise typer.Exit(2)
+    data = _hub("/v1/digest?since=" + urllib.parse.quote(start.isoformat(), safe=""), timeout=15.0)
+    if as_json:
+        typer.echo(json.dumps(data, indent=2))
+        return
+    t = data["totals"]
+    typer.secho(f"Standup since {start.strftime('%Y-%m-%d %H:%M')}", bold=True)
+    typer.echo(f"  {t['agents']} agents, {t['turns']} turns finished, asked you {t['asked']}x, "
+               f"waited {_span(timedelta(seconds=t['wait_s']))} (longest {_span(timedelta(seconds=t['longest_wait_s']))}), "
+               f"{t['errors']} errors, waiting now {t['waiting_now']}")
+    for r in data["sessions"]:
+        who = r["agent"] or "agent"
+        where = (r["project"] or {}).get("name") or "?"
+        tools = " ".join(f"{k} {n}" for k, n in sorted(r["tools"].items())) or "no tool use"
+        flag = typer.style("WAITING ", fg="yellow", bold=True) if r["waiting"] else ("ERROR   " if r["status"] == "error" else "        ")
+        typer.echo(f"{flag}{where}  {who}  {r['session_id']}  {r['status']}  "
+                   f"{r['turns']} turns, asked {r['asked']}x ({_span(timedelta(seconds=r['wait_s']))}), {tools}")
+        if r["summary"]:
+            typer.echo(f"        {r['summary'].splitlines()[0][:100]}")
 
 
 def _find_session(ref: str) -> dict:

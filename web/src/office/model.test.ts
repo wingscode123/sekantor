@@ -369,3 +369,30 @@ it.each([1, 2, 3, 4, 5, 6, 7, 8])("connects %i rooms to the lobby through doors 
     }
   }
 });
+
+it("queues the avatars that wait for you at your desk, longest wait first", () => {
+  const waiting = (id: string, since: string, over: Partial<Session> = {}) => session({
+    session_id: id, started_at: id === "late" ? "2026-01-01T00:00:00Z" : "2026-01-02T00:00:00Z", status: "waiting_approval", needs_you: true, status_since: since, ...over });
+  const office = layoutOffice([
+    waiting("late", "2026-01-03T10:00:00Z"),
+    waiting("oldest", "2026-01-03T09:00:00Z"),
+    waiting("middle", "2026-01-03T09:30:00Z"),
+    session({ session_id: "report", status: "reported", report_pending: true, status_since: "2026-01-03T08:00:00Z" }),
+  ]);
+  const slots = ["oldest", "middle", "late", "report"].map(id => office.avatars.find(a => a.key === id)!.targetTile!);
+  expect(slots.map(p => p.x)).toEqual([...slots.map(p => p.x)].sort((a, b) => a - b));
+  expect(new Set(slots.map(p => p.x)).size).toBe(4);
+  expect(office.avatars.find(a => a.key === "oldest")!.targetTile!.x).toBe(office.yourDesk.x - 2);
+});
+
+it("marks the avatars that wait for you with their wait start", () => {
+  const office = layoutOffice([
+    session({ session_id: "a", status: "waiting_approval", needs_you: true, status_since: "2026-01-03T09:00:00Z" }),
+    session({ session_id: "b", status: "waiting_approval", needs_you: true, status_since: "2026-01-03T09:00:00Z", snoozed_until: "2999-01-01T00:00:00Z" }),
+    session({ session_id: "c", status: "running" }),
+  ], Date.parse("2026-01-03T10:00:00Z"));
+  const by = (id: string) => office.avatars.find(a => a.key === id)!;
+  expect(by("a").waitingSince).toBe("2026-01-03T09:00:00Z");
+  expect(by("b").waitingSince).toBeUndefined();
+  expect(by("c").waitingSince).toBeUndefined();
+});

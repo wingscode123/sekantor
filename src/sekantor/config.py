@@ -110,7 +110,8 @@ DEFAULT_IGNORE_CWD = [r"/Programs/OpenBot(/|$)", r"/OpenBot\.app/", r"^/opt/Open
 
 class Settings:
     def __init__(self, notify: bool = True, quiet_hours: str | None = None, ignore_cwd: list[str] | None = None,
-                 orca_pos: bool = False, keep_in_ram: bool | None = None, projects: dict[str, Kind] | None = None):
+                 orca_pos: bool = False, keep_in_ram: bool | None = None, projects: dict[str, Kind] | None = None,
+                 remind_after_minutes: int = 10):
         self.notify = bool(notify)
         self.quiet_hours = parse_quiet_hours(quiet_hours)  # FR-33: (start, end) minutes, or None
         self.ignore_cwd = list(ignore_cwd) if ignore_cwd is not None else list(DEFAULT_IGNORE_CWD)
@@ -125,6 +126,9 @@ class Settings:
         )):
             raise ValueError("projects must map project names to kinds")
         self.projects = dict(projects or {})
+        if isinstance(remind_after_minutes, bool) or not isinstance(remind_after_minutes, int) or remind_after_minutes < 0:
+            raise ValueError("remind_after_minutes must be 0 or more")
+        self.remind_after_minutes = remind_after_minutes  # A4: 0 = off
 
     def ignored(self, cwd: str | None) -> bool:
         import re
@@ -185,7 +189,8 @@ def read_toml(base: Path | None = None) -> dict:
 
 # config.toml key -> Settings argument
 SETTING_KEYS = {"notify": "notify", "quiet_hours": "quiet_hours", "ignore_cwd": "ignore_cwd", "orca_pos": "orca_pos",
-                "keep_in_ram": "keep_in_ram", "projects": "projects"}
+                "keep_in_ram": "keep_in_ram", "projects": "projects",
+                "remind_after_minutes": "remind_after_minutes"}
 # Keys of the answering era (ADR-0021): an old config.toml still has them, and that is not a problem.
 OLD_KEYS = {"approval_wait", "reply_wait", "risky_commands", "reply_entrypoints"}
 
