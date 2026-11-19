@@ -13,7 +13,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -84,6 +84,7 @@ class Notifier:
         self.sender = sender
         self.min_gap_s = min_gap_s
         self._last: dict[str, float] = {}
+        self._reminded: dict[str, datetime] = {}  # session -> status_since of the episode already reminded
         self._lock = threading.Lock()
 
     def maybe(self, prev: SessionState | None, new: SessionState) -> bool:
@@ -105,3 +106,30 @@ class Notifier:
         sender = self.sender or send_native
         threading.Thread(target=sender, args=(title, body), daemon=True).start()
         return True
+
+    def remind(self, sessions: list[SessionState], now: datetime, after_minutes: int) -> int:
+        """One reminder per waiting episode: a session waiting for you ``after_minutes`` or longer.
+
+        An episode is one ``status_since``; a new status starts a new one. Snooze and quiet hours hold the
+        reminder back without using it up. Returns how many were sent.
+        """
+        if not self.enabled or after_minutes <= 0:
+            return 0
+        waiting = {s.session_id: s for s in sessions if s.needs_you and s.report_to == "you"}
+        for sid in [k for k, since in self._reminded.items() if k not in waiting or waiting[k].status_since != since]:
+            del self._reminded[sid]
+        if self.quiet():
+            return 0
+        sent = 0
+        for s in waiting.values():
+            waited = now - s.status_since
+            if waited < timedelta(minutes=after_minutes) or s.snoozed(now) or s.session_id in self._reminded:
+                continue
+            self._reminded[s.session_id] = s.status_since
+            title, body = message(s)
+            minutes = int(waited.total_seconds() // 60)
+            wait = f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m"
+            threading.Thread(target=self.sender or send_native, args=(f"Still: {title.lower()}", f"{body}, waiting {wait}"),
+                             daemon=True).start()
+            sent += 1
+        return sent
