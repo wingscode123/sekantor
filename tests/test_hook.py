@@ -45,15 +45,15 @@ def payload(rel: str) -> dict:
         ("cli-headless/03_PreToolUse.json", "status_changed", "running"),
         ("cli-headless/10_PermissionRequest.json", "status_changed", "waiting_approval"),
         ("cli-headless/04_PostToolUse.json", "status_changed", "running"),
-        ("cli-headless/05_Stop.json", "status_changed", "waiting_input"),
+        ("cli-headless/05_Stop.json", "status_changed", "reported"),
         ("cli-headless/06_SessionEnd.json", "session_ended", "ended"),
-        ("orca-terminal/08_Notification.json", "status_changed", "waiting_input"),
+        ("orca-terminal/08_Notification.json", "message", None),
         ("claude-desktop/08_SessionStart.json", "session_started", "waiting_input"),
     ],
 )
 def test_translate_real_payloads(rel, type_, status):
     ev = translate(payload(rel)["stdin"])
-    assert ev["type"] == type_ and ev["status"] == status
+    assert ev["type"] == type_ and ev.get("status") == status
     assert ev["session_id"].startswith("claude:")
     Event.model_validate(ev)  # every produced event is valid schema v1
 
@@ -64,8 +64,41 @@ def test_permission_request_carries_the_command():
     assert ev["summary"] == "Wants to run: echo ronda-spike > spike-tmp.txt"
 
 
-def test_subagent_stop_is_ignored():
-    assert translate(payload("orca-terminal/07_SubagentStop.json")["stdin"]) is None
+def test_translate_subagent_stop():
+    raw = payload("claude-desktop/06_SubagentStop.json")["stdin"]
+    ev = Event.model_validate(translate(raw))
+    assert ev.type == "subagent_ended" and ev.status is None
+    assert ev.session_id == f"claude:{raw['session_id']}"
+    assert ev.subagent.id == raw["agent_id"]
+    assert ev.summary == raw["last_assistant_message"]
+
+
+def test_translate_subagent_start():
+    ev = Event.model_validate(translate({"hook_event_name": "SubagentStart", "session_id": "s",
+                                         "agent_id": "junior", "agent_type": "Explore"}))
+    assert ev.type == "subagent_started" and ev.status is None
+    assert ev.subagent.model_dump() == {"id": "junior", "type": "Explore"}
+
+
+def test_translate_subagent_start_without_agent_type():
+    ev = translate({"hook_event_name": "SubagentStart", "session_id": "s", "agent_id": "junior"})
+    assert ev["subagent"] == {"id": "junior", "type": "unknown"}
+
+
+def test_translate_subagent_activity():
+    ev = Event.model_validate(translate({"hook_event_name": "PreToolUse", "session_id": "s",
+                                         "agent_id": "junior", "tool_name": "Read"}))
+    assert ev.type == "subagent_activity" and ev.status is None and ev.summary is None
+    assert ev.subagent.id == "junior"
+    assert ev.activity.model_dump() == {"tool": "Read", "kind": "read"}
+
+
+@pytest.mark.parametrize("name", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_subagent_tool_followup_is_tagged(name):
+    ev = Event.model_validate(translate({"hook_event_name": name, "session_id": "s",
+                                         "agent_id": "junior", "tool_name": "Read"}))
+    assert ev.type == "status_changed" and ev.status.value == "running"
+    assert ev.subagent.id == "junior"
 
 
 @pytest.mark.parametrize("kind, status", [("permission_prompt", "waiting_approval"), ("auth_success", None)])
@@ -260,3 +293,23 @@ def test_permission_request_hook_returns_at_once_with_no_output(home):
     finally:
         server.should_exit = True
         th.join(5)
+
+
+def test_build_event_takes_an_id_and_a_ts():
+    ev = hook.build_event({"hook_event_name": "PreToolUse", "session_id": "s", "cwd": str(ROOT), "tool_name": "Bash"},
+                          {}, event_id="fixed-id", ts="2026-11-17T00:00:00+00:00")
+    assert ev["event_id"] == "fixed-id" and ev["ts"] == "2026-11-17T00:00:00+00:00"
+
+
+def test_stop_with_plain_text_question_is_a_report():
+    ev = translate({"hook_event_name": "Stop", "session_id": "s", "last_assistant_message": "Continue?"})
+    assert (ev["status"], ev["summary"], ev["request"]) == ("reported", "Continue?", {"kind": "report"})
+
+
+@pytest.mark.parametrize("kind", ["agent_needs_input", "elicitation_dialog", "elicitation_url_dialog"])
+def test_translate_actionable_input_notification(kind):
+    ev = translate({"hook_event_name": "Notification", "session_id": "s",
+                    "notification_type": kind, "message": "Input requested"})
+    assert ev["status"] == "waiting_input"
+    assert ev["request"] == {"kind": "question"}
+    assert ev["summary"] == "Input requested"

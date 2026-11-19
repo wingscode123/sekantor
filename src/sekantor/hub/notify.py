@@ -42,8 +42,7 @@ def should_notify(prev: Status | None, new: Status) -> bool:
         return False
     if new in (Status.waiting_approval, Status.error):
         return True
-    # a finished turn, or an idle agent asking something (OpenBot); not a fresh session
-    return new is Status.waiting_input and prev in (Status.running, Status.done)
+    return new is Status.waiting_input and prev is not None
 
 
 def message(s: SessionState) -> tuple[str, str]:
@@ -88,7 +87,12 @@ class Notifier:
         self._lock = threading.Lock()
 
     def maybe(self, prev: SessionState | None, new: SessionState) -> bool:
-        if not self.enabled or not should_notify(prev.status if prev else None, new.status):
+        if not self.enabled or not new.needs_you:
+            return False
+        previous = prev.status if prev else None
+        if prev is not None and previous is Status.waiting_input and not prev.needs_you:
+            previous = Status.done
+        if not should_notify(previous, new.status):
             return False
         if new.snoozed(datetime.now(timezone.utc)) or self.quiet():  # FR-15, FR-33
             return False

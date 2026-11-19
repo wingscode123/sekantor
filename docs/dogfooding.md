@@ -12,6 +12,10 @@ uv run sekantor open                      # the inbox in your browser
 uv run sekantor doctor                    # should end with "All good."
 ```
 
+Once the desktop app is installed, do not run `uv run sekantor service install` or
+`install claude --global` from a source checkout: they re-point the login task and the hooks to the
+venv. The app's first run repairs that (it replaces both with its own).
+
 Hooks in `~/.claude/settings.json` reach Claude Code in a terminal, VS Code, Claude desktop and
 Orca. They do not reach OpenBot agents (OpenBot loads only project and local settings, see
 `docs/spike/summary.md`).

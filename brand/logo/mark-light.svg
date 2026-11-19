@@ -1,1 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 48" width="32" height="48" role="img" aria-label="Ronda"><title>Ronda</title><path fill="#ECEEF7" fill-rule="evenodd" d="M16 2H16A12 12 0 0 1 28 14V34A12 12 0 0 1 16 46H16A12 12 0 0 1 4 34V14A12 12 0 0 1 16 2ZM11.25 17H20.75A2.25 2.25 0 0 1 20.75 21.5H11.25A2.25 2.25 0 0 1 11.25 17Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" shape-rendering="crispEdges" role="img" aria-labelledby="title">
+  <title id="title">SeKantor</title>
+  <rect x="10" y="0" width="1" height="2" fill="#FFF0CE"/>
+  <rect x="2" y="2" width="12" height="1" fill="#FFF0CE"/>
+  <rect x="3" y="3" width="10" height="1" fill="#FFF0CE"/>
+  <rect x="3" y="4" width="2" height="2" fill="#FFF0CE"/>
+  <rect x="7" y="4" width="2" height="2" fill="#FFF0CE"/>
+  <rect x="11" y="4" width="2" height="2" fill="#FFF0CE"/>
+  <rect x="3" y="6" width="10" height="1" fill="#FFF0CE"/>
+  <rect x="3" y="7" width="2" height="2" fill="#FFF0CE"/>
+  <rect x="7" y="7" width="2" height="2" fill="#FFF0CE"/>
+  <rect x="11" y="7" width="2" height="2" fill="#FFF0CE"/>
+  <rect x="3" y="9" width="10" height="1" fill="#FFF0CE"/>
+  <rect x="3" y="10" width="2" height="1" fill="#FFF0CE"/>
+  <rect x="7" y="10" width="2" height="1" fill="#FFF0CE"/>
+  <rect x="11" y="10" width="2" height="1" fill="#FFF0CE"/>
+  <rect x="3" y="11" width="10" height="1" fill="#FFF0CE"/>
+  <rect x="3" y="12" width="4" height="3" fill="#FFF0CE"/>
+  <rect x="9" y="12" width="4" height="3" fill="#FFF0CE"/>
+  <rect x="1" y="15" width="14" height="1" fill="#FFF0CE"/>
+</svg>

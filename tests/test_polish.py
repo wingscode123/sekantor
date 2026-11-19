@@ -10,7 +10,7 @@ from sekantor.hub import opener
 from sekantor.hub.app import create_app
 from sekantor.hub.notify import Notifier
 from sekantor.hub.status import SessionState
-from sekantor.schema import Event, Host, Status, Workspace
+from sekantor.schema import Event, Host, Request, Status, Workspace
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -152,3 +152,14 @@ def test_quiet_hours():
     assert not in_quiet_hours(night, datetime(2026, 1, 1, 7, 0, tzinfo=local))
     n = Notifier(sender=lambda t, b: None, min_gap_s=0, quiet=lambda: True)
     assert n.maybe(state(status=Status.running), state(status=Status.error)) is False
+
+
+def test_report_is_silent_but_a_real_question_afterward_notifies():
+    n = Notifier(sender=lambda t, b: None, min_gap_s=0)
+    running = state(status=Status.running)
+    report = state(status=Status.reported)
+    assert not n.maybe(running, report)
+    assert not n.maybe(running, state(status=Status.waiting_input))
+    question = state(status=Status.waiting_input)
+    question.request = Request(kind="question")
+    assert n.maybe(report, question)

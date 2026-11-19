@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from sekantor import config
-from sekantor.hub.api import router, session_json
+from sekantor.hub.api import publish_session, publish_snapshot, router
 from sekantor.hub.notify import Notifier
 from sekantor.hub.auth import LoginCodes, TokenAuthMiddleware, ensure_token
 from sekantor.hub.store import SLOW_S, Store
@@ -36,6 +37,19 @@ def web_dist() -> Path | None:
     """The built web UI: ``npm run build`` in web/ writes it here, and the wheel ships it."""
     dist = Path(__file__).parent / "static"
     return dist if (dist / "index.html").is_file() else None
+
+
+class WebFiles(StaticFiles):
+    """Static web UI: index.html is always revalidated, Vite's hashed /assets/* never change."""
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        path = scope.get("path", "")
+        if path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def pid_alive(pid: int) -> bool:
@@ -72,10 +86,29 @@ async def watch_loop(interval: float = 0.5, threshold: float = SLOW_S) -> None:
             log.warning("event loop was blocked for %.1fs", late)
 
 
-async def sweep_tick(store: Store, broadcaster: Broadcaster) -> None:
+async def sweep_tick(store: Store, broadcaster: Broadcaster, settings: config.Settings | None = None) -> None:
     """Sweep in a worker thread, then tell stream clients here, on the event loop."""
-    for s in await asyncio.to_thread(run_sweep, store):
-        broadcaster.publish({"type": "session", "session": session_json(s)})
+    expired = await asyncio.to_thread(store.expire_placements)
+    ended = await asyncio.to_thread(run_sweep, store)
+    for s in ended:
+        await publish_session(broadcaster, s, settings)
+    if expired or any(s.floor == "orca" for s in ended):
+        await publish_snapshot(store, broadcaster, settings)
+
+
+def write_hook_env(home: Path) -> None:
+    """``hook-env.txt``: the env var names the native forwarder may send (every ``env:`` name in the host
+    rules, plus CLAUDE_PID), one per line, so a secret in the environment never leaves the process."""
+    from sekantor.pos.claude_code.fingerprint import env_names, load_rules
+
+    try:
+        names = sorted(env_names(load_rules()) | {"CLAUDE_PID"})
+        home.mkdir(parents=True, exist_ok=True)
+        tmp = home / f"hook-env.txt.{os.getpid()}"
+        tmp.write_bytes("\n".join(names).encode("utf-8") + b"\n")
+        os.replace(tmp, home / "hook-env.txt")
+    except Exception:
+        log.warning("hook-env.txt not written", exc_info=True)
 
 
 def create_app(home: Path | None = None, port: int | None = None, token: str | None = None,
@@ -84,6 +117,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     port = port or config.port()
     token = token or ensure_token(home / "token")
     settings = settings or config.settings(home)
+    write_hook_env(home)
     store = Store(home / "sekantor.db")
     broadcaster = Broadcaster()
     notifier = notifier or Notifier(enabled=settings.notify, quiet=settings.quiet)
@@ -96,7 +130,7 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
                 await asyncio.sleep(SWEEP_EVERY_S)
                 ticks += 1
                 try:
-                    await sweep_tick(store, broadcaster)
+                    await sweep_tick(store, broadcaster, settings)
                 except Exception:
                     log.warning("sweep failed", exc_info=True)
                 if ticks * SWEEP_EVERY_S % PRUNE_EVERY_S == 0:
@@ -120,11 +154,13 @@ def create_app(home: Path | None = None, port: int | None = None, token: str | N
     app.state.notifier = notifier
     app.state.settings = settings
     app.state.login_codes = LoginCodes()
+    app.state.background = set()  # strong refs to fire-and-forget tasks (the SessionStart follow-up)
+    app.state.should_exit = False  # set by POST /v1/shutdown; `sekantor up` hands it to uvicorn
     app.include_router(router)
 
     dist = web_dist()
     if dist:
-        app.mount("/", StaticFiles(directory=dist, html=True), name="web")
+        app.mount("/", WebFiles(directory=dist, html=True), name="web")
     else:
         @app.get("/", include_in_schema=False)
         async def not_built():

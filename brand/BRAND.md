@@ -1,67 +1,54 @@
-# Ronda brand
+# SeKantor brand
 
-> Your agents work all night. Ronda keeps watch.
-> *Agen kerja, Ronda jaga.*
+> Your AI agents, in one office.
 
-Ronda is named for *ronda malam*, the neighbourhood night watch in Indonesia: neighbours take turns
-keeping guard while the others sleep, and strike the *kentongan* (a bamboo slit drum) when something
-needs attention. Agents work for hours; Ronda keeps watch and only calls you when you are needed.
+The Indonesian expression *se-kantor* means sharing an office or being officemates. SeKantor brings the AI coding agents on your machine into a shared pixel-art office. Each agent gets a desk and an avatar.
 
-## Logo
+The mark is a small office building. Lit windows represent agents at work, with a coral antenna light on the roof, a walnut-toned entry and a teal ground line. The building uses a 16 × 16 pixel grid. Monochrome versions use cutouts for the windows and door.
 
-The mark is a simplified kentongan: a vertical capsule with one horizontal slot. It also reads as a
-notification badge. The wordmark is "ronda", lowercase, JetBrains Mono ExtraBold, outlined.
+## Palette
 
-| File | Use |
-| --- | --- |
-| `logo/lockup-on-dark.svg` | Default. Amber mark, light wordmark, on Malam or any dark ground |
-| `logo/lockup-on-light.svg` | Single colour Malam, on light grounds |
-| `logo/mark.svg` | Amber mark alone (badges, avatars, small spaces) |
-| `logo/mark-light.svg`, `logo/mark-dark.svg` | One-colour marks |
-| `logo/wordmark-light.svg`, `logo/wordmark-dark.svg` | Wordmark alone |
-| `logo/icon.svg`, `logo/icon-{32,192,512}.png` | App icon and favicon: amber mark on a Malam square |
-| `social/social-preview.png` | GitHub social preview, 1280 x 640 |
-| `social/readme-banner.png` | README header, 2560 x 640 (shown at 1280 x 320) |
+The brand borrows the warm wood, apricot plaster and petrol blue of the office sprites. Use these colours in the mark and brand graphics.
 
-- Clear space around the lockup: the width of the mark on every side.
-- Smallest sizes: lockup 96px wide, mark 12px tall, icon 16px.
-- Do not recolour the mark outside the palette, add effects, rotate it, or set "ronda" in another face.
-- The slot is cut out, so the mark works on any ground. Keep the slot horizontal.
-
-## Colour
-
-| Name | Hex | Role |
+| Colour | Hex | Role |
 | --- | --- | --- |
-| Malam | `#14162B` | Background. Ronda is dark-first |
-| Lentera | `#F2A93B` | Accent, and the colour of "needs you" (`waiting_approval`, `waiting_input`) |
-| Bambu | `#C9B27C` | Secondary: the Indonesian tagline, code keywords |
-| Hijau | `#3FB37F` | `running` |
-| Merah | `#E5484D` | `error` (UI text uses a lifted tint for contrast, see `design.md`) |
-| Abu | `#8B8FA3` | `done`, `ended`, idle, muted text |
+| Ink | `#332B35` | Building silhouette, light-surface text, dark brand surface |
+| Slate | `#51444C` | Unlit windows and dusk shadows |
+| Walnut | `#70483D` | Shaded timber and secondary office façades |
+| Wood | `#BD8968` | Door, window frames and pavement details |
+| Apricot | `#E5BB9F` | Icon tile and warm architectural trim |
+| Gold | `#F7CE82` | Lit windows and dark-surface wordmark accent |
+| Cream | `#FFF0CE` | Dark-surface text and monochrome mark |
+| Paper | `#FFF8EC` | Light brand surface |
+| Coral | `#EF8B72` | Antenna light |
+| Petrol | `#2D5558` | Light-surface wordmark accent and featured office façade |
+| Teal | `#51817C` | Ground line and decorative accents |
+| Glass | `#87AEAD` | Cool sky details |
 
-Amber is a signal, not a decoration: on any screen it marks only what needs the user, plus one
-primary action. Status is always a word in its colour, never colour alone.
+Set light-surface text in Ink or Petrol on Paper. Set dark-surface text in Cream or Gold on Ink. Each pairing exceeds 4.5:1. Reserve the remaining colour combinations for illustration, and check contrast again when introducing another text background.
 
 ## Type
 
-- **JetBrains Mono** 800 for headings and the wordmark; 400 for code, paths, branches, env vars, times.
-- **Inter** 400 and 600 for everything else.
-- Sentence case everywhere. No tracked capitals.
+The wordmark spells **SeKantor** in a custom pixel alphabet. The colour versions highlight **Kantor** in Petrol on light surfaces and Gold on dark surfaces. The social graphics use the same pixel alphabet for the tagline. Use Inter for UI and body copy and JetBrains Mono for compact headings, code, paths and other fixed-width details.
 
-## Voice
+## Files
 
-Calm and brief. Ronda only speaks when there is something to do.
+| File | Use |
+| --- | --- |
+| `logo/mark.svg` | Full-colour building on a light surface |
+| `logo/mark-light.svg`, `logo/mark-dark.svg` | One-colour building in Cream or Ink |
+| `logo/wordmark-light.svg`, `logo/wordmark-dark.svg` | Wordmark alone. Light lettering is for dark surfaces and dark lettering is for light surfaces |
+| `logo/lockup-on-dark.svg`, `logo/lockup-on-light.svg` | Building and wordmark together, named for the background |
+| `logo/icon.svg` | App icon and web favicon on a rounded Apricot tile |
+| `logo/icon-32.png`, `logo/icon-192.png`, `logo/icon-512.png` | Raster icons with transparent corners. The desktop icon script uses the 512 px export |
+| `social/social-preview.png` | 1280 × 640 link preview |
+| `social/readme-banner.png` | 2560 × 640 repository banner |
 
-- Say what happened and what to do: "The hub is not answering. Start it with `ronda up`."
-- Use the product's nouns: session, agent, hook, pos, hub. Never "seamless", "supercharge", "unlock".
-- English in the UI. The Indonesian names are flavour for the docs:
-  - *Kentongan*: notifications
-  - *Pos*: an adapter for one platform (a pos ronda is the watch post)
-  - *Warga*: the daemon
+Run `python brand/build.py` from the repository root with Python 3.11 to regenerate the kit and update the copies in `web/public`.
 
-## Where it lives
+## Placement
 
-- Tokens and rules: `design.md`, `site/tokens.css`
-- Shared inbox components: `site/inbox.css`
-- Landing page: `site/index.html`; inbox design direction: `site/inbox.html`
-- Logo generator inputs: JetBrains Mono ExtraBold (OFL 1.1), outlined to paths
+- Leave clear space of at least one quarter of the mark's height around the mark, lockup and icon. For the standalone wordmark, use at least half its cap height.
+- Use at least 16 px for the standalone mark, 24 px tall for the lockup and 14 px cap height for the standalone wordmark. Use the tile at 32 px or larger when the full window pattern needs to read.
+- Preserve the aspect ratio. Use integer multiples of the source grid when the layout allows, and use nearest-neighbour scaling for raster assets.
+- Choose the lockup for the surface and leave the art clear of busy imagery. Avoid stretching, smoothing, outlines, shadows and recolouring individual windows.

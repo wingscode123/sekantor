@@ -1,0 +1,6 @@
+.mini-office { box-sizing: border-box; display: flex; flex-direction: column; width: 320px; height: 180px; padding: 0; border: 0; background: var(--color-paper-2, #f4eedb); color: var(--color-ink, #202c34); font: inherit; text-align: left; cursor: pointer; }
+.mini-office:focus-visible { outline: 3px solid var(--color-focus, #6599aa); outline-offset: -3px; }
+.mini-office__scene { display: block; height: 112px; flex-shrink: 0; overflow: auto; background: #e0ded1; }
+.mini-office canvas { display: block; width: 320px; max-width: none; image-rendering: pixelated; }
+.mini-office__counts { display: block; padding: 4px 8px 0; font-size: 12px; line-height: 16px; }
+.mini-office__summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding: 2px 8px 4px; font-size: 12px; line-height: 17px; overflow-wrap: anywhere; }

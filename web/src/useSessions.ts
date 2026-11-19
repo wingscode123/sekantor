@@ -1,19 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GHOST_MS, isGhost, subagentReportExpiry } from "./office/model";
 import type { Connection, Session, StreamMessage } from "./types";
 
 const PRIORITY: Record<Session["status"], number> = {
-  waiting_approval: 0, waiting_input: 1, error: 2, running: 3, done: 4, ended: 5,
+  waiting_approval: 0, waiting_input: 1, error: 2, running: 3, reported: 4, done: 5, ended: 6,
 };
 
 /** FR-10: status priority, then the longest wait first (same rule as the hub). */
-export function inboxOrder(sessions: Iterable<Session>): Session[] {
+export function sessionOrder(sessions: Iterable<Session>): Session[] {
   return [...sessions].sort(
     (a, b) => PRIORITY[a.status] - PRIORITY[b.status] || a.status_since.localeCompare(b.status_since),
   );
 }
 
+function normalizeReports(session: Session, receivedAt: string, previous?: Session): Session {
+  if (!session.subagents?.some(a => a.status === "reported" && !a.ended_at)) return session;
+  const previousReports = new Map(previous?.subagents?.map(a => [a.id, a.ended_at]));
+  return { ...session, subagents: session.subagents.map(a => a.status === "reported" && !a.ended_at
+    ? { ...a, ended_at: previousReports.get(a.id) ?? receivedAt } : a) };
+}
+
 /** Live sessions over WS /v1/stream, reconnecting with backoff. Auth rides on the hub's cookie. */
-export function useInbox(): {
+export function useSessions(): {
   sessions: Session[]; connection: Connection; loaded: boolean;
 } {
   const [byId, setById] = useState<Map<string, Session>>(new Map());
@@ -32,11 +40,12 @@ export function useInbox(): {
       ws.onopen = () => { retry.current = 0; setConnection("live"); };
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data) as StreamMessage;
+        const receivedAt = new Date().toISOString();
         if (msg.type === "snapshot") {
-          setById(new Map(msg.sessions.map((s) => [s.session_id, s])));
+          setById(prev => new Map(msg.sessions.map(s => [s.session_id, normalizeReports(s, receivedAt, prev.get(s.session_id))])));
           setLoaded(true);
         } else if (msg.type === "session") {
-          setById((prev) => new Map(prev).set(msg.session.session_id, msg.session));
+          setById((prev) => new Map(prev).set(msg.session.session_id, normalizeReports(msg.session, receivedAt, prev.get(msg.session.session_id))));
         }
       };
       ws.onclose = async (e) => {
@@ -57,15 +66,36 @@ export function useInbox(): {
     return () => { stopped = true; window.clearTimeout(timer); ws?.close(); };
   }, []);
 
-  return { sessions: inboxOrder(byId.values()), connection, loaded };
+  const sessions = useMemo(() => sessionOrder(byId.values()), [byId]);
+  return { sessions, connection, loaded };
 }
 
 /** Re-render every `ms` so "time in status" keeps moving. */
-export function useNow(ms = 1000): number {
+export function useNow(ms = 1000, enabled = true): number {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
+    if (!enabled) return;
     const id = window.setInterval(() => setNow(Date.now()), ms);
     return () => window.clearInterval(id);
-  }, [ms]);
+  }, [ms, enabled]);
+  return enabled ? now : Date.now();
+}
+
+/** One wake-up for the next departure expiry, with no recurring page clock. */
+export function useGhostNow(sessions: Session[]): number {
+  const [revision, expire] = useState(0);
+  const now = useMemo(() => Date.now(), [sessions, revision]);
+  useEffect(() => {
+    const expiries = sessions.filter(s => isGhost(s, now)).map(s => Date.parse(s.ended_at!) + GHOST_MS);
+    for (const s of sessions) {
+      for (const junior of s.subagents ?? []) {
+        const expiry = subagentReportExpiry(junior, now);
+        if (Number.isFinite(expiry) && expiry > now) expiries.push(expiry);
+      }
+    }
+    if (!expiries.length) return;
+    const timer = window.setTimeout(() => expire(n => n + 1), Math.max(0, Math.min(...expiries) - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [sessions, now]);
   return now;
 }

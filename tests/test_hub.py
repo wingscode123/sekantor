@@ -1,3 +1,6 @@
+import json
+import os
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -5,6 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from sekantor.hub.app import create_app, run_sweep
+from sekantor.schema import Event
 
 TOKEN = "t" * 43
 BASE = "http://127.0.0.1:7878"
@@ -61,6 +65,21 @@ def test_login_code_endpoint_is_bearer_only(client):
     assert client.post("/v1/login-code", headers={"Origin": BASE}).status_code == 403
 
 
+def test_shutdown_needs_the_bearer_token(client):
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
+    assert client.post("/v1/shutdown", headers={"Origin": BASE}).status_code == 403
+    client.cookies.clear()
+    assert client.post("/v1/shutdown").status_code == 401
+    assert client.app.state.should_exit is False
+
+
+def test_shutdown_sets_should_exit(client):
+    assert client.app.state.should_exit is False
+    r = client.post("/v1/shutdown", headers=AUTH)
+    assert r.status_code == 202 and r.json() == {"stopping": True}
+    assert client.app.state.should_exit is True
+
+
 def test_cookie_post_needs_same_origin(client):
     client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
     assert client.post("/v1/events", json=ev(1, "running")).status_code == 403
@@ -90,6 +109,25 @@ def test_duplicates_and_validation(client):
     assert client.post("/v1/events", headers=AUTH, json=ev(1, "running")).json()["duplicates"] == 1
     assert client.post("/v1/events", headers=AUTH, json={"nope": 1}).status_code == 422
     assert client.post("/v1/events", headers=AUTH, json=[ev(i, "running") for i in range(101)]).status_code == 413
+
+
+def test_session_api_exposes_subagent_report(client):
+    now = datetime.now(timezone.utc)
+    events = [
+        ev(1, "running", summary="Parent is working"),
+        ev(2, None, type="subagent_started", subagent={"id": "junior", "type": "Explore"}),
+        ev(3, None, type="subagent_ended", subagent={"id": "junior"}, summary="Found it"),
+    ]
+    for i, event in enumerate(events):
+        event["ts"] = (now + timedelta(seconds=i)).isoformat().replace("+00:00", "Z")
+    r = client.post("/v1/events", headers=AUTH, json=events)
+    assert r.json()["accepted"] == 3
+    session, = client.get("/v1/sessions", headers=AUTH).json()["sessions"]
+    assert (session["status"], session["summary"]) == ("running", "Parent is working")
+    assert session["subagents"] == [{
+        "id": "junior", "type": "Explore", "status": "reported", "summary": "Found it", "activity": None,
+        "started_at": events[1]["ts"], "ended_at": events[2]["ts"],
+    }]
 
 
 def test_timeline(client):
@@ -211,3 +249,213 @@ def test_actions_routes_are_gone(client):
 def test_an_old_event_with_capabilities_is_accepted(client):
     e = ev(1, "waiting_approval", capabilities=["approve", "deny"], request={"kind": "tool", "id": "r1"})
     assert client.post("/v1/events", json=e, headers=AUTH).status_code == 202
+
+
+# --- POST /v1/hooks/claude: the raw hook payload from the native forwarder ------------
+
+HOOK_ID = "0123456789abcdef01234567"
+HOOK_TS = "2026-11-17T01:02:03+00:00"
+PRE_TOOL = {"hook_event_name": "PreToolUse", "session_id": "abc", "cwd": "/work/proj", "tool_name": "Bash",
+            "tool_input": {"command": "ls"}}
+
+
+def hook_body(payload=None, env=None, **kw):
+    return {"v": 1, "id": HOOK_ID, "ts": HOOK_TS, "payload": payload or PRE_TOOL, "env": env or {}, **kw}
+
+
+def test_hook_endpoint_stores_what_the_python_hook_builds(client):
+    from sekantor.pos.claude_code import hook
+
+    env = {"CLAUDE_PID": str(os.getpid()), "CLAUDE_CODE_ENTRYPOINT": "claude-vscode"}
+    r = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(env=env))
+    assert r.status_code == 202 and r.json() == {"stored": True, "event_id": HOOK_ID}
+    want = hook.build_event(PRE_TOOL, env, event_id=HOOK_ID, ts=HOOK_TS)
+    got = client.get("/v1/sessions/claude:abc/events", headers=AUTH).json()["events"]
+    assert len(got) == 1
+    assert got[0] == Event.model_validate(want).model_dump(mode="json", exclude_none=True)
+    assert got[0]["event_id"] == HOOK_ID and got[0]["process"] == {"pid": os.getpid()}
+    assert got[0]["host"]["app"] == "vscode"
+
+
+def test_hook_endpoint_drops_ignored_cwd(client):
+    p = {**PRE_TOOL, "cwd": "C:/Users/x/AppData/Local/Programs/OpenBot/helper"}
+    r = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(p))
+    assert r.status_code == 202 and r.json() == {"stored": False}
+    assert client.app.state.store.sessions() == []
+
+
+def test_hook_endpoint_ignores_events_with_no_translation(client):
+    p = {"hook_event_name": "SubagentStop", "session_id": "abc", "cwd": "/w"}
+    r = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(p))
+    assert r.status_code == 202 and r.json() == {"stored": False}
+
+
+def test_hook_endpoint_needs_the_bearer_token(client):
+    code = client.app.state.login_codes.issue()
+    client.get(f"/?login={code}", follow_redirects=False)  # the client now carries the cookie
+    r = client.post("/v1/hooks/claude", json=hook_body(), headers={"Origin": BASE})
+    assert r.status_code == 403
+    assert client.app.state.store.sessions() == []
+
+
+@pytest.mark.parametrize("body", [
+    {"v": 1, "id": HOOK_ID, "ts": HOOK_TS, "payload": [], "env": {}},
+    {"v": 1, "id": HOOK_ID, "ts": HOOK_TS, "payload": {"a": 1}, "env": {"A": 1}},
+    {"v": 1, "id": "", "ts": HOOK_TS, "payload": {"a": 1}, "env": {}},
+    {"v": 1, "id": HOOK_ID, "ts": "yesterday", "payload": {"a": 1}, "env": {}},
+    {"v": 2, "id": HOOK_ID, "ts": HOOK_TS, "payload": {"a": 1}, "env": {}},
+    {"id": HOOK_ID},
+    [1, 2],
+    "text",
+])
+def test_hook_endpoint_malformed_body_is_422(client, body):
+    assert client.post("/v1/hooks/claude", headers=AUTH, json=body).status_code == 422
+
+
+def test_hook_endpoint_not_json_is_422(client):
+    r = client.post("/v1/hooks/claude", headers={**AUTH, "Content-Type": "application/json"}, content=b"\xff\xfe{")
+    assert r.status_code == 422
+
+
+def test_hook_endpoint_huge_payload_is_413(client):
+    big = {**PRE_TOOL, "tool_input": {"text": "x" * (4 * 1024 * 1024 + 10)}}
+    assert client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(big)).status_code == 413
+
+
+def test_hook_endpoint_session_start_schedules_the_deep_follow_up(client, monkeypatch):
+    import threading
+
+    calls, done = [], threading.Event()
+
+    def collect(pid, deep, **kw):
+        calls.append((pid, deep))
+        if not deep:
+            return [], None, None
+        done.set()
+        return ["zsh", "Code.exe"], "/x/Code.exe", None
+
+    monkeypatch.setattr("sekantor.pos.claude_code.fingerprint.collect", collect)
+    start = {"hook_event_name": "SessionStart", "session_id": "abc", "cwd": "/w", "source": "startup"}
+    r = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(start, env={"CLAUDE_PID": "4242"}))
+    assert r.status_code == 202
+    assert done.wait(5)
+    for _ in range(100):
+        if len(client.get("/v1/sessions/claude:abc/events", headers=AUTH).json()["events"]) == 2:
+            break
+        time.sleep(0.05)
+    events = client.get("/v1/sessions/claude:abc/events", headers=AUTH).json()["events"]
+    assert len(events) == 2 and (4242, True) in calls
+    assert events[0]["type"] == "message" or events[1]["type"] == "message"
+
+
+def test_hook_endpoint_other_events_do_not_run_the_deep_collector(client, monkeypatch):
+    def collect(pid, deep, **kw):
+        assert not deep
+        return [], None, None
+
+    monkeypatch.setattr("sekantor.pos.claude_code.fingerprint.collect", collect)
+    assert client.post("/v1/hooks/claude", headers=AUTH, json=hook_body()).status_code == 202
+
+
+def test_hook_env_file_lists_rule_env_names_and_claude_pid(tmp_path):
+    from sekantor.hub.app import create_app
+    from sekantor.pos.claude_code.fingerprint import load_rules
+
+    create_app(home=tmp_path, port=7878, token=TOKEN)
+    names = (tmp_path / "hook-env.txt").read_text(encoding="utf-8").split("\n")
+    assert names[-1] == "" and names[:-1] == sorted(set(names[:-1]))
+    want = {s["env"] for h in load_rules()["hosts"] for s in h["signals"] if "env" in s}
+    want |= {s["env"] for s in load_rules()["fallback"]["terminal"]["signals"] if "env" in s}
+    assert set(names[:-1]) == want | {"CLAUDE_PID", "ORCA_AGENT_SESSION_ID", "ORCA_TERMINAL_HANDLE"}
+    assert "CLAUDE_CODE_ENTRYPOINT" in names and "ANTHROPIC_API_KEY" not in names
+
+
+def test_setup_endpoint_matches_setup_json(client):
+    from typer.testing import CliRunner
+
+    from sekantor.cli import app as cli_app
+
+    assert client.get("/v1/setup").status_code == 401
+    r = client.get("/v1/setup", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json() == json.loads(CliRunner().invoke(cli_app, ["setup", "--json"]).stdout)
+
+
+def test_setup_endpoint_refuses_cookie(client):
+    code = client.app.state.login_codes.issue()
+    client.get(f"/?login={code}", follow_redirects=False)
+    assert client.get("/v1/setup").status_code == 403
+
+
+@pytest.mark.parametrize("cwd", [5, ["/w"], {"a": 1}])
+def test_hook_endpoint_non_string_cwd_is_422(client, cwd):
+    r = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body({**PRE_TOOL, "cwd": cwd}))
+    assert r.status_code == 422
+
+
+def test_hook_endpoint_duplicate_id_is_not_stored_twice_nor_followed_up(client, monkeypatch):
+    calls = []
+
+    def collect(pid, deep, **kw):
+        calls.append(deep)
+        return [], None, None
+
+    monkeypatch.setattr("sekantor.pos.claude_code.fingerprint.collect", collect)
+    start = {"hook_event_name": "SessionStart", "session_id": "abc", "cwd": "/w", "source": "startup"}
+    first = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(start, env={"CLAUDE_PID": "1"}))
+    for _ in range(100):
+        if True in calls:
+            break
+        time.sleep(0.05)
+    again = client.post("/v1/hooks/claude", headers=AUTH, json=hook_body(start, env={"CLAUDE_PID": "1"}))
+    time.sleep(0.5)
+    assert first.json()["stored"] is True and again.status_code == 202 and again.json() == {"stored": False}
+    assert calls.count(True) == 1
+
+
+def test_acknowledge_reports(client):
+    path = "/v1/sessions/claude:a/acknowledge"
+
+    def session():
+        return client.get("/v1/sessions", headers=AUTH).json()["sessions"][0]
+
+    assert client.post(path).status_code == 401
+    assert client.post(path, headers=AUTH).status_code == 404
+    assert client.post("/v1/events", headers=AUTH, json=ev(1, "running")).status_code == 202
+    assert session()["report_pending"] is False
+    assert client.post(path, headers=AUTH).status_code == 409
+    assert client.post("/v1/events", headers=AUTH, json=ev(2, "reported", request={"kind": "report"})).status_code == 202
+    assert session()["report_pending"] is True and session()["needs_you"] is False
+    client.get(f"/?login={client.app.state.login_codes.issue()}", follow_redirects=False)
+    assert client.post(path).status_code == 403
+    assert client.post(path, headers={"Origin": "http://evil.example"}).status_code == 403
+    with client.websocket_connect(BASE.replace("http:", "ws:") + "/v1/stream", headers={"Origin": BASE}) as ws:
+        assert ws.receive_json()["sessions"][0]["report_pending"] is True
+        response = client.post(path, headers={"Origin": BASE})
+        assert response.status_code == 200
+        update = ws.receive_json()
+        assert update["session"]["report_pending"] is False and "event" not in update
+    assert session()["acknowledged_at"] and session()["status"] == "reported"
+    assert client.post(path, headers=AUTH).json() == response.json()
+    assert client.post("/v1/events", headers=AUTH, json=ev(3, None, type="message")).status_code == 202
+    assert session()["report_pending"] is False
+    since = session()["status_since"]
+    assert client.post("/v1/events", headers=AUTH, json=ev(4, "reported", request={"kind": "report"})).status_code == 202
+    assert session()["status_since"] == since and session()["acknowledged_at"]
+    assert session()["report_pending"] is False
+    assert client.post("/v1/events", headers=AUTH, json=ev(5, "reported")).status_code == 202
+    assert session()["report_pending"] is True
+
+
+def test_web_ui_cache_headers(tmp_path, monkeypatch):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>x</title>")
+    (dist / "assets" / "lockup-abc123.svg").write_text("<svg/>")
+    monkeypatch.setattr("sekantor.hub.app.web_dist", lambda: dist)
+    app = create_app(home=tmp_path / "home", port=7878, token=TOKEN)
+    with TestClient(app, base_url=BASE) as c:
+        assert c.get("/", headers=AUTH).headers["cache-control"] == "no-cache"
+        asset = c.get("/assets/lockup-abc123.svg", headers=AUTH)
+        assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert c.get("/assets/lockup-abc123.svg").status_code in (401, 403)

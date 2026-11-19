@@ -1,5 +1,14 @@
 version: 2.1
 
+orbs:
+  win: circleci/windows@5
+
+parameters:
+  # Trigger a pipeline with desktop=true to build the Windows installer on any branch.
+  desktop:
+    type: boolean
+    default: false
+
 jobs:
   # The sekantor Python package: uv, tests with pytest, wheel build as in release.yml. No linter is set up.
   python:
@@ -54,8 +63,152 @@ jobs:
           name: Build
           command: npm run build
 
+  # The Windows desktop app: PyInstaller folder (dist/sekantor) + native hook (hook/) + Tauri shell -> unsigned NSIS installer.
+  # Order matters: tauri-build (also run by `cargo test`) needs the generated icons and dist/sekantor/.
+  desktop-windows:
+    executor:
+      name: win/default
+    environment:
+      UV_VERSION: "0.12.22"
+      NODE_VERSION: "20.20.0"
+      CARGO_TERM_COLOR: never
+    steps:
+      - checkout
+      - run:
+          shell: bash.exe
+          name: Install uv, Node 20 and Rust
+          command: |
+            set -euxo pipefail
+            mkdir -p logs
+            python -m pip install --quiet "uv==$UV_VERSION"
+            python -m uv --version
+            nvm install "$NODE_VERSION"
+            nvm use "$NODE_VERSION"
+            node --version
+            curl -sSfL -o rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
+            ./rustup-init.exe -y --profile minimal --default-toolchain stable
+            rm rustup-init.exe
+            export PATH="$HOME/.cargo/bin:$PATH"
+            rustc --version
+            cargo --version
+      - restore_cache:
+          keys:
+            - win-uv-v1-{{ checksum "uv.lock" }}
+      - restore_cache:
+          keys:
+            - win-npm-v1-{{ checksum "web/package-lock.json" }}-{{ checksum "desktop/package-lock.json" }}
+      - restore_cache:
+          keys:
+            - win-cargo-v2-{{ checksum "desktop/src-tauri/Cargo.toml" }}-{{ checksum "hook/Cargo.toml" }}
+      - run:
+          shell: bash.exe
+          name: Build the web UI
+          command: |
+            set -euxo pipefail
+            cd web
+            npm ci
+            npm run build
+      - run:
+          shell: bash.exe
+          name: PyInstaller (dist/sekantor)
+          command: |
+            set -euxo pipefail
+            python -m uv sync --locked --group packaging
+            python -m uv run pyinstaller packaging/sekantor.spec --distpath dist --workpath build/pyi --noconfirm 2>&1 | tee logs/pyinstaller.log
+      - run:
+          shell: bash.exe
+          name: Native hook (cargo test, release build into dist/sekantor)
+          no_output_timeout: 30m
+          command: |
+            set -euxo pipefail
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cd hook
+            cargo test 2>&1 | tee ../logs/hook-cargo-test.log
+            cargo build --release 2>&1 | tee ../logs/hook-cargo-build.log
+            cp target/release/sekantor-hook.exe ../dist/sekantor/
+            ls -l ../dist/sekantor/sekantor-hook.exe
+      - run:
+          shell: bash.exe
+          name: Smoke test the PyInstaller folder
+          command: |
+            set -euxo pipefail
+            SMOKE_LOG_DIR=logs python -m uv run python packaging/smoke.py dist/sekantor --port 7899 --service
+      - save_cache:
+          key: win-uv-v1-{{ checksum "uv.lock" }}
+          paths:
+            - ~/AppData/Local/uv/cache
+      - run:
+          shell: bash.exe
+          name: Generate icons
+          command: |
+            set -euxo pipefail
+            cd desktop
+            npm ci
+            npm run icons
+      - save_cache:
+          key: win-npm-v1-{{ checksum "web/package-lock.json" }}-{{ checksum "desktop/package-lock.json" }}
+          paths:
+            - ~/AppData/Local/npm-cache
+      - run:
+          shell: bash.exe
+          name: cargo test
+          no_output_timeout: 30m
+          command: |
+            set -euxo pipefail
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cd desktop/src-tauri
+            cargo test 2>&1 | tee ../../logs/cargo-test.log
+      - run:
+          shell: bash.exe
+          name: Build the installer (tauri build)
+          no_output_timeout: 30m
+          command: |
+            set -euxo pipefail
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cd desktop
+            rm -rf src-tauri/target/release/bundle   # only this build's installer gets uploaded
+            npx tauri build 2>&1 | tee ../logs/tauri-build.log
+            mkdir -p ../installer
+            cp src-tauri/target/release/bundle/nsis/*.exe ../installer/
+            ls -l ../installer
+      - save_cache:
+          key: win-cargo-v2-{{ checksum "desktop/src-tauri/Cargo.toml" }}-{{ checksum "hook/Cargo.toml" }}
+          paths:
+            - ~/.cargo/registry
+            - ~/.cargo/git
+      - run:
+          shell: bash.exe
+          name: Install, first run and uninstall the installer
+          command: |
+            set -euxo pipefail
+            python -m uv run python packaging/installer_check.py "installer/SeKantor_*-setup.exe" 2>&1 | tee logs/installer-check.log
+      - store_artifacts:
+          path: installer
+          destination: installer
+      - run:
+          shell: bash.exe
+          name: Collect logs
+          when: always
+          command: |
+            mkdir -p logs
+            cp desktop/src-tauri/Cargo.lock logs/ 2>/dev/null || true
+            cp hook/Cargo.lock logs/hook-Cargo.lock 2>/dev/null || true
+            cp -r build/pyi/sekantor/warn-*.txt logs/ 2>/dev/null || true
+            true
+      - store_artifacts:
+          path: logs
+          destination: logs
+
 workflows:
   ci:
     jobs:
       - python
       - web
+  desktop:
+    when:
+      or:
+        - equal: [main, << pipeline.git.branch >>]
+        - matches: { pattern: "^desktop-.*$", value: << pipeline.git.branch >> }
+        - << pipeline.parameters.desktop >>
+    jobs:
+      - desktop-windows

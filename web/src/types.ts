@@ -1,11 +1,28 @@
-export type Status = "waiting_approval" | "waiting_input" | "error" | "running" | "done" | "ended";
+import type { Kind } from "./office/model";
+
+export type Status = "waiting_approval" | "waiting_input" | "error" | "running" | "reported" | "done" | "ended";
+export type Floor = "claude" | "orca" | "openbot";
 
 /** The `status--*` modifier in site/app.css for each status. */
 export const STATUS_CLASS: Record<Status, string> = {
-  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", done: "done", ended: "ended",
+  waiting_approval: "approval", waiting_input: "input", error: "error", running: "running", reported: "reported", done: "done", ended: "ended",
 };
 
+export interface Subagent {
+  id: string;
+  type: string;
+  status: "working" | "reported";
+  activity: { tool: string; kind: "read" | "edit" | "run" | "web" | "other" } | null;
+  summary: string | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
 export interface Session {
+  floor?: Floor;
+  team?: { project: string; worktree: string; role: "lead" | "junior"; lead: string | null; model: string | null } | null;
+  report_to?: "you" | "lead";
+  project?: { name: string; kind: Kind; signals: string[] } | null;
   session_id: string;
   source: string;
   status: Status;
@@ -21,7 +38,10 @@ export interface Session {
   capabilities: string[];
   pid?: number | null;
   activity?: { tool: string; kind: "read" | "edit" | "run" | "web" | "other" } | null;
+  subagents?: Subagent[];
   needs_you: boolean;
+  report_pending?: boolean;
+  acknowledged_at?: string | null;
   source_label: string;
   host_label?: string | null;
   snoozed_until?: string | null;

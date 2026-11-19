@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The bundled first-run page may call the app's three commands and nothing else. No remote URLs: the hub page on 127.0.0.1 gets no IPC.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-status", "allow-connect", "allow-open-office"]
+}

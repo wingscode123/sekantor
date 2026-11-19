@@ -1,12 +1,12 @@
 # Design: SeKantor
 
 The locked system. Every Hallmark run reads this first and pages share it. Change it on purpose; the file is the rule.
-Brand source: `docs/PRD.md` (Identitas visual). Guidelines for people: `brand/BRAND.md`.
+Brand source and guidelines: `brand/BRAND.md`. For the pixel office, see `docs/superpowers/specs/2026-11-16-sekantor-design.md`.
 
-## System
+## Existing web styles
 - Genre: modern-minimal
-- Shape of the first page: custom (night inbox); the product screen is an app screen
-- Theme: brand (vibe: "night watch, lantern amber, terminal calm")
+- The existing landing page and inbox use the web styles below.
+- SeKantor brand: apricot plaster, walnut and petrol blue, with a pixel office building as the mark.
 - Axes: dark/mono/warm · posture: restrained (amber only where an agent waits, plus the one primary control)
 
 ## Tokens
@@ -41,3 +41,13 @@ The spacing scale, the type scale, the easings and the durations are the scaffol
 
 ## Exports
 `site/tokens.css` in this project. The M1 web UI (`web/`) imports it and `site/inbox.css`.
+
+## Landing page (`site/index.html`)
+The landing page carries the SeKantor brand palette (`brand/BRAND.md`) in its own `:root` block in
+`site/styles.css`; `site/tokens.css` keeps the app's values above, so the web app is unaffected.
+- Light Paper surface, Ink text, Petrol for the one primary control, Teal focus ring; an Ink band
+  (Cream text, Gold labels) for the local-first facts and the footer.
+- Fonts are self-hosted from `site/fonts/` (OFL); the page makes no outbound requests for assets.
+- Pictures are stills of the real office, rendered by `web/src/office/render.ts` with sample
+  sessions, in `site/img/`. Crops show at 2x native with `image-rendering: pixelated`; the hero is
+  downscaled from 2x with smoothing. Never draw the office by hand or imitate a game's look.

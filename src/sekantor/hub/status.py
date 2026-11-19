@@ -5,28 +5,50 @@ Pure functions, no I/O: ``apply`` (one event), ``inbox_order`` (FR-10), ``sweep`
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Callable, Iterable
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Iterable, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from sekantor.schema import Agent, Capability, Event, Host, Request, Status, Workspace
+from sekantor.schema import SUBAGENT_EVENTS, Activity, Agent, Capability, Event, Host, OrcaPlacement, Request, Status, Workspace
 
 NEEDS_YOU = {Status.waiting_approval, Status.waiting_input, Status.error}
 WAITING = {Status.waiting_approval, Status.waiting_input}
 
-# FR-10: waiting_approval > waiting_input > error > running > done (ended last, as history).
+# FR-10: waiting_approval > waiting_input > error > running > reported > done (ended last, as history).
 PRIORITY = {
     Status.waiting_approval: 0,
     Status.waiting_input: 1,
     Status.error: 2,
     Status.running: 3,
-    Status.done: 4,
-    Status.ended: 5,
+    Status.reported: 4,
+    Status.done: 5,
+    Status.ended: 6,
 }
 
 SILENCE_TIMEOUT = timedelta(minutes=10)
 ENDED_GRACE = timedelta(seconds=15)
+SUBAGENT_REPORT_TTL = timedelta(seconds=60)
+
+
+class SubagentState(BaseModel):
+    id: str
+    type: str = "unknown"
+    status: Literal["working", "reported"] = "working"
+    activity: Activity | None = None
+    summary: str | None = None
+    started_at: datetime
+    ended_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class Team:
+    project: str
+    worktree: str
+    role: Literal["lead", "junior"]
+    lead: str | None = None
+    model: str | None = None
 
 
 class SessionState(BaseModel):
@@ -38,6 +60,8 @@ class SessionState(BaseModel):
     started_at: datetime
     last_event_at: datetime
     ended_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    reported_to_lead_at: datetime | None = None
     agent: Agent | None = None
     workspace: Workspace = Workspace()
     host: Host | None = None
@@ -46,14 +70,47 @@ class SessionState(BaseModel):
     capabilities: list[Capability] = []
     pid: int | None = None
     activity: dict | None = None  # {"tool", "kind"} of the last tool started while running (ADR-0022)
+    subagents: list[SubagentState] = []
     snoozed_until: datetime | None = None  # FR-15: no notifications until then
+    orca: OrcaPlacement | None = None
+    orca_session_id: str | None = None
+    orca_terminal_handle: str | None = None
+    team: Team | None = Field(default=None, exclude=True)
+    team_resolved: bool = Field(default=False, exclude=True)
+
+    @property
+    def floor(self) -> Literal["claude", "orca", "openbot"]:
+        host = self.host.app if self.host else None
+        if "openbot" in (self.source, host):
+            return "openbot"
+        if "orca" in (self.source, host):
+            return "orca"
+        return "claude"
+
+    @property
+    def report_to(self) -> Literal["you", "lead"]:
+        if self.status is Status.reported and self.reported_to_lead_at is not None:
+            return "lead"
+        return "you"
+
+    def prune_subagents(self, now: datetime) -> None:
+        cutoff = now - SUBAGENT_REPORT_TTL
+        self.subagents = [a for a in self.subagents if a.ended_at is None or a.ended_at > cutoff]
 
     def snoozed(self, now: datetime) -> bool:
         return self.snoozed_until is not None and self.snoozed_until > now
 
     @property
     def needs_you(self) -> bool:
+        if self.status is Status.waiting_input:
+            return self.request is not None and self.request.kind == "question"
         return self.status in NEEDS_YOU
+
+    @property
+    def report_pending(self) -> bool:
+        return self.status is Status.reported and self.report_to == "you" and (
+            self.acknowledged_at is None or self.acknowledged_at < self.status_since
+        )
 
 
 def _merge_workspace(old: Workspace, new: Workspace | None) -> Workspace:
@@ -66,8 +123,71 @@ def _activity(event: Event) -> dict | None:
     return event.activity.model_dump() if event.activity else None
 
 
+def _merge_orca(s: SessionState, event: Event) -> None:
+    if event.orca is not None and (s.orca is None or event.ts >= s.last_event_at):
+        s.orca = event.orca
+    if event.orca_session_id and (s.orca_session_id is None or event.ts >= s.last_event_at):
+        s.orca_session_id = event.orca_session_id
+    if event.orca_terminal_handle and (s.orca_terminal_handle is None or event.ts >= s.last_event_at):
+        s.orca_terminal_handle = event.orca_terminal_handle
+
+
+def _apply_subagent(state: SessionState | None, event: Event) -> SessionState:
+    # A child can arrive before SessionStart. Allow an earlier parent event to replace the default status.
+    s = state.model_copy(deep=True) if state else SessionState(
+        session_id=event.session_id,
+        source=event.source,
+        status=Status.running,
+        status_since=event.ts,
+        status_ts=datetime.min.replace(tzinfo=timezone.utc),
+        started_at=event.ts,
+        last_event_at=event.ts,
+        agent=event.agent,
+        workspace=_merge_workspace(Workspace(), event.workspace),
+        host=event.host,
+        pid=event.process.pid if event.process else None,
+    )
+    _merge_orca(s, event)
+    s.last_event_at = max(s.last_event_at, event.ts)
+    if event.subagent is None or event.type not in SUBAGENT_EVENTS:
+        return s
+    worker = next((a for a in s.subagents if a.id == event.subagent.id), None)
+    if worker is None:
+        worker = SubagentState(id=event.subagent.id, started_at=event.ts)
+        s.subagents.append(worker)
+    worker.started_at = min(worker.started_at, event.ts)
+    if event.subagent.type and event.subagent.type != "unknown":
+        worker.type = event.subagent.type
+    if event.type == "subagent_ended" and (worker.ended_at is None or event.ts >= worker.ended_at):
+        worker.status = "reported"
+        worker.summary = event.summary
+        worker.ended_at = event.ts
+        worker.activity = None
+    elif event.type == "subagent_activity" and worker.status == "working":
+        worker.activity = event.activity
+    s.subagents.sort(key=lambda a: a.status == "reported")
+    return s
+
+
 def apply(state: SessionState | None, event: Event) -> SessionState:
     """Return the session state after ``event``. Never mutates ``state``."""
+    pending_worker = state.request.subagent if state and state.request else None
+    owns_approval = (
+        state is not None and state.status is Status.waiting_approval and event.subagent is not None
+        and pending_worker is not None and pending_worker.id == event.subagent.id
+    )
+    if event.type in SUBAGENT_EVENTS:
+        s = _apply_subagent(state, event)
+        if event.type == "subagent_ended" and owns_approval and event.ts >= s.status_ts:
+            s.status = Status.running
+            s.status_since = s.status_ts = event.ts
+            s.request = None
+            s.capabilities = []
+        return s
+    if event.subagent is not None and not (
+        event.type == "status_changed" and event.status is Status.running and owns_approval
+    ):
+        return _apply_subagent(state, event)
     if state is None:
         status = event.status or Status.running
         return SessionState(
@@ -83,15 +203,21 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             workspace=_merge_workspace(Workspace(), event.workspace),
             host=event.host,
             summary=event.summary,
-            request=event.request if status in WAITING else None,
+            request=event.request if status in WAITING or status is Status.reported else None,
             capabilities=list(event.capabilities),
             pid=event.process.pid if event.process else None,
             activity=_activity(event) if status is Status.running else None,
+            orca=event.orca,
+            orca_session_id=event.orca_session_id,
+            orca_terminal_handle=event.orca_terminal_handle,
         )
 
     s = state.model_copy(deep=True)
     newer = event.ts >= s.status_ts
+    _merge_orca(s, event)
     s.last_event_at = max(s.last_event_at, event.ts)
+    if event.type == "session_started":
+        s.started_at = min(s.started_at, event.ts)
 
     # Details that are safe to take from any event, in any order.
     if event.agent is not None:
@@ -104,6 +230,13 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
 
     if not newer:
         return s  # stale for status purposes: keep it in the timeline only
+
+    if (event.source == "claude-code" and event.type == "message" and event.status is None
+            and event.request is not None and event.request.kind == "report"):
+        # Claude's idle prompt is a fallback when the Stop event was missed.
+        if s.status is not Status.running:
+            return s
+        event = event.model_copy(update={"status": Status.reported, "summary": s.summary})
 
     if event.summary:
         s.summary = event.summary
@@ -120,11 +253,24 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             and s.request is not None and s.request.kind == "question"):
         return s  # the permission notification that follows a question (AskUserQuestion)
 
+    if (event.status is Status.waiting_approval and s.status is Status.waiting_approval
+            and event.request is not None and event.request.tool is None
+            and event.request.subagent is not None and pending_worker is not None
+            and event.request.subagent.id == pending_worker.id and s.request.tool is not None):
+        return s  # a permission notification also arrives for the detailed request
+
+    if event.type == "activity" and s.status is Status.running and event.activity is not None:
+        s.activity = _activity(event)
     if event.status is not None:
         changed = event.status is not s.status
-        if changed:
+        new_report = event.status is Status.reported and (changed or event.request != s.request)
+        if changed or new_report:
             s.status = event.status
             s.status_since = event.ts
+            s.reported_to_lead_at = None
+        if new_report:
+            s.acknowledged_at = None
+            s.summary = event.summary
         s.status_ts = event.ts
         if s.status is Status.running:
             s.activity = _activity(event) or s.activity
@@ -142,13 +288,15 @@ def apply(state: SessionState | None, event: Event) -> SessionState:
             else:
                 s.request, s.capabilities = event.request, list(event.capabilities)
         else:
-            s.request, s.capabilities = None, list(event.capabilities)
+            s.request = event.request if s.status is Status.reported else None
+            s.capabilities = list(event.capabilities)
     return s
 
 
 def sort_key(s: SessionState) -> tuple:
     """Status priority first, then the longest wait (oldest status_since) first."""
-    return (PRIORITY[s.status], s.status_since)
+    status = Status.done if s.report_to == "lead" else s.status
+    return (PRIORITY[status], s.status_since)
 
 
 def inbox_order(sessions: Iterable[SessionState]) -> list[SessionState]:

@@ -38,10 +38,10 @@ def test_assess_states():
     w = Watch(agent="codex", agent_pid=1)
     assert assess(w, "Working on it...\nreading files", r, now=0)[0] == "running"
     assert assess(w, "Working on it...\nreading files", r, now=2)[0] == "running"       # still, no prompt yet
-    assert assess(w, "Working on it...\nreading files", r, now=31)[0] == "waiting_input"  # quiet a long time
+    assert assess(w, "Working on it...\nreading files", r, now=31)[0] == "reported"  # quiet a long time
     w2 = Watch(agent="codex", agent_pid=1)
     assert assess(w2, "Done.\n> ", r, now=0)[0] == "running"
-    assert assess(w2, "Done.\n> ", r, now=5)[0] == "waiting_input"                     # at a prompt
+    assert assess(w2, "Done.\n> ", r, now=5)[0] == "reported"                     # at a prompt
     status, rid, prompt, _ = assess(Watch(agent="codex", agent_pid=1), "plan ready\nRun npm test? (y/n)", r, now=0)
     assert status == "waiting_approval" and rid.startswith("tmux-") and "npm test" in prompt
 
@@ -98,7 +98,7 @@ def test_pos_reports_a_waiting_approval():
     assert len(hub.events) == 2  # the same prompt is reported once
 
 
-def test_pos_reports_waiting_for_input_and_the_end():
+def test_pos_reports_idle_and_the_end():
     clock = [0.0]
     pos, tmux, hub, agents = make(clock)
     tmux.screen["%1"] = "All done.\n> "
@@ -106,7 +106,7 @@ def test_pos_reports_waiting_for_input_and_the_end():
     clock[0] = 5
     pos.tick()
     ev = hub.events[-1]
-    assert ev["status"] == "waiting_input" and ev["request"]["kind"] == "input"
+    assert ev["status"] == "reported" and ev["request"]["kind"] == "report"
     del agents[100]
     pos.tick()
     assert hub.events[-1]["type"] == "session_ended" and hub.events[-1]["status"] == "ended"
@@ -176,3 +176,14 @@ def test_no_tmux_server_ends_sessions():
     pos.tick()
     pos.tick()
     assert [e["type"] for e in hub.events] == ["session_started", "session_ended"]
+
+
+def test_run_hidden_opens_no_console_window(monkeypatch):
+    import subprocess
+
+    from sekantor.pos.tmux import pos
+
+    seen = {}
+    monkeypatch.setattr(pos.subprocess, "run", lambda args, **kw: seen.update(kw))
+    pos.run_hidden(["tmux"], capture_output=True)
+    assert seen["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)

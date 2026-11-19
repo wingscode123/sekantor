@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from sekantor.pos.claude_code.translate import translate
 from sekantor.schema import Event, Status
 from sekantor.hub.status import SessionState, apply, inbox_order, sweep, NEEDS_YOU
 
@@ -38,6 +39,90 @@ def test_first_event_creates_session():
     assert s.status_since == T0
     assert s.started_at == T0
     assert s.workspace.cwd == "/w" and s.workspace.branch == "main"
+
+
+def test_subagent_lifecycle_preserves_parent_state():
+    parent = run(ev(Status.running, summary="Parent is editing", activity={"tool": "Edit", "kind": "edit"}))
+    junior = {"id": "junior"}
+    started = apply(parent, ev(None, at=1, type="subagent_started", subagent={**junior, "type": "Explore"}))
+    working = apply(started, ev(None, at=2, type="subagent_activity", subagent=junior,
+                                activity={"tool": "Read", "kind": "read"}))
+    assert working.subagents[0].activity.tool == "Read"
+    assert working.subagents[0].status == "working"
+    ended = apply(working, ev(None, at=3, type="subagent_ended", subagent=junior, summary="Found it"))
+    another = apply(ended, ev(None, at=4, type="subagent_started", subagent={"id": "another"}))
+    assert [a.id for a in another.subagents] == ["another", "junior"]
+    assert another.subagents[1].model_dump() == {
+        "id": "junior", "type": "Explore", "status": "reported", "activity": None, "summary": "Found it",
+        "started_at": T0 + timedelta(seconds=1), "ended_at": T0 + timedelta(seconds=3),
+    }
+    for state in (started, working, ended, another):
+        assert (state.status, state.status_ts, state.activity, state.summary) == (
+            parent.status, parent.status_ts, parent.activity, parent.summary,
+        )
+    assert parent.subagents == []
+
+
+def test_late_subagent_start_and_activity_do_not_reopen_report():
+    s = run(
+        ev(None, at=3, type="subagent_ended", subagent={"id": "junior"}, summary="Found it"),
+        ev(Status.waiting_input, type="session_started", summary="Parent started"),
+        ev(None, at=1, type="subagent_started", subagent={"id": "junior", "type": "Explore"}),
+        ev(None, at=2, type="subagent_activity", subagent={"id": "junior"}, activity={"tool": "Read", "kind": "read"}),
+    )
+    assert s.status is Status.waiting_input and s.summary == "Parent started"
+    worker, = s.subagents
+    assert worker.status == "reported" and worker.summary == "Found it" and worker.activity is None
+    assert worker.type == "Explore" and worker.started_at == T0 + timedelta(seconds=1)
+
+
+def junior_hook(name, at, worker="junior", **payload):
+    event = translate({"hook_event_name": name, "session_id": "s1", "agent_id": worker, **payload})
+    event["ts"] = (T0 + timedelta(seconds=at)).isoformat()
+    return Event.model_validate(event)
+
+
+@pytest.mark.parametrize("followup", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_subagent_permission_request_needs_you_until_matching_followup(followup):
+    ask = junior_hook("PermissionRequest", 2, tool_name="Bash", tool_input={"command": "npm test"})
+    s = run(ev(Status.running), ask)
+    assert s.status is Status.waiting_approval and s.needs_you
+    assert s.request.subagent.id == "junior" and s.request.input == "npm test"
+    assert s.summary == "Wants to run: npm test"
+
+    notified = apply(s, junior_hook("Notification", 3, notification_type="permission_prompt"))
+    assert notified.request == s.request
+    assert apply(notified, junior_hook(followup, 4, worker="other")).status is Status.waiting_approval
+    assert apply(notified, junior_hook(followup, 1)).status is Status.waiting_approval
+    cleared = apply(notified, junior_hook(followup, 5))
+    assert cleared.status is Status.running and not cleared.needs_you and cleared.request is None
+
+
+def test_subagent_permission_notification_alone_needs_you():
+    s = run(ev(Status.running), junior_hook("Notification", 1, notification_type="permission_prompt"))
+    assert s.status is Status.waiting_approval and s.needs_you and s.request.subagent.id == "junior"
+    assert apply(s, junior_hook("PermissionDenied", 2)).status is Status.running
+
+
+def test_subagent_stop_releases_only_its_own_pending_approval():
+    ask = junior_hook("PermissionRequest", 2, tool_name="Bash")
+    other_end = junior_hook("SubagentStop", 3, worker="other", last_assistant_message="Other report")
+    pending = run(ev(Status.running), ask, other_end)
+    assert pending.needs_you and pending.request.subagent.id == "junior"
+
+    end = junior_hook("SubagentStop", 4, last_assistant_message="Junior report")
+    released = apply(pending, end)
+    assert released.status is Status.running and released.status_since == released.status_ts == end.ts
+    assert not released.needs_you and released.request is None
+    assert released.summary == pending.summary
+    assert [(a.id, a.status, a.summary) for a in released.subagents] == [
+        ("other", "reported", "Other report"), ("junior", "reported", "Junior report"),
+    ]
+
+
+def test_subagent_followup_does_not_clear_parents_own_approval():
+    s = run(ev(Status.waiting_approval, request={"kind": "tool", "tool": "Bash"}), junior_hook("PostToolUse", 1))
+    assert s.status is Status.waiting_approval and s.needs_you and s.request.subagent is None
 
 
 def test_running_then_waiting_then_ended():
@@ -246,3 +331,32 @@ def test_activity_is_kept_while_running_and_cleared_when_status_changes():
 def test_activity_cleared_when_waiting():
     s = run(ev(Status.running, at=0, activity={"tool": "Edit", "kind": "edit"}), ev(Status.waiting_input, at=1))
     assert s.activity is None
+
+
+def test_report_priority_and_needs_you():
+    running = run(ev(Status.running))
+    done = run(ev(Status.done))
+    report = run(ev(Status.reported, request={"kind": "report"}))
+    assert inbox_order([done, report, running]) == [running, report, done]
+    assert report.request.kind == "report" and not report.needs_you
+    assert not run(ev(Status.waiting_input, request={"kind": "input"})).needs_you
+    assert run(ev(Status.waiting_input, request={"kind": "question"})).needs_you
+
+
+@pytest.mark.parametrize("status", [Status.running, Status.reported, Status.waiting_input, Status.waiting_approval, Status.done, Status.error, Status.ended])
+def test_idle_prompt_reports_only_running_sessions(status):
+    from sekantor.pos.claude_code.translate import translate
+
+    state = run(ev(status, summary="Earlier summary"))
+    if status is Status.reported:
+        state.acknowledged_at = T0
+    idle = translate({"hook_event_name": "Notification", "session_id": "s1",
+                      "notification_type": "idle_prompt", "message": "Idle"})
+    result = apply(state, Event.model_validate({**idle, "ts": T0 + timedelta(seconds=1)}))
+    assert result.summary == "Earlier summary"
+    if status is Status.running:
+        assert result.status is Status.reported
+        assert result.request.kind == "report" and result.report_pending
+    else:
+        assert result.status is status and result.status_since == T0
+        assert result.acknowledged_at == state.acknowledged_at

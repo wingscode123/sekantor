@@ -11,9 +11,10 @@ from sekantor.stats import compute, parse_since
 NOW = datetime(2026, 11, 12, 18, 0, tzinfo=timezone.utc)
 
 
-def ev(i, sid, status, at_min, host=None):
+def ev(i, sid, status, at_min, host=None, kind=None):
     return Event(event_id=f"e{i}", ts=NOW - timedelta(minutes=at_min), source="claude-code", session_id=sid,
-                 status=status, host={"app": host, "confidence": 0.9} if host else None)
+                 status=status, host={"app": host, "confidence": 0.9} if host else None,
+                 request={"kind": kind} if kind else None)
 
 
 def sent(home, events):
@@ -26,11 +27,11 @@ def sent(home, events):
 def home(tmp_path):
     store = Store(tmp_path / "sekantor.db")
     stored = [
-        ev(1, "claude:a", "waiting_input", 120, host="orca"),
+        ev(1, "claude:a", "waiting_input", 120, host="orca", kind="question"),
         ev(2, "claude:a", "running", 100),       # waited 20 min for a reply
         ev(3, "claude:a", "waiting_approval", 90),
         ev(4, "claude:a", "running", 85),        # waited 5 min for approval
-        ev(5, "claude:b", "waiting_input", 30, host="vscode"),  # still waiting: 30 min to now
+        ev(5, "claude:b", "waiting_input", 30, host="vscode", kind="question"),  # still waiting: 30 min to now
     ]
     for e in stored:
         store.add_event(e)
@@ -68,7 +69,7 @@ def test_a_wait_cut_short_by_the_session_ending_is_left_waiting(home):
     from sekantor.hub.store import Store
 
     store = Store(home / "sekantor.db")
-    store.add_event(ev(20, "claude:c", "waiting_input", 60))
+    store.add_event(ev(20, "claude:c", "waiting_input", 60, kind="question"))
     store.add_event(Event(event_id="e21", ts=NOW - timedelta(minutes=50), source="claude-code", session_id="claude:c",
                           status="ended", type="session_ended"))
     store.close()
@@ -98,6 +99,7 @@ def test_cli_stats_clean_home(tmp_path, monkeypatch):
     monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
     r = CliRunner().invoke(app, ["stats"])
     assert r.exit_code == 0 and "lost 0" in r.output
+    assert "Since this version, finished turns are reports and are excluded from wait totals." in r.output
 
 
 def test_hook_records_what_it_sends(tmp_path, monkeypatch):
@@ -119,3 +121,20 @@ def test_an_unreachable_line_naming_the_event_counts_however_late_it_was_logged(
     assert [x.event_id for x in st.lost] == ["e6"]
     assert sorted(x.event_id for x in st.lost_hub_down) == ["e7", "e8"]
     assert st.hook_errors == {"hub unreachable": 2}
+
+
+def test_reports_and_non_question_input_are_excluded_from_waits(tmp_path):
+    store = Store(tmp_path / "sekantor.db")
+    for event in [
+        ev(1, "a", "waiting_input", 60),
+        ev(2, "a", "waiting_input", 40, kind="question"),
+        ev(3, "a", "reported", 30, kind="report"),
+        ev(4, "a", "running", 20),
+        ev(5, "a", "waiting_input", 10, kind="input"),
+        ev(6, "b", "reported", 30, kind="report"),
+    ]:
+        store.add_event(event)
+    store.close()
+    st = compute(tmp_path, NOW - timedelta(hours=2), NOW)
+    assert st.answers["waiting_input"] == [timedelta(minutes=10)]
+    assert st.left_waiting == timedelta()

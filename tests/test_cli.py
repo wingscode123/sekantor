@@ -1,4 +1,7 @@
 import json
+import os
+import sys
+from types import SimpleNamespace
 
 import pytest
 import typer.main
@@ -32,6 +35,87 @@ def test_commands_when_hub_down(tmp_path, monkeypatch, args):
     monkeypatch.setenv("SEKANTOR_URL", "http://127.0.0.1:9")
     r = runner.invoke(app, args)
     assert r.exit_code == 1 and "Hub not reachable" in r.output and "sekantor up" in r.output
+
+
+def test_stop_command_when_no_hub(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
+    (tmp_path / "token").write_text("x")
+    monkeypatch.setenv("SEKANTOR_URL", "http://127.0.0.1:9")
+    r = runner.invoke(app, ["stop"])
+    assert r.exit_code == 0 and "No hub running." in r.output
+
+
+def test_stop_reports_a_refused_token(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"_status": 401, "detail": "bad token"})
+    r = runner.invoke(app, ["stop"])
+    assert r.exit_code == 1 and "refused the token" in r.output and "hub stopped" not in r.output
+
+
+def test_stop_on_a_slow_hub_does_not_say_no_hub(monkeypatch):
+    seen = {}
+
+    def slow(path, timeout=2.0, **kw):
+        seen["timeout"] = timeout
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("sekantor.cli._api", slow)
+    r = runner.invoke(app, ["stop"])
+    assert r.exit_code == 1 and "may still be stopping" in r.output and "No hub running" not in r.output
+    assert seen["timeout"] == 10
+
+
+def test_stop_wait_returns_once_the_port_is_free(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"stopping": True})
+    answers = iter([True, True, False])
+    monkeypatch.setattr("sekantor.service.port_busy", lambda host, port: next(answers))
+    r = runner.invoke(app, ["stop", "--wait"])
+    assert r.exit_code == 0 and "hub stopped" in r.output
+    assert next(answers, "done") == "done"  # polled until free
+
+
+def test_stop_wait_fails_when_the_hub_does_not_exit(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"stopping": True})
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, wait_s: False)
+    r = runner.invoke(app, ["stop", "--wait"])
+    assert r.exit_code == 1 and "still running" in r.output
+
+
+def test_stop_wait_on_a_slow_hub_succeeds_once_it_exits(monkeypatch):
+    def slow(*a, **k):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("sekantor.cli._api", slow)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, wait_s: True)
+    r = runner.invoke(app, ["stop", "--wait"])
+    assert r.exit_code == 0 and "hub stopped" in r.output
+
+
+def test_stop_without_wait_does_not_poll(monkeypatch):
+    monkeypatch.setattr("sekantor.cli._api", lambda *a, **k: {"stopping": True})
+    monkeypatch.setattr("sekantor.service.wait_free", lambda *a, **k: pytest.fail("polled"))
+    assert runner.invoke(app, ["stop"]).exit_code == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows paths")
+def test_bundle_processes_finds_the_frozen_hub_in_a_spaced_folder(monkeypatch):
+    from sekantor import cli
+
+    folder = r"C:\Users\First Last\AppData\Local\SeKantor\sekantor"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", folder + r"\sekantor.exe")
+    procs = [SimpleNamespace(pid=os.getpid(), info={"exe": folder + r"\sekantor.exe"}),  # ourselves
+             SimpleNamespace(pid=11, info={"exe": folder.upper() + r"\sekantor-hub.exe"}),
+             SimpleNamespace(pid=12, info={"exe": r"C:\Other\sekantor-hub.exe"}),
+             SimpleNamespace(pid=13, info={"exe": None})]
+    monkeypatch.setattr("psutil.process_iter", lambda attrs: procs)
+    assert [p.pid for p in cli._bundle_processes()] == [11]
+
+
+def test_bundle_processes_is_empty_from_source(monkeypatch):
+    from sekantor import cli
+
+    monkeypatch.setattr("psutil.process_iter", lambda attrs: pytest.fail("scanned"))
+    assert cli._bundle_processes() == []
 
 
 def test_doctor_reports_failures_without_hub(tmp_path, monkeypatch):
@@ -150,3 +234,191 @@ def test_service_install_waits_for_the_old_hub_to_let_go_of_the_port(tmp_path, m
     assert r.exit_code == 0 and "takes over" not in r.output
     assert calls[-1] == "/Run"  # the new task is started once the port is free
     assert next(polls, "drained") == "drained"
+
+
+def _setup_env(tmp_path, monkeypatch, platform="win32"):
+    """Tmp Claude config dir, a fake hook binary in a spaced path, and a service layer that touches nothing real.
+    The service plan is for ``platform``, not the host's."""
+    from sekantor import service
+
+    real_plan = service.plan
+    monkeypatch.setattr(service, "plan", lambda home, *a, **k: real_plan(home, platform, *a, **k))
+    from sekantor.pos.claude_code import install as inst
+
+    cfg = tmp_path / "claude cfg"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(cfg))
+    exe_dir = tmp_path / "First Last" / "SeKantor"
+    exe_dir.mkdir(parents=True)
+    exe = exe_dir / "sekantor-hook.exe"
+    exe.write_text("")
+    monkeypatch.setattr(inst, "hook_executable", lambda: exe)
+    monkeypatch.setattr("sekantor.cli._detect_integrations",
+                        lambda: {"openbot": "absent", "orca": False, "tmux": False})
+    ran = []
+    state = {"installed": False}
+
+    def fake_run(commands, check=True):
+        ran.append(commands)
+        state["installed"] = True
+        return []
+
+    monkeypatch.setattr(service, "run", fake_run)
+    monkeypatch.setattr(service, "installed", lambda plan: state["installed"])
+    monkeypatch.setattr(service, "current", lambda plan: state["installed"])
+    monkeypatch.setattr(service, "port_busy", lambda host, port: True)
+    return cfg / "settings.json", exe, ran
+
+
+def _venv_settings(path):
+    h = {"type": "command", "command": "C:/src/.venv/Scripts/sekantor-hook.exe", "args": [],
+         "async": True, "timeout": 10}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"hooks": {e: [{"hooks": [dict(h)]}] for e in ["SessionStart", "Stop", "SessionEnd"]}}))
+
+
+def test_setup_json_reports_missing_hooks(tmp_path, monkeypatch):
+    _, exe, _ = _setup_env(tmp_path, monkeypatch)
+    r = runner.invoke(app, ["setup", "--json"])
+    assert r.exit_code == 0, r.output
+    assert json.loads(r.stdout) == {"hooks": "missing", "hook_path": str(exe), "service": False,
+                                    "service_current": False, "openbot": "absent", "orca": False, "tmux": False}
+
+
+def test_setup_json_outdated_when_hook_path_differs(tmp_path, monkeypatch):
+    settings, _, _ = _setup_env(tmp_path, monkeypatch)
+    _venv_settings(settings)
+    r = runner.invoke(app, ["setup", "--json"])
+    assert json.loads(r.stdout)["hooks"] == "outdated"
+
+
+def test_setup_apply_replaces_venv_hooks_with_this_install(tmp_path, monkeypatch):
+    from sekantor.pos.claude_code import install as inst
+
+    settings, exe, ran = _setup_env(tmp_path, monkeypatch)
+    _venv_settings(settings)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert r.exit_code == 0, r.output
+    report = json.loads(r.stdout)
+    assert report["hooks"] == "ok" and report["service"] is True and ran
+    hooks = json.loads(settings.read_text())["hooks"]
+    assert set(hooks) == set(inst.EVENTS)
+    for groups in hooks.values():
+        handlers = [h for g in groups for h in g["hooks"]]
+        assert len(handlers) == 1
+        # a path with spaces stays one argv element: exec form, empty args
+        assert handlers[0]["command"] == exe.as_posix() and " " in handlers[0]["command"]
+        assert handlers[0]["args"] == []
+
+
+def test_setup_apply_fails_when_no_hook_binary(tmp_path, monkeypatch):
+    from sekantor.pos.claude_code import install as inst
+
+    _setup_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(inst, "hook_executable", lambda: None)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert r.exit_code == 1 and "sekantor-hook not found" in r.output
+
+
+def test_spawned_children_get_no_console_window_on_windows(monkeypatch):
+    import subprocess
+    import sys
+
+    from sekantor import cli
+
+    seen = []
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **k: seen.append(k))
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(cli, "_CHILD_OUT", None)
+    cli._spawn(["x"], 7878)
+    monkeypatch.setattr(cli, "_CHILD_OUT", object())
+    cli._spawn(["x"], 7878)
+    assert [k["creationflags"] for k in seen] == [0x08000000, 0x08000000]
+
+
+def _frozen_install(tmp_path, monkeypatch, busy_answers):
+    import subprocess
+
+    from sekantor import service
+
+    plan = service.plan(tmp_path, platform="win32", user="u")
+    plan.files = {}
+    calls = []
+
+    def fake_run(commands, check=True):
+        calls.extend(commands)
+        return [subprocess.CompletedProcess(c, 0, "", "") for c in commands]
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(service, "plan", lambda home: plan)
+    monkeypatch.setattr(service, "run", fake_run)
+    monkeypatch.setattr(service, "port_busy", busy_answers)
+    monkeypatch.setattr(service.time, "sleep", lambda s: None)
+    return calls
+
+
+def test_frozen_service_install_ends_its_own_task_then_starts_the_new_one(tmp_path, monkeypatch):
+    polls = iter([True, True, False])  # busy at the start, still busy once, then free
+    calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: next(polls, False))
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over" not in r.output
+    verbs = [c[1] for c in calls if c[-1] == "SeKantor hub" or "/F" in c]
+    assert ["schtasks", "/End", "/TN", "SeKantor hub"] in calls
+    assert verbs.index("/End") < verbs.index("/Create") < verbs.index("/Run")
+    assert calls[-1] == ["schtasks", "/Run", "/TN", "SeKantor hub"]
+
+
+def test_frozen_service_install_keeps_a_hand_started_hub(tmp_path, monkeypatch):
+    calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: True)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: False)
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over at the next login" in r.output
+    assert ["schtasks", "/Run", "/TN", "SeKantor hub"] not in calls
+
+
+def test_source_service_install_leaves_a_running_hub_alone(tmp_path, monkeypatch):
+    calls = _frozen_install(tmp_path, monkeypatch, lambda host, port: True)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: False)
+    r = runner.invoke(app, ["service", "install"])
+    assert r.exit_code == 0 and "takes over at the next login" in r.output
+    assert ["schtasks", "/End", "/TN", "SeKantor hub"] not in calls  # only the old Ronda task is cleaned up
+    assert ["schtasks", "/Run", "/TN", "SeKantor hub"] not in calls
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_setup_apply_reports_the_hub_outcome(tmp_path, monkeypatch, platform):
+    _setup_env(tmp_path, monkeypatch, platform)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert json.loads(r.stdout)["hub"] == "restart_needed"  # port_busy is faked busy
+    monkeypatch.setattr("sekantor.service.port_busy", lambda host, port: False)
+    monkeypatch.setattr("sekantor.service.wait_free", lambda busy, *a, **k: True)
+    r = runner.invoke(app, ["setup", "--apply"])
+    assert json.loads(r.stdout)["hub"] == "started"
+
+
+@pytest.mark.parametrize("keep, calls", [(True, 1), (False, 0)])
+def test_up_keeps_the_hub_in_ram_only_when_keep_in_ram(tmp_path, monkeypatch, keep, calls):
+    from sekantor import cli, resident
+
+    monkeypatch.setenv("SEKANTOR_HOME", str(tmp_path))
+    (tmp_path / "config.toml").write_text(f"keep_in_ram = {str(keep).lower()}\n")
+    seen = []
+    monkeypatch.setattr(resident, "keep_resident", lambda *a, **k: seen.append(1))
+    cli._keep_in_ram()
+    assert len(seen) == calls
+
+
+def test_status_groups_pending_and_accepted_reports(monkeypatch):
+    report = {"status": "reported", "status_since": "2026-11-18T00:00:00Z", "source": "claude-code"}
+    monkeypatch.setattr("sekantor.cli._hub", lambda _: {"sessions": [
+        {**report, "report_pending": False, "summary": "Accepted turn"},
+        {**report, "report_pending": True, "summary": "Pending turn"},
+        {**report, "report_pending": False, "report_to": "lead", "summary": "Junior turn"},
+    ]})
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0, result.output
+    assert result.output.index("Reports pending (1)") < result.output.index("Pending turn")
+    assert result.output.index("Pending turn") < result.output.index("Reports accepted (1)")
+    assert result.output.index("Reports accepted (1)") < result.output.index("Accepted turn")
+    assert "Junior turn" not in result.output

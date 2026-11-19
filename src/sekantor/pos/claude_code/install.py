@@ -18,6 +18,7 @@ from pathlib import Path
 EVENTS = [
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
     "PostToolUseFailure", "PermissionDenied", "Notification", "Stop", "StopFailure", "SessionEnd",
+    "SubagentStart", "SubagentStop",
 ]
 # The old ronda-hook names count as ours too, so an upgrade replaces them instead of adding a second set.
 HOOK_NAMES = {"sekantor-hook", "sekantor-hook.exe", "ronda-hook", "ronda-hook.exe"}
@@ -155,8 +156,7 @@ class Installed:
     handlers: dict[str, dict] = field(default_factory=dict)
 
     def current_shape(self) -> bool:
-        """False for an install from before ADR-0021: a handler with ``--wait``, a synchronous one (except
-        SessionEnd), one with asyncRewake, or one in shell form. `sekantor doctor` then says to reinstall."""
+        """Check coverage and handler shape so doctor can flag older installs for reinstall."""
         def ok(event: str, h: dict) -> bool:
             if h.get("args") != [] or "asyncRewake" in h:
                 return False
@@ -164,7 +164,7 @@ class Installed:
                 return "async" not in h and (h.get("timeout") or 0) >= 5
             return h.get("async") is True
 
-        return all(ok(e, h) for e, h in self.handlers.items())
+        return self.complete and all(ok(e, h) for e, h in self.handlers.items())
 
     @property
     def complete(self) -> bool:

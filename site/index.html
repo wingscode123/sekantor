@@ -3,195 +3,171 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ronda: one inbox for every coding agent on your machine</title>
-<meta name="description" content="Ronda is a local-first inbox for Claude Code, Orca, OpenBot and any CLI agent: see who is waiting, then approve or reply from one place.">
-<meta name="theme-color" content="#14162B">
+<title>SeKantor: your AI agents, in one office</title>
+<meta name="description" content="SeKantor shows every AI coding agent on your machine as an avatar in a local pixel-art office: who is working, who needs you, who is done.">
+<meta name="theme-color" content="#FFF8EC">
 <link rel="icon" href="../brand/logo/icon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;800&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="nav container">
-  <a class="nav__home" href="#main" aria-label="Ronda, home"><img src="../brand/logo/lockup-on-dark.svg" width="121" height="30" alt=""></a>
+  <a class="nav__home" href="#main" aria-label="SeKantor, home"><img class="px" src="../brand/logo/lockup-on-light.svg" width="177" height="48" alt=""></a>
   <nav aria-label="Primary">
     <ul class="nav__links">
-      <li><a href="inbox.html">The inbox</a></li>
+      <li><a href="#office">The office</a></li>
       <li><a href="#install">Install</a></li>
-      <li><a href="https://github.com/wingscode123/ronda">Source</a></li>
+      <li><a href="https://github.com/wingscode123/sekantor">Source</a></li>
     </ul>
   </nav>
 </header>
 
 <main id="main">
   <section class="hero container" aria-labelledby="hero-title">
-    <div class="hero__text">
-      <h1 id="hero-title">Your agents work all night. Ronda keeps watch.</h1>
-      <p class="lead">One local inbox for every coding agent, sorted by who needs you.</p>
-      <div class="hero__actions">
-        <a class="btn" href="https://github.com/wingscode123/ronda">Read the source</a>
-        <code class="hero__cmd">ronda up</code>
+    <div class="hero__head">
+      <h1 id="hero-title">Your AI agents, in one office.</h1>
+      <div class="hero__side">
+        <p class="lead">Every coding agent on your machine gets a desk and an avatar.</p>
+        <div class="hero__actions">
+          <a class="btn" href="https://github.com/wingscode123/sekantor">View the source</a>
+          <a class="link" href="#install">How to install</a>
+        </div>
       </div>
     </div>
-
-    <figure class="hero__visual" data-slot="hero" data-kind="product" data-alt="The Ronda inbox: one Claude Code session in Orca waiting for approval, one waiting for a reply, two running">
-      <div class="inbox" aria-label="Sample inbox with sample sessions">
-        <div class="inbox__bar"><span class="inbox__title">Inbox</span><span class="inbox__live" role="status">Live on 127.0.0.1:7878</span></div>
-        <p class="inbox__group">Needs you <span class="num">2</span></p>
-        <article class="card card--lit">
-          <div class="card__head"><span class="card__source">Claude Code</span><span class="card__host">in Orca</span><span class="card__time">4m</span></div>
-          <p class="card__msg"><span class="status status--approval">Wants to run</span> <code>docker compose up -d</code></p>
-          <p class="card__where"><code>~/code/example-shop</code><code>feat/checkout</code></p>
-          <div class="card__actions"><button class="ctl ctl--go" type="button">Approve</button><button class="ctl" type="button">Deny</button></div>
-        </article>
-        <article class="card">
-          <div class="card__head"><span class="card__source">Claude Code</span><span class="card__host">in Claude desktop</span><span class="card__time">12m</span></div>
-          <p class="card__msg"><span class="status status--input">Asks</span> Migration is written. Run it against staging?</p>
-        </article>
-        <p class="inbox__group">Running <span class="num">2</span></p>
-        <ul class="rows">
-          <li class="row"><span class="status status--running">Running</span><span>Codex in tmux</span><code class="row__where">example-docs</code><span class="card__time">2m</span></li>
-          <li class="row"><span class="status status--running">Running</span><span>Claude Code in VS Code</span><code class="row__where">example-shop</code><span class="card__time">40s</span></li>
-        </ul>
-        <p class="inbox__group">Done <span class="num">1</span></p>
-        <ul class="rows">
-          <li class="row"><span class="status status--done">Done</span><span>OpenBot agent</span><code class="row__where">notes</code><span class="card__time">1h</span></li>
-        </ul>
-      </div>
+    <figure class="shot hero__office" data-slot="hero" data-kind="product">
+      <img src="img/office.png" width="1920" height="832" fetchpriority="high" alt="The SeKantor office with twelve sample agents: most at their desks reading or typing, one at the server rack, one with coffee in the pantry, and two at your desk, one asking and one holding a report.">
     </figure>
   </section>
 
-  <section class="order container" aria-labelledby="order-title">
-    <h2 id="order-title">Who needs you sits on top.</h2>
-    <ol class="ladder">
-      <li><code class="status status--approval">waiting_approval</code><span>Wants permission to run a tool.</span></li>
-      <li><code class="status status--input">waiting_input</code><span>Finished a turn, waiting for you.</span></li>
-      <li><code class="status status--error">error</code><span>Crashed, or the API keeps failing.</span></li>
-      <li><code class="status status--running">running</code><span>Working. Leave it be.</span></li>
-      <li><code class="status status--done">done</code><span>Finished, or the process is gone.</span></li>
-    </ol>
-    <p class="order__note">Within a status, the longest wait comes first.</p>
+  <section class="section container" id="office" aria-labelledby="places-title">
+    <div class="head">
+      <h2 id="places-title">They go where the work is.</h2>
+    </div>
+    <ul class="places">
+      <li>
+        <figure class="shot" data-slot="your-desk" data-kind="product"><img class="px" src="img/your-desk.png" width="384" height="256" loading="lazy" alt="Two avatars at your desk: one with an exclamation mark, one holding a report."></figure>
+        <h3>Your desk</h3>
+        <p>An agent walks over when it needs permission or an answer, and brings a report when it finishes. You click Accept.</p>
+      </li>
+      <li>
+        <figure class="shot" data-slot="rack" data-kind="product"><img class="px" src="img/rack.png" width="384" height="256" loading="lazy" alt="An avatar standing at the server rack."></figure>
+        <h3>The server rack</h3>
+        <p>Running a command or the tests. The rack lights blink while it works.</p>
+      </li>
+      <li>
+        <figure class="shot" data-slot="pantry" data-kind="product"><img class="px" src="img/pantry.png" width="384" height="256" loading="lazy" alt="An avatar with a cup of coffee by the coffee machine."></figure>
+        <h3>The pantry</h3>
+        <p>Idle, waiting for a new task. Time for coffee.</p>
+      </li>
+    </ul>
   </section>
 
-  <section class="hosts container" aria-labelledby="hosts-title">
-    <div class="hosts__head">
-      <h2 id="hosts-title">Every app, one list.</h2>
-      <p class="lead">Read from each agent’s process tree and environment.</p>
+  <section class="section container" aria-labelledby="desk-title">
+    <div class="head">
+      <h2 id="desk-title">At the desk, you see the tool.</h2>
     </div>
-    <table class="hosts__table">
-      <thead><tr><th scope="col">Where the agent runs</th><th scope="col">How Ronda knows</th><th scope="col">From Ronda in 1.0</th></tr></thead>
+    <div class="desk">
+      <figure class="shot" data-slot="desks" data-kind="product"><img class="px" src="img/desks.png" width="768" height="384" loading="lazy" alt="Seven avatars at desks: some reading papers, some typing, one peering through a magnifier, one with smoke above its monitor."></figure>
+      <ul class="acts">
+        <li><b>Reading files</b><span>Leafs through papers</span></li>
+        <li><b>Editing code</b><span>Types fast</span></li>
+        <li><b>Searching the web</b><span>Peers through a magnifier</span></li>
+        <li><b>Hit an error</b><span>Smoke rises from the monitor</span></li>
+        <li><b>Session ended</b><span>Leaves through the door</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="band-paper section--tight" aria-labelledby="mini-title">
+    <div class="container">
+      <div class="mini">
+        <h2 id="mini-title">Keep the office in a corner.</h2>
+        <div class="mini__text">
+          <p>A small window stays on top of your work, with your desk and whoever is walking to it. Click it for the full office.</p>
+          <p>Click an avatar to see its last steps. You reply in the agent’s own app: the card opens it in Orca, VS Code or tmux.</p>
+        </div>
+      </div>
+      <figure class="mini__frame">
+        <div class="shot mini__shot" data-slot="mini" data-kind="product"><img class="px" src="img/mini.png" width="1280" height="448" loading="lazy" alt="The mini window’s scene: two avatars waiting near your desk."></div>
+        <figcaption>The mini window’s scene, enlarged.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section container" aria-labelledby="apps-title">
+    <div class="head head--split">
+      <h2 id="apps-title">Where your agents already run.</h2>
+      <p class="lead">Read from each agent’s process and environment.</p>
+    </div>
+    <table class="apps">
+      <thead><tr><th scope="col">The agent runs in</th><th scope="col">How SeKantor knows</th></tr></thead>
       <tbody>
-        <tr><th scope="row">Terminal</th><td><code>claude</code> under your shell</td><td>Approve, reply</td></tr>
-        <tr><th scope="row">VS Code</th><td><code>VSCODE_PID</code></td><td>Approve, reply</td></tr>
-        <tr><th scope="row">Claude desktop</th><td><code>CLAUDE_CODE_ENTRYPOINT</code></td><td>Approve, reply</td></tr>
-        <tr><th scope="row">Orca</th><td><code>ORCA_AGENT_SESSION_ID</code></td><td>Approve, reply</td></tr>
-        <tr><th scope="row">OpenBot</th><td><code>OPENBOT_AGENT_PROCESS</code></td><td>Watch, open</td></tr>
-        <tr><th scope="row">tmux</th><td><code>TMUX</code> and the pane</td><td>Reply</td></tr>
+        <tr><th scope="row">A terminal</th><td>Claude Code hooks</td></tr>
+        <tr><th scope="row">VS Code</th><td><code>VSCODE_PID</code></td></tr>
+        <tr><th scope="row">Claude desktop</th><td><code>CLAUDE_CODE_ENTRYPOINT</code></td></tr>
+        <tr><th scope="row">Orca</th><td><code>ORCA_AGENT_SESSION_ID</code></td></tr>
+        <tr><th scope="row">OpenBot</th><td><code>OPENBOT_AGENT_PROCESS</code></td></tr>
+        <tr><th scope="row">tmux</th><td><code>TMUX</code> and the pane, for Codex, opencode, Gemini CLI and aider</td></tr>
       </tbody>
     </table>
   </section>
 
-  <section class="act container" aria-labelledby="act-title">
-    <figure class="act__visual" data-slot="reply" data-kind="product" data-alt="A Claude Code session in Claude desktop waiting for input, with a reply field in the Ronda inbox">
-      <article class="card card--lit act__card" aria-label="Sample session waiting for a reply">
-        <div class="card__head"><span class="card__source">Claude Code</span><span class="card__host">in Claude desktop</span><span class="card__time">12m</span></div>
-        <p class="status status--input">Waiting for you</p>
-        <p class="act__msg">The migration is written and the tests pass. Should I run it against staging, or stop so you can review it?</p>
-        <form class="reply" data-endpoint="" novalidate>
-          <label for="reply-text">Reply to this session</label>
-          <div class="reply__row">
-            <input id="reply-text" name="reply" type="text" autocomplete="off" value="Stop here. I will review it after lunch.">
-            <button class="ctl ctl--go" type="submit">Send reply</button>
-          </div>
-          <p class="reply__help" id="reply-help" aria-live="polite"></p>
-        </form>
-      </article>
-    </figure>
-    <div class="act__text">
-      <h2 id="act-title">Reply without switching apps.</h2>
-      <p>Your reply goes back through Claude Code’s own Stop hook, so the agent continues where it paused. When the hub is down, the agent shows its usual prompt.</p>
-    </div>
-  </section>
-
   <section class="local" aria-labelledby="local-title">
-    <div class="container local__inner">
+    <div class="container local__grid">
       <h2 id="local-title">Nothing leaves this machine.</h2>
       <dl class="local__list">
-        <div><dt><code>127.0.0.1:7878</code></dt><dd>The only address it listens on. No account, no cloud.</dd></div>
-        <div><dt><code>~/.ronda/token</code></dt><dd>Mode 600. Every request without it is refused.</dd></div>
-        <div><dt>Fail closed</dt><dd>Ronda never approves on its own. If anything fails, the agent asks you itself.</dd></div>
-        <div><dt>No telemetry</dt><dd>Events stay in one SQLite file for seven days.</dd></div>
+        <div><dt><code>127.0.0.1</code></dt><dd>The only address the hub listens on. No account, no cloud.</dd></div>
+        <div><dt><code>~/.sekantor/token</code></dt><dd>Every local request needs it.</dd></div>
+        <div><dt>No telemetry</dt><dd>No network calls of its own. Events stay in one SQLite file for seven days.</dd></div>
+        <div><dt>Watch-only</dt><dd>It never approves anything for an agent. If the hub stops, your agents carry on.</dd></div>
       </dl>
     </div>
   </section>
 
-  <section class="pos container" aria-labelledby="pos-title">
-    <div class="pos__text">
-      <h2 id="pos-title">A new pos in an afternoon.</h2>
-      <p>A pos adapts one platform: any script that posts JSON to <code>/v1/events</code> and reads the answer back.</p>
-    </div>
-    <figure class="pos__code">
-      <pre><code><span class="c"># tell Ronda what the agent is doing</span>
-<span class="k">POST</span> /v1/events
-{"session_id": "mytool:42", "status": "waiting_approval",
- "request": {"id": "r1", "input": "npm run deploy"},
- "capabilities": ["approve", "deny"]}
-
-<span class="c"># take the answer back</span>
-<span class="k">GET</span>  /v1/sessions/mytool:42/actions/next?request_id=r1</code></pre>
-      <figcaption><code>examples/pos_minimal.py</code></figcaption>
-    </figure>
-  </section>
-
   <section class="install container" id="install" aria-labelledby="install-title">
-    <h2 id="install-title">Pre-alpha today. Beta on 25 January 2027.</h2>
+    <div class="head">
+      <h2 id="install-title">Pre-alpha, Windows first.</h2>
+    </div>
+    <table class="state">
+      <thead><tr><th scope="col">What</th><th scope="col">State</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Windows installer, unsigned</th><td>Built on CI</td></tr>
+        <tr><th scope="row">Signed installers</th><td>Coming</td></tr>
+        <tr><th scope="row">macOS and Linux</th><td>Coming</td></tr>
+        <tr><th scope="row">Restyle the office by prompt</th><td>Planned</td></tr>
+        <tr><th scope="row">Public beta</th><td>Planned, 25 January 2027</td></tr>
+      </tbody>
+    </table>
     <div class="install__grid">
       <figure class="install__code">
-        <pre><code>pipx install ronda
-ronda install claude
-ronda up</code></pre>
-        <figcaption>The 1.0 install. Until then, run it from source.</figcaption>
+        <pre tabindex="0"><code>uv sync
+(cd web &amp;&amp; npm ci &amp;&amp; npm run build)
+uv run sekantor up
+uv run sekantor install claude --project</code></pre>
+        <figcaption>From source today. Needs Python 3.11+, uv and Node 18+.</figcaption>
       </figure>
-      <table class="install__table">
-        <thead><tr><th scope="col">Milestone</th><th scope="col">What lands</th><th scope="col">State</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">M0 Spike</th><td>Hooks, host fingerprints</td><td>Done</td></tr>
-          <tr><th scope="row">M1 Core</th><td>Hub, read-only inbox</td><td>Now</td></tr>
-          <tr><th scope="row">M2 Actions</th><td>Approve, deny, reply</td><td>Next</td></tr>
-          <tr><th scope="row">M3 Channels</th><td>tmux, Telegram</td><td>Planned</td></tr>
-          <tr><th scope="row">M4 Hardening</th><td>Orca and OpenBot pos</td><td>Planned</td></tr>
-        </tbody>
-      </table>
+      <div class="install__go">
+        <a class="btn" href="https://github.com/wingscode123/sekantor">View the source</a>
+        <a class="link" href="https://github.com/wingscode123/sekantor#readme">Read the README</a>
+      </div>
     </div>
-    <p class="install__go"><a class="btn" href="https://github.com/wingscode123/ronda">Read the source</a></p>
   </section>
 </main>
 
 <footer class="foot">
   <div class="container foot__inner">
-    <img src="../brand/logo/lockup-on-dark.svg" width="121" height="30" alt="Ronda">
-    <p class="foot__line">Agen kerja, Ronda jaga.</p>
-    <p class="foot__about">Named for the <i lang="id">ronda malam</i>, the night watch that strikes the <i lang="id">kentongan</i> when someone is needed.</p>
-    <ul class="foot__links">
-      <li><a href="https://github.com/wingscode123/ronda">Source</a></li>
-      <li><a href="https://github.com/wingscode123/ronda/blob/main/SECURITY.md">Security</a></li>
-      <li><a href="https://github.com/wingscode123/ronda/blob/main/LICENSE">MIT license</a></li>
-    </ul>
+    <div class="foot__mark"><img class="px" src="../brand/logo/lockup-on-dark.svg" width="472" height="128" alt="SeKantor"></div>
+    <div class="foot__side">
+      <p class="foot__about"><i lang="id">Se-kantor</i> is Indonesian for sharing an office: officemates.</p>
+      <ul class="foot__links">
+        <li><a href="https://github.com/wingscode123/sekantor">Source</a></li>
+        <li><a href="https://github.com/wingscode123/sekantor/blob/main/SECURITY.md">Security</a></li>
+        <li><a href="https://github.com/wingscode123/sekantor/blob/main/LICENSE">MIT license</a></li>
+        <li><a href="../brand/BRAND.md">Brand</a></li>
+      </ul>
+    </div>
   </div>
 </footer>
-<script>
-document.querySelectorAll('form[data-endpoint]').forEach((form) => {
-  const input = form.querySelector('input'), help = form.querySelector('[aria-live]');
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!input.value.trim()) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', help.id); help.textContent = 'Write a reply first.'; input.focus(); return; }
-    input.removeAttribute('aria-invalid');
-    help.textContent = 'Nothing was sent: this is a sample. Replies arrive in M2.';
-  });
-});
-</script>
 </body>
 </html>

@@ -114,5 +114,5 @@ def assess(w: Watch, screen: str, rules: Rules, now: float) -> tuple[str, str | 
     idle = now - w.changed_at
     at_prompt = bool(recent) and any(p.search(recent[-1]) for p in rules.prompt)
     if idle >= rules.idle_s and (at_prompt or idle >= QUIET_S):
-        return "waiting_input", f"tmux-{h}", None, summary
+        return "reported", f"tmux-{h}", None, summary
     return "running", None, None, summary

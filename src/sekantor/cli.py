@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -19,6 +20,7 @@ from pathlib import Path
 import typer
 
 from sekantor import __version__, config
+from sekantor.selfexe import self_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="SeKantor keeps watch over your coding agents.")
 install_app = typer.Typer(no_args_is_help=True, help="Install SeKantor's hooks into an agent.")
@@ -29,6 +31,7 @@ pos_app = typer.Typer(no_args_is_help=True, help="Run a pos (platform adapter) b
 app.add_typer(pos_app, name="pos")
 
 GROUPS = [("Needs you", {"waiting_approval", "waiting_input", "error"}), ("Running", {"running"}),
+          ("Reports pending", {"report_pending"}), ("Reports accepted", {"report_accepted"}),
           ("Done", {"done", "ended"})]
 
 
@@ -91,6 +94,17 @@ def version():
     typer.echo(__version__)
 
 
+def _keep_in_ram() -> None:
+    """ADR-0020, unless `keep_in_ram = false` (the default for the frozen app) in config.toml."""
+    from sekantor import resident
+
+    if not config.settings().keep_in_ram:
+        return
+    why_not = resident.keep_resident()
+    if why_not and sys.platform == "win32":
+        logging.getLogger("sekantor.hub").warning("could not keep the hub in RAM: %s", why_not)
+
+
 @app.command()
 def up(
     port: int = typer.Option(config.DEFAULT_PORT, help="Port on 127.0.0.1."),
@@ -114,12 +128,10 @@ def up(
         _CHILD_OUT = open(log_file, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = _CHILD_OUT
         typer.echo(f"--- {datetime.now().isoformat(timespec='seconds')} sekantor up")
-    from sekantor import logs, resident
+    from sekantor import logs
 
     logs.setup("hub")
-    why_not = resident.keep_resident()
-    if why_not and sys.platform == "win32":
-        logging.getLogger("sekantor.hub").warning("could not keep the hub in RAM: %s", why_not)
+    _keep_in_ram()
 
     os.environ["SEKANTOR_PORT"] = str(port)
     with socket.socket() as s:
@@ -144,7 +156,16 @@ def up(
     children = [c for c in (_start_tmux(port) if tmux else None,
                             _start_openbot(port) if openbot else None, _start_orca(port)) if c]
     try:
-        uvicorn.run(hub_app, host=config.HOST, port=port, log_level="warning")
+        server = uvicorn.Server(uvicorn.Config(hub_app, host=config.HOST, port=port, log_level="warning"))
+
+        def watch_stop():  # POST /v1/shutdown sets the flag; uvicorn then drains and returns
+            while not server.should_exit:
+                if hub_app.state.should_exit:
+                    server.should_exit = True
+                time.sleep(0.2)
+
+        threading.Thread(target=watch_stop, daemon=True, name="stop-watch").start()
+        server.run()
     finally:
         for child in children:
             if child.poll() is None:
@@ -157,7 +178,7 @@ def _start_tmux(port: int):
     if not shutil.which("tmux"):
         return None
     typer.echo("tmux pos: watching CLI agents in tmux panes (separate process)")
-    return _spawn([sys.executable, "-m", "sekantor.cli", "pos", "tmux"], port)
+    return _spawn(self_command("pos", "tmux"), port)
 
 
 def _start_orca(port: int):
@@ -171,7 +192,7 @@ def _start_orca(port: int):
         typer.secho("orca_pos is on but the orca CLI was not found.", fg="yellow")
         return None
     typer.echo("Orca pos: non-Claude agents in Orca terminals (separate process)")
-    return _spawn([sys.executable, "-m", "sekantor.cli", "pos", "orca"], port)
+    return _spawn(self_command("pos", "orca"), port)
 
 
 @pos_app.command("orca")
@@ -188,7 +209,7 @@ def _start_openbot(port: int):
     if not installed():
         return None
     typer.echo("OpenBot pos: agents with Local scripts on (separate process)")
-    return _spawn([sys.executable, "-m", "sekantor.cli", "pos", "openbot"], port)
+    return _spawn(self_command("pos", "openbot"), port)
 
 
 @pos_app.command("openbot")
@@ -231,9 +252,10 @@ def _spawn(args: list[str], port: int):
     from sekantor.lifeline import parent_env
 
     env = {**os.environ, "SEKANTOR_URL": f"http://{config.HOST}:{port}", **parent_env()}
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
     if _CHILD_OUT is not None:
-        return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT)
-    return subprocess.Popen(args, env=env)
+        return subprocess.Popen(args, env=env, stdout=_CHILD_OUT, stderr=subprocess.STDOUT, **flags)
+    return subprocess.Popen(args, env=env, **flags)
 
 
 @app.command("open")
@@ -249,6 +271,70 @@ def open_inbox(print_only: bool = typer.Option(False, "--print", help="Print the
         webbrowser.open(url)
 
 
+@app.command()
+def stop(wait: bool = typer.Option(False, "--wait", help="Return only once the hub has exited (up to 20 s); the uninstaller uses this.")):
+    """Stop the running hub (its watchers end with it)."""
+    try:
+        res = _api("/v1/shutdown", timeout=10, method="POST", body={})
+    except urllib.error.HTTPError as e:
+        _stop_refused(e.code)
+    except RuntimeError:  # no token file: no hub was ever started here
+        _wait_gone(wait)
+        typer.echo("No hub running.")
+        return
+    except OSError as e:  # URLError is an OSError
+        reason = e.reason if isinstance(e, urllib.error.URLError) else e
+        if not isinstance(reason, ConnectionRefusedError):
+            if wait and _wait_gone(wait):  # a busy hub may have got the request and be draining
+                typer.echo("SeKantor hub stopped.")
+                return
+            typer.secho("The hub did not answer; it may still be stopping.", fg="yellow")
+            raise typer.Exit(1)
+        _wait_gone(wait)
+        typer.echo("No hub running.")
+        return
+    if "_status" in res:
+        _stop_refused(res["_status"])
+    if wait and not _wait_gone(wait):
+        typer.secho("The hub is still running after 20 s.", fg="yellow")
+        raise typer.Exit(1)
+    typer.echo("SeKantor hub stopped.")
+
+
+def _bundle_processes() -> list:
+    """Other processes running an exe from this frozen folder (the hub and its watchers): they lock its
+    files, so the uninstaller must wait for them. Empty when running from source."""
+    from sekantor.selfexe import frozen
+
+    if not frozen():
+        return []
+    import psutil
+
+    folder = os.path.normcase(str(Path(sys.executable).parent))
+    found = []
+    for p in psutil.process_iter(["exe"]):
+        exe = p.info.get("exe")
+        if p.pid != os.getpid() and exe and os.path.normcase(str(Path(exe).parent)) == folder:
+            found.append(p)
+    return found
+
+
+def _wait_gone(wait: bool, wait_s: float = 20.0) -> bool:
+    """With --wait: block until the port is free and no process from this folder is left."""
+    if not wait:
+        return True
+    from sekantor import service
+
+    return service.wait_free(lambda: service.port_busy(config.HOST, config.port()) or bool(_bundle_processes()),
+                             wait_s=wait_s)
+
+
+def _stop_refused(code: int):
+    why = "refused the token" if code in (401, 403) else "answered with an error"
+    typer.secho(f"The hub {why} (HTTP {code}). Run `sekantor doctor`.", fg="red")
+    raise typer.Exit(1)
+
+
 service_app = typer.Typer(no_args_is_help=True, help="Start the hub automatically at login.")
 app.add_typer(service_app, name="service")
 
@@ -256,36 +342,54 @@ app.add_typer(service_app, name="service")
 @service_app.command("install")
 def service_install(start: bool = typer.Option(True, "--start/--no-start", help="Also start it now.")):
     """Run the hub at every login (Task Scheduler / launchd / systemd user), with no window."""
-    from sekantor import service
+    _install_service(start)
+
+
+def _install_service(start: bool) -> str:
+    """Install the login service. Returns "started" (the new hub runs), "restart_needed" (another
+    hub still holds the port; the service takes over at next login) or "not_started"."""
+    from sekantor import selfexe, service
 
     p = service.plan(config.home())
     _migrate()
+    hub_busy = lambda: service.port_busy(config.HOST, config.port())  # noqa: E731
+    # The installed app replacing a source install: its task may still run the old hub. End our own
+    # task first, so the port frees up for the new one (a hub started by hand stays and keeps the port).
+    takeover = bool(start and p.start and p.stop and selfexe.frozen() and hub_busy())
+    if takeover:
+        service.run(p.stop, check=False)
     # the old Ronda service, so it does not start a second hub
     cleaned = service.run(p.cleanup, check=False)
     old_hub_ended = bool(p.stop) and bool(cleaned) and cleaned[0].returncode == 0
     for old in p.cleanup_files:
         old.unlink(missing_ok=True)
+    result = "not_started"
     try:
         for path, content in p.files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             (path.write_bytes if isinstance(content, bytes) else path.write_text)(content)
+        was_busy = hub_busy()
         service.run(p.install)
-        if start and p.start:
-            def busy() -> bool:
-                return service.port_busy(config.HOST, config.port())
-
+        if start and not p.start:
+            # launchd / systemd: the install command starts the service itself
+            result = "restart_needed" if was_busy else "started"
+        elif start:
+            busy = hub_busy
             # schtasks /End returns before the old hub has exited: give it time to let go of the port
-            if old_hub_ended:
+            if old_hub_ended or takeover:
                 service.wait_free(busy)
             if busy():
                 typer.secho("A hub is already running; the service takes over at the next login.", fg="yellow")
+                result = "restart_needed"
             else:
                 service.run(p.start)
+                result = "started"
     except (RuntimeError, OSError) as e:
         typer.secho(f"Could not install the service: {e}", fg="red")
         raise typer.Exit(1)
     typer.secho("The hub now starts at login (no window). Output: " + str(config.home() / "hub.log"), fg="green")
     typer.echo("Open the inbox with `sekantor open`. Remove with `sekantor service uninstall`.")
+    return result
 
 
 @service_app.command("uninstall")
@@ -354,12 +458,22 @@ def status(as_json: bool = typer.Option(False, "--json", help="Print raw JSON.")
     if as_json:
         typer.echo(json.dumps(data, indent=2))
         return
-    sessions = data["sessions"]
-    if not sessions:
+    if not data["sessions"]:
         typer.echo("No sessions yet. Agents appear on their first hook event.")
         return
+    sessions = [s for s in data["sessions"] if s.get("report_to") != "lead"]
+    if not sessions:
+        typer.echo("No sessions in your inbox.")
+        return
+    def group_status(s):
+        if s["status"] == "reported":
+            return "report_pending" if s.get("report_pending") else "report_accepted"
+        if s["status"] == "waiting_input" and s.get("needs_you") is False:
+            return "done"
+        return s["status"]
+
     for title, statuses in GROUPS:
-        rows = [s for s in sessions if s["status"] in statuses]
+        rows = [s for s in sessions if group_status(s) in statuses]
         if not rows:
             continue
         typer.secho(f"{title} ({len(rows)})", bold=True)
@@ -414,6 +528,7 @@ def stats(
         extra = f"   ({n} answered, median {_span(med)})" if n else ""
         typer.echo(f"  waited for {label:<12}{_span(st.waiting[status])}{extra}")
     typer.echo(f"  left waiting           {_span(st.left_waiting)}   (ended or still open with no answer)")
+    typer.echo("  Since this version, finished turns are reports and are excluded from wait totals.")
     if st.longest_wait_session:
         typer.echo(f"  longest answered wait  {_span(st.longest_wait)} ({st.longest_wait_session})")
     if show_lost and st.lost:
@@ -513,6 +628,65 @@ def uninstall_claude(
     typer.echo(f"Backup: {r.backup}")
 
 
+def _detect_integrations() -> dict:
+    """Which agent hosts this machine has: shared by `doctor` and `setup`."""
+    import shutil
+
+    from sekantor.pos.openbot.pos import automation_dir, installed as openbot_installed
+    from sekantor.pos.orca.pos import orca_cli
+
+    openbot = "absent"
+    if openbot_installed():
+        openbot = "on" if (automation_dir() / "url").exists() else "off"
+    return {"openbot": openbot, "orca": bool(orca_cli()), "tmux": bool(shutil.which("tmux"))}
+
+
+def _hooks_state(exe) -> str:
+    """missing: none of ours in the global settings; outdated: old shape, incomplete, or not this install's hook."""
+    from sekantor.pos.claude_code import install as inst
+
+    found = inst.inspect(inst.settings_path("global"))
+    if not found.events:
+        return "missing"
+    ours = exe.as_posix().lower() if exe else None
+    same_path = all(c.replace("\\", "/").lower() == ours for c in found.commands)
+    return "ok" if found.complete and found.current_shape() and same_path else "outdated"
+
+
+def _setup_report() -> dict:
+    from sekantor import service
+    from sekantor.pos.claude_code import install as inst
+
+    exe = inst.hook_executable()
+    return {"hooks": _hooks_state(exe), "hook_path": str(exe) if exe else None,
+            "service": service.installed(service.plan(config.home())),
+            "service_current": service.current(service.plan(config.home())), **_detect_integrations()}
+
+
+@app.command()
+def setup(
+    as_json: bool = typer.Option(False, "--json", help="Print what is set up and what is not, as JSON (the default)."),
+    apply: bool = typer.Option(False, "--apply", help="Install the hooks (global) and the login service, then print the same JSON."),
+):
+    """First-run check for the desktop app: report the state, or fix it with --apply."""
+    if apply:
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                install_claude(project=False, global_=True)
+                hub = _install_service(start=True)
+        except typer.Exit as e:
+            typer.echo(out.getvalue().strip(), err=True)
+            raise typer.Exit(e.exit_code or 1)
+    report = _setup_report()
+    if apply:
+        report["hub"] = hub
+    typer.echo(json.dumps(report))
+
+
 @app.command()
 def doctor():
     """Check that everything is in place."""
@@ -573,11 +747,9 @@ def doctor():
     dist = web_dist()
     check(dist is not None, f"Web UI built ({dist})", "Web UI not built: `npm ci && npm run build` in web/", warn=True)
 
-    from sekantor.pos.openbot.pos import automation_dir, installed as openbot_installed
-
-    if openbot_installed():
-        on = (automation_dir() / "url").exists()
-        check(on, "OpenBot: Local scripts is on for at least one agent",
+    openbot = _detect_integrations()["openbot"]
+    if openbot != "absent":
+        check(openbot == "on", "OpenBot: Local scripts is on for at least one agent",
               "OpenBot: no agent has Local scripts on, so SeKantor cannot see OpenBot agents "
               "(agent settings > Permissions > Local scripts)", warn=True)
 

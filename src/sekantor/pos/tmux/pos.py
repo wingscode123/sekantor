@@ -20,8 +20,14 @@ log = logging.getLogger("sekantor.pos.tmux")
 HOST = {"app": "tmux", "confidence": 1.0, "via": ["tmux"]}
 
 
+def run_hidden(args, **kw) -> subprocess.CompletedProcess:
+    """subprocess.run without a console window: under pythonw each console child would open and close one."""
+    kw.setdefault("creationflags", getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return subprocess.run(args, **kw)
+
+
 class Tmux:
-    def __init__(self, binary: str = "tmux", extra: list[str] | None = None, runner=subprocess.run):
+    def __init__(self, binary: str = "tmux", extra: list[str] | None = None, runner=run_hidden):
         self.cmd = [binary, *(extra or [])]
         self.runner = runner
 
@@ -125,8 +131,8 @@ class TmuxPos:
                 request = None
                 if status == "waiting_approval":
                     request = {"kind": "tool", "tool": "terminal", "input": prompt, "id": rid}
-                elif status == "waiting_input":
-                    request = {"kind": "input", "id": rid}
+                elif status == "reported":
+                    request = {"kind": "report"}
                 if self.hub.post_event(self._event(sid, w, pane, status=status, summary=summary, request=request)):
                     w.status, w.request_id = status, rid
 def main(interval: float = 2.0) -> None:
