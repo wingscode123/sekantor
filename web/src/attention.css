@@ -1,0 +1,13 @@
+/* Attention radar (A2, A3): palette Gold, Apricot, Coral; Ink text on every level. */
+.office-plate__wait { display: inline-block; padding: 0 3px; border-radius: 2px; background: #f7ce82; color: #332b35; font-weight: 700; font-variant-numeric: tabular-nums; }
+.office-plate__wait--restless { background: #e5bb9f; }
+.office-plate__wait--urgent { background: #ef8b72; }
+@media (prefers-reduced-motion: no-preference) {
+  .office-plate__wait--urgent { animation: wait-pulse 1s steps(2, jump-none) infinite; }
+}
+@keyframes wait-pulse { from { background: #ef8b72; } to { background: #f7ce82; } }
+
+.queue-pill { padding: 2px 10px; border: 1px solid #70483d; border-radius: 999px; background: #f7ce82; color: #332b35; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+.queue-pill:focus-visible { outline: 2px solid var(--color-focus, #2d5558); outline-offset: 2px; }
+.queue-pill--restless { background: #e5bb9f; }
+.queue-pill--urgent { background: #ef8b72; }

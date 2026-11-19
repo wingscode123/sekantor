@@ -1,6 +1,7 @@
 import type { Session, Subagent } from "../types";
 import type { Pt } from "./motion";
 import { floorOf } from "./floors";
+import { waitsForYou } from "../attention";
 
 export type Kind = "web" | "backend" | "data" | "mobile" | "game" | "infra" | "docs" | "other";
 export type Place = "desk" | "your_desk" | "rack" | "pantry" | "door";
@@ -10,7 +11,7 @@ export interface Avatar {
   junior?: { status: Subagent["status"]; meeting: Pt; door: Pt };
   teamReport?: { lead?: string; meeting: Pt; since: string };
   key: string; sessionId: string; identity: string; seat: number; look: Look;
-  place: Place; pose: Pose; targetTile?: { x: number; y: number }; deskTile: { x: number; y: number }; name: string; app: string; project: string;
+  waitingSince?: string; place: Place; pose: Pose; targetTile?: { x: number; y: number }; deskTile: { x: number; y: number }; name: string; app: string; project: string;
 }
 export interface Cluster { project: string; origin: { x: number; y: number }; desks: { x: number; y: number }[] }
 export interface Room {
@@ -263,7 +264,6 @@ export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns =
   };
   places.push({ kind: "your_desk", at: lobby.yourDesk }, { kind: "door", at: lobby.door });
   const bySession = new Map(avatars.filter(a => !a.junior).map(a => [a.sessionId, a]));
-  let waiting = 0;
   for (const s of ordered) {
     const avatar = bySession.get(s.session_id)!;
     if (s.status === "reported" && s.report_to === "lead" && floorOf(s) === "orca") {
@@ -273,12 +273,17 @@ export function layoutOffice(sessions: Session[], now = Date.now(), maxColumns =
         ? { lead: lead.sessionId, meeting: { x: lead.deskTile.x, y: lead.deskTile.y + 1 }, since: s.status_since }
         : { meeting: room.door, since: s.status_since };
     }
-    if (avatar.place === "your_desk") {
-      const point = slot(lobby.yourDesk, waiting++);
-      avatar.targetTile = { x: point.x - 2, y: point.y };
-    }
+    if (waitsForYou(s, now)) avatar.waitingSince = s.status_since;
     if (avatar.place === "door") avatar.targetTile = lobby.door;
   }
+  // A3: the queue at your desk. People waiting for you first, longest wait first, then pending reports.
+  const queue = ordered.filter(s => bySession.get(s.session_id)!.place === "your_desk").sort((a, b) =>
+    Number(!bySession.get(a.session_id)!.waitingSince) - Number(!bySession.get(b.session_id)!.waitingSince)
+    || compare(a.status_since, b.status_since) || compare(a.session_id, b.session_id));
+  queue.forEach((s, i) => {
+    const point = slot(lobby.yourDesk, i);
+    bySession.get(s.session_id)!.targetTile = { x: point.x - 2, y: point.y };
+  });
 
   return {
     width: officeWidth, height: lobby.y + lobby.h, rooms, lobby, places, avatars,

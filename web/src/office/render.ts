@@ -1,5 +1,6 @@
 import { isCorridorTile, isWalkable, route, SUBAGENT_REPORT_MS, type Avatar, type Office } from "./model";
 import { Departures, followRoute, type Pt } from "./motion";
+import { drawWaitMark } from "./waitmark";
 import { CHARACTER_HEIGHT, defaultTheme, TILE, type Theme } from "./sprites";
 
 /** Native-pixel avatar top-left positions (32x48 sprites), keyed by avatar.key in paint order. */
@@ -241,6 +242,7 @@ export function startRenderer(canvas: HTMLCanvasElement, getOffice: () => Office
         : receiving.has(avatar.sessionId) ? "receive" : moving ? "run" : avatar.pose;
       if (avatar.junior) theme.character(avatar.look, pose, frame, ctx!, x, y, true);
       else theme.character(avatar.look, pose, frame, ctx!, x, y);
+      if (avatar.waitingSince && pose === "ask") drawWaitMark(ctx!, x, y, Date.now() - Date.parse(avatar.waitingSince), frame);
     }
     if (framePositions) onFrame!(framePositions);
     if (juniorDepartures.length) onJuniorDeparture?.(juniorDepartures);

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { isSnoozed } from "../SessionMenu";
+import { queueSummary, waitingQueue } from "../attention";
 import { useGhostNow, useNow, useSessions } from "../useSessions";
 import { layoutOffice, type Office } from "./model";
 import { startRenderer } from "./render";
@@ -15,7 +16,7 @@ const openFullOffice = (url: string) => window.location.assign(url);
 export function MiniView({ navigate = openFullOffice }: { navigate?: (url: string) => void }) {
   const { sessions, connection, loaded } = useSessions();
   const layoutNow = useGhostNow(sessions);
-  const now = useNow(1000, sessions.some(s => s.status !== "ended" && isSnoozed(s, Date.now())));
+  const now = useNow(1000, sessions.some(s => s.status !== "ended" && (isSnoozed(s, Date.now()) || s.needs_you)));
   const awake = sessions.filter(s => s.status !== "ended" && !isSnoozed(s, now));
   const waiting = awake.filter(s => s.needs_you && s.status !== "error");
   const waitingIds = new Set(waiting.map(s => s.session_id));
@@ -24,7 +25,10 @@ export function MiniView({ navigate = openFullOffice }: { navigate?: (url: strin
   const latest = [...waiting].sort((a, b) => b.last_event_at.localeCompare(a.last_event_at) || b.status_since.localeCompare(a.status_since)).find(s => s.summary);
   const office = useMemo(() => layoutOffice(sessions, layoutNow), [sessions, layoutNow]);
   // Preserve full-office identities and looks, with space to gather around your desk.
-  const avatars = office.avatars.filter(a => !a.junior && waitingIds.has(a.sessionId));
+  const queueOrder = new Map(waitingQueue(sessions, now).map((s, i) => [s.session_id, i]));
+  const radar = queueSummary(sessions, now);
+  const avatars = office.avatars.filter(a => !a.junior && waitingIds.has(a.sessionId))
+    .sort((a, b) => (queueOrder.get(a.sessionId) ?? Infinity) - (queueOrder.get(b.sessionId) ?? Infinity));
   const rows = Math.ceil(avatars.length / 18);
   const height = Math.max(7, rows * 2 + 3);
   const yourDesk = { x: 10, y: height - 2 };
@@ -44,10 +48,11 @@ export function MiniView({ navigate = openFullOffice }: { navigate?: (url: strin
   useEffect(() => startRenderer(canvas.current!, () => current.current, miniTheme), []);
   const summary = latest?.summary || (waiting.length ? "An agent needs you." : loaded ? "Nobody is waiting for you." : "Connecting to the office…");
   const connectionText = connection === "down" ? "Hub disconnected" : connection === "unauthorized" ? "Not signed in" : "";
-  const label = `${busy} busy, ${waiting.length} need you, ${reports} reports. ${waiting.map(s => s.agent?.name || s.source_label).join(", ")}. ${summary}${connectionText ? ` ${connectionText}.` : ""} Open full office`;
+  const label = `${busy} busy, ${waiting.length} need you, ${reports} reports.${radar ? ` ${radar.text}.` : ""} ${waiting.map(s => s.agent?.name || s.source_label).join(", ")}. ${summary}${connectionText ? ` ${connectionText}.` : ""} Open full office`;
   return <button type="button" className="mini-office" aria-label={label} onClick={() => navigate("/")}>
     <span className="mini-office__scene"><canvas ref={canvas} width={scene.width * TILE} height={scene.height * TILE} aria-hidden="true" /></span>
     <span className="mini-office__counts">{busy} busy · {waiting.length} need you · {reports} reports{connectionText && ` · ${connectionText}`}</span>
+    {radar && <span className="mini-office__counts mini-office__queue">{radar.text}</span>}
     <span className="mini-office__summary">{summary}</span>
   </button>;
 }
