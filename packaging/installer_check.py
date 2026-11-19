@@ -52,8 +52,8 @@ def hub_processes() -> list:
 
 
 def main(argv: list[str]) -> int:
-    if not os.environ.get("CIRCLECI"):
-        sys.exit("installer_check.py changes the real home and login tasks: CI only (CIRCLECI is not set)")
+    if not (os.environ.get("CIRCLECI") or os.environ.get("GITHUB_ACTIONS")):
+        sys.exit("installer_check.py changes the real home and login tasks: CI only (neither CIRCLECI nor GITHUB_ACTIONS is set)")
     setups = sorted(glob.glob(argv[0])) if argv else []
     if len(setups) != 1:
         sys.exit(f"expected one setup exe, found {setups}")

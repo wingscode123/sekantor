@@ -221,13 +221,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--service", action="store_true", help="also install and remove the login task (CI only)")
     args = ap.parse_args(argv)
 
-    if args.service and not os.environ.get("CIRCLECI"):
-        sys.exit("--service changes this machine's \"SeKantor hub\" login task: CI only (CIRCLECI is not set)")
+    if args.service and not (os.environ.get("CIRCLECI") or os.environ.get("GITHUB_ACTIONS")):
+        sys.exit("--service changes this machine's \"SeKantor hub\" login task: CI only (neither CIRCLECI nor GITHUB_ACTIONS is set)")
     if args.port == REAL_PORT:
         sys.exit(f"refusing port {REAL_PORT}: that is where a real hub runs")
     if port_open(args.port):
         sys.exit(f"port {args.port} is already in use; pick another with --port")
-    for stem in ("sekantor", "sekantor-hub") + ((HOOK,) if os.environ.get("CIRCLECI") else ()):
+    for stem in ("sekantor", "sekantor-hub") + ((HOOK,) if (os.environ.get("CIRCLECI") or os.environ.get("GITHUB_ACTIONS")) else ()):
         if not (args.folder / (stem + EXE)).is_file():
             sys.exit(f"missing {stem}{EXE} in {args.folder}")
 
